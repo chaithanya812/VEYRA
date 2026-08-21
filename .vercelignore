@@ -1,0 +1,8 @@
+# Non-app assets — not needed for the Next.js build, keep the deploy lean.
+competitor-research/
+research/
+requirements/
+prior-work/
+client/
+*.md
+!README.md

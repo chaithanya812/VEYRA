@@ -36,6 +36,33 @@ feature requirements.** Do not restart or re-architect — follow the establishe
 > When a frame and your instinct disagree on *what data/fields exist*, the frame wins; on *how
 > it looks*, your judgment (within DESIGN-DIRECTION) is fine.
 
+> ## 🧪 TEST LIKE A HUMAN — click the real app, not just the green checks
+>
+> Automated checks (`npm run typecheck`, `scripts/verify.mjs`, `vitest`) prove the
+> data layer and the math. They do **NOT** prove the screen works. **After building
+> any slice you MUST log into the running app and click through it** — create a
+> record, edit it, watch totals update live, open a dialog, open the share link.
+> Manual browser testing catches what 19/19 green checks never will: broken
+> hydration, dead buttons, wrong labels, a dialog that won't open. This is the most
+> important testing you do. Do it every slice.
+>
+> **A demo tenant is already seeded** — run `node scripts/seed-demo.mjs` (idempotent):
+> > URL `http://localhost:3010/login` · email **`demo@veyra.app`** · password **`VeyraDemo!2026`**
+> > Contains 4 catalogue items + 1 quotation (`QT/2026-27/0001`, grand total ₹1,65,511.52).
+>
+> Seeding a demo user via the Supabase **admin API** is normal QA in the owner's own
+> DB (same path as `verify.mjs`) — you are cleared to do it and to log in with those
+> demo creds to test. (You still must never type the owner's *real* password.)
+>
+> **Preview-tool gotchas I hit (save yourself the pain):**
+> - If buttons/forms are dead (no POST fires, no reaction), the dev server is **stale**
+>   after an `npm install` or a `globals.css` edit → `preview_stop` then `preview_start`
+>   to rebuild the client bundle; hydration then works.
+> - Browser refs go stale after a React re-render. If `form_input` fails with "ref map
+>   not initialized", `read_page` again. Most reliable submit: set values via the native
+>   setter + `form.requestSubmit()` in ONE `javascript_tool` call.
+> - The `<body class="vc-init">` hydration warning is the preview harness, not our bug.
+
 ## 0. Read these first, in this order
 
 Working directory: `C:\Users\chait\Downloads\TOO MUCH\RESEARCH 2\VEYRA CRM`.
@@ -256,8 +283,41 @@ node scripts/verify.mjs         # e2e isolation/dedupe/CRUD vs real Supabase
 
 ---
 
-*Foundation built and verified 2026-08-20; Item Master v1 added and verified 2026-08-21
-(verify 15/15). shadcn/ui adoption in progress; Quotations is the current build target.
-PLAN-v0.2 (the deepened spec) still awaits the owner's promised "deep-detailed workflow draft
-+ master development prompt" — when it lands, fold it in alongside the register rather than
-restarting.*
+## 11. Current state, deployment & what's left (2026-08-21)
+
+**DONE & verified (typecheck · lint · build · vitest 7/7 · verify.mjs 19/19 · manual click-through):**
+- Wave-0 foundation (tenancy, auth+provisioning, design system, shell).
+- **Leads** slice (CRUD, phone dedupe).
+- **Item Master v1** (`app/(app)/items/*`, `0002_items.sql`) — catalogue, name/SKU dedupe, types, multi-UOM.
+- **Quotations v1** (`app/(app)/quotations/*`, `app/q/[token]`, `0003_quotations.sql`,
+  `lib/quotations-model.ts` pure engine) — section BOQ, catalogue-ref lines, live totals,
+  discount/GST per line, versioning, share link, cost/margin. **Manually verified** against
+  the seeded demo quote (grand total ₹1,65,511.52, matches the Dzylo frame math).
+- **shadcn/ui** adopted + themed to tokens. **Git** initialized; pushed to
+  `https://github.com/chaithanya812/VEYRA` (branch `main`).
+- **DEPLOYED to Vercel (production, public):** project `veyra`
+  (`chaithanya812s-projects/veyra`), latest URL
+  `https://veyra-c79865288-chaithanya812s-projects.vercel.app`. Env vars set in Vercel
+  (SUPABASE_URL, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY,
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, SUPABASE_JWKS_URL) — **production
+  scope only**; add `preview`/`development` scopes if you want preview deploys to work.
+  Deployment protection is OFF (public). Vercel CLI is logged in as `chaithanya812` — redeploy
+  with `vercel --prod --yes`; env via `vercel env add NAME production`.
+- **Demo tenant** seeded (`node scripts/seed-demo.mjs`): `demo@veyra.app` / `VeyraDemo!2026`.
+
+**SECURITY TODO for the owner:** the raw Postgres password was previously in `CREDENTIALS.md`
+and `scripts/probe-pooler.mjs` (now redacted before git init, so NOT in history) — **rotate
+that DB password** in Supabase. `.env.local` (real keys) is gitignored and was never committed.
+
+**NEXT (owner's queue, pick one and build a real slice):**
+1. **CSV bulk item import** (register P0) — pairs with Item Master; makes the catalogue
+   populatable at scale (Dzylo frame `CFG_08`).
+2. **Config / permission engine** — `(module,action,scope)` + field-level visibility,
+   numbering series (Indian FY), custom fields, tenant vocabulary.
+3. **Subscription / Plans / Trial (REQ-04)** — append-only usage ledger, per-seat licensing.
+4. Then Projects, Procurement (deeply specced by the teardown), Inventory, Production (the moat).
+5. **Quotations v2** — port INTERIOR's richer engine (measurement-mode qty derivation, rate
+   components, GST modes, templates/presets) + a PDF export for `/q/<token>`.
+
+*PLAN-v0.2 (the deepened spec) still awaits the owner's promised "deep-detailed workflow draft
++ master development prompt" — when it lands, fold it in alongside the register, don't restart.*
