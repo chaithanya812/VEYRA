@@ -1,0 +1,250 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import {
+  createQuotation,
+  updateQuotationMeta,
+  setQuotationStatus,
+  addSection,
+  renameSection,
+  deleteSection,
+  addLine,
+  updateLine,
+  deleteLine,
+  createNewVersion,
+  setShare,
+  QUOTE_STATUSES,
+  DISCOUNT_TYPES,
+  type QuoteStatus,
+  type DiscountType,
+} from "@/lib/data/quotations";
+import { searchItems } from "@/lib/data/items";
+import type { ItemRef } from "@/lib/items-model";
+
+export type FormState = { error?: string } | undefined;
+
+/* ── Catalogue search (powers the BOQ line combobox) ──────────────────────── */
+export async function searchItemsAction(query: string): Promise<ItemRef[]> {
+  if (!query || query.trim().length < 1) return [];
+  return searchItems(query, 15);
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+const createSchema = z.object({
+  title: z.string().optional(),
+  leadId: z.string().optional(),
+  customer_name: z.string().optional(),
+  customer_phone: z.string().optional(),
+  customer_email: z.string().email("Enter a valid email").optional().or(z.literal("")),
+  place_of_supply: z.string().optional(),
+});
+
+export async function createQuotationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = createSchema.safeParse({
+    title: formData.get("title") || undefined,
+    leadId: formData.get("leadId") || undefined,
+    customer_name: formData.get("customer_name") || undefined,
+    customer_phone: formData.get("customer_phone") || undefined,
+    customer_email: formData.get("customer_email") || undefined,
+    place_of_supply: formData.get("place_of_supply") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const result = await createQuotation({
+    title: parsed.data.title,
+    leadId: parsed.data.leadId || null,
+    customer_name: parsed.data.customer_name || null,
+    customer_phone: parsed.data.customer_phone || null,
+    customer_email: parsed.data.customer_email || null,
+    place_of_supply: parsed.data.place_of_supply || null,
+  });
+  if ("error" in result) return { error: result.error };
+  revalidatePath("/quotations");
+  redirect(`/quotations/${result.id}`);
+}
+
+export async function updateMetaAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await updateQuotationMeta(id, {
+    title: (formData.get("title") as string) || undefined,
+    customer_name: (formData.get("customer_name") as string) ?? null,
+    customer_phone: (formData.get("customer_phone") as string) ?? null,
+    customer_email: (formData.get("customer_email") as string) ?? null,
+    site_address: (formData.get("site_address") as string) ?? null,
+    place_of_supply: (formData.get("place_of_supply") as string) ?? null,
+    notes: (formData.get("notes") as string) ?? null,
+    terms: (formData.get("terms") as string) ?? null,
+    valid_until: (formData.get("valid_until") as string) || null,
+  });
+  revalidatePath(`/quotations/${id}`);
+}
+
+export async function setStatusAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status"));
+  if (!id || !QUOTE_STATUSES.includes(status as QuoteStatus)) return;
+  await setQuotationStatus(id, status as QuoteStatus);
+  revalidatePath(`/quotations/${id}`);
+  revalidatePath("/quotations");
+}
+
+export async function newVersionAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const result = await createNewVersion(id);
+  if ("id" in result) {
+    revalidatePath("/quotations");
+    redirect(`/quotations/${result.id}`);
+  }
+}
+
+export async function setShareAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const enabled = String(formData.get("enabled")) === "true";
+  if (!id) return;
+  await setShare(id, enabled);
+  revalidatePath(`/quotations/${id}`);
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+export async function addSectionAction(formData: FormData) {
+  const quotationId = String(formData.get("quotationId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  if (!quotationId || !title) return;
+  await addSection(quotationId, title);
+  revalidatePath(`/quotations/${quotationId}`);
+}
+
+export async function renameSectionAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const quotationId = String(formData.get("quotationId") ?? "");
+  const title = String(formData.get("title") ?? "").trim();
+  if (!id || !title) return;
+  await renameSection(id, title);
+  revalidatePath(`/quotations/${quotationId}`);
+}
+
+export async function deleteSectionAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!id || !quotationId) return;
+  await deleteSection(id, quotationId);
+  revalidatePath(`/quotations/${quotationId}`);
+}
+
+/* ── Lines ────────────────────────────────────────────────────────────────── */
+const lineSchema = z.object({
+  quotationId: z.string().min(1),
+  id: z.string().optional(),
+  section_id: z.string().optional(),
+  item_id: z.string().optional(),
+  title: z.string().min(1, "Line title is required"),
+  area: z.string().optional(),
+  category: z.string().optional(),
+  description: z.string().optional(),
+  hsn_sac: z.string().optional(),
+  qty: z.coerce.number().min(0, "Qty must be ≥ 0"),
+  uom: z.string().min(1),
+  unit_price: z.coerce.number().min(0, "Rate must be ≥ 0"),
+  discount_type: z.enum(DISCOUNT_TYPES),
+  discount_value: z.coerce.number().min(0).default(0),
+  tax_rate: z.coerce.number().min(0).max(100).default(18),
+  cost_rate: z.coerce.number().min(0).default(0),
+});
+
+function parseLine(formData: FormData) {
+  return lineSchema.safeParse({
+    quotationId: formData.get("quotationId"),
+    id: formData.get("id") || undefined,
+    section_id: formData.get("section_id") || undefined,
+    item_id: formData.get("item_id") || undefined,
+    title: formData.get("title"),
+    area: formData.get("area") || undefined,
+    category: formData.get("category") || undefined,
+    description: formData.get("description") || undefined,
+    hsn_sac: formData.get("hsn_sac") || undefined,
+    qty: formData.get("qty") ?? 1,
+    uom: formData.get("uom") || "nos",
+    unit_price: formData.get("unit_price") ?? 0,
+    discount_type: formData.get("discount_type") || "amount",
+    discount_value: formData.get("discount_value") ?? 0,
+    tax_rate: formData.get("tax_rate") ?? 18,
+    cost_rate: formData.get("cost_rate") ?? 0,
+  });
+}
+
+export async function addLineAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = parseLine(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid line" };
+  }
+  const d = parsed.data;
+  const result = await addLine(d.quotationId, {
+    section_id: d.section_id || null,
+    item_id: d.item_id || null,
+    title: d.title,
+    area: d.area || null,
+    category: d.category || null,
+    description: d.description || null,
+    hsn_sac: d.hsn_sac || null,
+    qty: d.qty,
+    uom: d.uom,
+    unit_price: d.unit_price,
+    discount_type: d.discount_type as DiscountType,
+    discount_value: d.discount_value,
+    tax_rate: d.tax_rate,
+    cost_rate: d.cost_rate,
+  });
+  if ("error" in result) return { error: result.error };
+  revalidatePath(`/quotations/${d.quotationId}`);
+  return undefined;
+}
+
+export async function updateLineAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = parseLine(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid line" };
+  }
+  const d = parsed.data;
+  if (!d.id) return { error: "Missing line id" };
+  const result = await updateLine(d.id, d.quotationId, {
+    section_id: d.section_id || null,
+    item_id: d.item_id || null,
+    title: d.title,
+    area: d.area || null,
+    category: d.category || null,
+    description: d.description || null,
+    hsn_sac: d.hsn_sac || null,
+    qty: d.qty,
+    uom: d.uom,
+    unit_price: d.unit_price,
+    discount_type: d.discount_type as DiscountType,
+    discount_value: d.discount_value,
+    tax_rate: d.tax_rate,
+    cost_rate: d.cost_rate,
+  });
+  if (result.error) return { error: result.error };
+  revalidatePath(`/quotations/${d.quotationId}`);
+  return undefined;
+}
+
+export async function deleteLineAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const quotationId = String(formData.get("quotationId") ?? "");
+  if (!id || !quotationId) return;
+  await deleteLine(id, quotationId);
+  revalidatePath(`/quotations/${quotationId}`);
+}

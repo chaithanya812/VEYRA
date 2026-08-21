@@ -1,0 +1,14 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Large binary source assets (videos)
+*.mp4
+*.m4a
+
+# OS / editor
+.DS_Store
+Thumbs.db
+node_modules/
+.next/

@@ -1,0 +1,95 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/*
+  VEYRA design tokens — the white / black / red system.
+  Source of truth: competitor-research/DESIGN-DIRECTION.md.
+  Red is the single accent with a CLOSED list of jobs (primary action, active
+  nav, destructive, genuine alert, hero metric). Everything else is black/grey/white.
+  Status semantics (green/amber) are NOT decoration — only real states use them.
+*/
+@theme {
+  /* Surfaces */
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f7f7f8;
+  --color-border: #e6e6e9;
+  --color-border-strong: #cfcfd4;
+
+  /* Text */
+  --color-ink: #17171a;
+  --color-ink-secondary: #6b6b73;
+  --color-ink-disabled: #a6a6ad;
+
+  /* Red — the accent */
+  --color-red: #d6122b;
+  --color-red-hover: #b00e23;
+  --color-red-tint: #fdecee;
+
+  /* Status semantics (never decorative) */
+  --color-green: #137a3f;
+  --color-green-tint: #e7f4ec;
+  --color-amber: #9a6700;
+  --color-amber-tint: #fbf1dc;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+
+  --radius-card: 10px;
+
+  /* ── shadcn/ui semantic aliases ──────────────────────────────────────────
+     shadcn components reference semantic utilities (bg-background, bg-primary,
+     text-muted-foreground, border-input…). We alias them onto the VEYRA tokens
+     ABOVE via var(), so shadcn renders in the white/black/red system with no
+     per-component overrides and the tokens above stay the single source of
+     truth. Change a colour above, not here. */
+  --color-background: var(--color-surface);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-red);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--color-surface-sunken);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-surface-sunken);
+  --color-muted-foreground: var(--color-ink-secondary);
+  --color-accent: var(--color-surface-sunken);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-red);
+  --color-destructive-foreground: #ffffff;
+  --color-input: var(--color-border-strong);
+  --color-ring: var(--color-red);
+
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+html,
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* shadcn/ui base: default border colour so components using a bare `border`
+   pick up the VEYRA border token (our own components always set it explicitly,
+   so this is additive). Low specificity — any explicit border-* class wins. */
+* {
+  border-color: var(--color-border);
+}
+
+/* Tabular, right-alignable numerals for data tables (DESIGN-DIRECTION §3). */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus ring — visible, keyboard-first. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-red);
+  outline-offset: 2px;
+}
