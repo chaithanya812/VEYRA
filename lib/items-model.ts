@@ -75,3 +75,16 @@ export interface ItemRef {
   tax_rate: number;
   hsn_sac: string | null;
 }
+
+/* ── Bulk CSV import (client-safe result shapes shared by the action + UI) ──── */
+
+/** Outcome of importing one CSV row via bulkCreateItems (lib/data/items.ts). */
+export type BulkItemOutcome =
+  | { index: number; name: string; status: "created" }
+  | { index: number; name: string; status: "skipped_duplicate"; message: string }
+  | { index: number; name: string; status: "error"; message: string };
+
+export interface BulkCreateResult {
+  outcomes: BulkItemOutcome[];
+  summary: { created: number; skipped: number; errors: number };
+}

@@ -3,6 +3,7 @@
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import {
   marginPct,
+  INDIAN_STATES,
   type Quotation,
   type QuotationSection,
   type QuotationLine,
@@ -10,7 +11,7 @@ import {
 import { uomLabel } from "@/lib/items-ui";
 import { inr } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
 import { LineDialog } from "./line-dialog";
 import {
@@ -58,9 +59,6 @@ export function QuoteBuilder({
               <Field label="Customer email" htmlFor="customer_email">
                 <Input id="customer_email" name="customer_email" defaultValue={quotation.customer_email ?? ""} />
               </Field>
-              <Field label="Place of supply" htmlFor="place_of_supply">
-                <Input id="place_of_supply" name="place_of_supply" defaultValue={quotation.place_of_supply ?? ""} />
-              </Field>
               <Field label="Valid until" htmlFor="valid_until">
                 <Input id="valid_until" name="valid_until" type="date" defaultValue={quotation.valid_until ?? ""} />
               </Field>
@@ -68,6 +66,51 @@ export function QuoteBuilder({
             <Field label="Site address" htmlFor="site_address">
               <Input id="site_address" name="site_address" defaultValue={quotation.site_address ?? ""} />
             </Field>
+
+            {/* GST & place of supply — drives the CGST/SGST vs IGST split. */}
+            <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-4">
+              <p className="mb-3 text-xs font-medium text-[var(--color-ink-secondary)]">
+                GST &amp; place of supply
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Seller state" htmlFor="seller_state">
+                  <Select id="seller_state" name="seller_state" defaultValue={quotation.seller_state ?? ""}>
+                    <option value="">Select state…</option>
+                    {INDIAN_STATES.map((s) => (
+                      <option key={s.code} value={s.name}>{s.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Place of supply" htmlFor="place_of_supply">
+                  <Select id="place_of_supply" name="place_of_supply" defaultValue={quotation.place_of_supply ?? ""}>
+                    <option value="">Select state…</option>
+                    {INDIAN_STATES.map((s) => (
+                      <option key={s.code} value={s.name}>{s.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field
+                  label="GST treatment"
+                  htmlFor="gst_treatment"
+                  hint="Auto: intra-state → CGST + SGST, inter-state → IGST."
+                >
+                  <Select id="gst_treatment" name="gst_treatment" defaultValue={quotation.gst_treatment}>
+                    <option value="auto">Auto (from states)</option>
+                    <option value="intra">Intra-state (CGST + SGST)</option>
+                    <option value="inter">Inter-state (IGST)</option>
+                  </Select>
+                </Field>
+              </div>
+              <label className="mt-3 flex items-center gap-2 text-sm text-[var(--color-ink)]">
+                <input
+                  type="checkbox"
+                  name="works_contract"
+                  defaultChecked={quotation.works_contract}
+                  className="size-4 accent-[var(--color-red)]"
+                />
+                Works contract (turnkey) — shows the works-contract note on the quote
+              </label>
+            </div>
             <Field label="Terms & notes" htmlFor="terms">
               <Textarea id="terms" name="terms" defaultValue={quotation.terms ?? ""} placeholder="Payment terms, warranty, inclusions…" />
             </Field>
@@ -264,12 +307,23 @@ function TotalsCard({ quotation }: { quotation: Quotation }) {
         <Row label="Subtotal" value={inr(quotation.subtotal)} />
         <Row label="Discount" value={`− ${inr(quotation.discount_total)}`} />
         <Row label="Taxable" value={inr(quotation.taxable_total)} />
-        <Row label="GST" value={inr(quotation.tax_total)} />
+        {quotation.gst_treatment === "inter" ? (
+          <Row label="IGST" value={inr(quotation.igst_total)} />
+        ) : (
+          <>
+            <Row label="CGST" value={inr(quotation.cgst_total)} />
+            <Row label="SGST" value={inr(quotation.sgst_total)} />
+          </>
+        )}
         <div className="mt-1 flex justify-between border-t border-[var(--color-border)] pt-2 text-base font-semibold text-[var(--color-ink)]">
           <dt>Grand total</dt>
           <dd>{inr(quotation.grand_total)}</dd>
         </div>
       </dl>
+      <p className="mt-2 text-xs text-[var(--color-ink-secondary)]">
+        {quotation.gst_treatment === "inter" ? "Inter-state supply · IGST" : "Intra-state supply · CGST + SGST"}
+        {quotation.works_contract ? " · Works contract" : ""}
+      </p>
 
       {/* Internal — never printed on the client document (VEYRA delta over Dzylo). */}
       <div className="mt-4 rounded-md border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-sunken)] p-3">

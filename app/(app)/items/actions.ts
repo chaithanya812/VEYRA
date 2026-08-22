@@ -7,6 +7,8 @@ import {
   createItem,
   updateItem,
   setItemActive,
+  bulkCreateItems,
+  type BulkItemOutcome,
   ITEM_TYPES,
   UOMS,
   GST_RATES,
@@ -16,6 +18,13 @@ import {
 } from "@/lib/data/items";
 
 export type FormState = { error?: string } | undefined;
+
+/** Result returned by the CSV import action (consumed by the import page). */
+export type ImportState = {
+  error?: string;
+  outcomes?: BulkItemOutcome[];
+  summary?: { created: number; skipped: number; errors: number };
+} | undefined;
 
 const gstValues = GST_RATES.map((r) => String(r)) as [string, ...string[]];
 
@@ -131,4 +140,27 @@ export async function toggleActiveAction(formData: FormData) {
   await setItemActive(id, next);
   revalidatePath("/items");
   revalidatePath(`/items/${id}`);
+}
+
+const importSchema = z.object({
+  csv: z.string().min(1, "Paste or upload a CSV first."),
+});
+
+/**
+ * Bulk-import items from CSV text. Parses + validates, inserts new items through
+ * the shared create path, revalidates /items and returns a per-row outcome.
+ */
+export async function importItemsCsvAction(
+  _prev: ImportState,
+  formData: FormData,
+): Promise<ImportState> {
+  const parsed = importSchema.safeParse({ csv: formData.get("csv") });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const result = await bulkCreateItems(parsed.data.csv);
+  revalidatePath("/items");
+
+  return { outcomes: result.outcomes, summary: result.summary };
 }

@@ -2,11 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Link2, Copy, GitBranch } from "lucide-react";
 import { getQuotation, listVersions } from "@/lib/data/quotations";
+import { getViewer } from "@/lib/data/context";
 import { QUOTE_STATUSES } from "@/lib/quotations-model";
 import { statusTone, statusLabel } from "@/lib/quotations-ui";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/field";
 import { PageHeader, StatusChip, Card } from "@/components/ui/primitives";
+import { DownloadQuoteButton } from "@/components/download-quote-button";
+import type { QuotationPdfData } from "@/lib/quotations-pdf";
 import { fmtDate } from "@/lib/utils";
 import { QuoteBuilder } from "../quote-builder";
 import { setStatusAction, setShareAction, newVersionAction } from "../actions";
@@ -20,7 +23,57 @@ export default async function QuotationDetailPage({
   const data = await getQuotation(id);
   if (!data) notFound();
   const { quotation, sections, lines } = data;
-  const versions = await listVersions(quotation.version_group);
+  const [versions, viewer] = await Promise.all([
+    listVersions(quotation.version_group),
+    getViewer(),
+  ]);
+
+  // Customer-facing PDF payload — cost/margin are intentionally excluded.
+  const pdfData: QuotationPdfData = {
+    quotation: {
+      number: quotation.number,
+      version: quotation.version,
+      title: quotation.title,
+      customer_name: quotation.customer_name,
+      customer_phone: quotation.customer_phone,
+      customer_email: quotation.customer_email,
+      site_address: quotation.site_address,
+      place_of_supply: quotation.place_of_supply,
+      seller_state: quotation.seller_state,
+      gst_treatment: quotation.gst_treatment,
+      works_contract: quotation.works_contract,
+      subtotal: quotation.subtotal,
+      discount_total: quotation.discount_total,
+      taxable_total: quotation.taxable_total,
+      tax_total: quotation.tax_total,
+      cgst_total: quotation.cgst_total,
+      sgst_total: quotation.sgst_total,
+      igst_total: quotation.igst_total,
+      grand_total: quotation.grand_total,
+      terms: quotation.terms,
+      valid_until: quotation.valid_until,
+      created_at: quotation.created_at,
+    },
+    sections: sections.map((s) => ({ id: s.id, title: s.title, sort_order: s.sort_order })),
+    lines: lines.map((l) => ({
+      id: l.id,
+      section_id: l.section_id,
+      title: l.title,
+      area: l.area,
+      category: l.category,
+      description: l.description,
+      hsn_sac: l.hsn_sac,
+      qty: l.qty,
+      uom: l.uom,
+      unit_price: l.unit_price,
+      discount_amount: l.discount_amount,
+      tax_rate: l.tax_rate,
+      taxable: l.taxable,
+      tax_amount: l.tax_amount,
+      line_total: l.line_total,
+    })),
+    seller: viewer ? { name: viewer.orgName, gstin: null } : null,
+  };
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -76,6 +129,8 @@ export default async function QuotationDetailPage({
 
         <div className="h-6 w-px bg-[var(--color-border)]" />
 
+        <DownloadQuoteButton data={pdfData} />
+
         <form action={newVersionAction}>
           <input type="hidden" name="id" value={quotation.id} />
           <Button type="submit" variant="ghost" size="sm">
@@ -84,7 +139,7 @@ export default async function QuotationDetailPage({
         </form>
 
         {versions.length > 1 && (
-          <div className="flex items-center gap-1.5 text-sm text-[var(--color-ink-secondary)]">
+          <div className="flex flex-wrap items-center gap-1.5 text-sm text-[var(--color-ink-secondary)]">
             <span>Versions:</span>
             {versions.map((v) => (
               <Link
@@ -99,6 +154,17 @@ export default async function QuotationDetailPage({
                 v{v.version}
               </Link>
             ))}
+            {versions
+              .filter((v) => v.id !== quotation.id)
+              .map((v) => (
+                <Link
+                  key={`cmp-${v.id}`}
+                  href={`/quotations/${quotation.id}/compare/${v.id}`}
+                  className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-ink-secondary)] hover:border-[var(--color-ink)] hover:text-[var(--color-ink)]"
+                >
+                  Compare with v{v.version}
+                </Link>
+              ))}
           </div>
         )}
       </Card>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Package, Plus, Search } from "lucide-react";
+import { Package, Plus, Search, Upload } from "lucide-react";
 import { listItems, itemCounts } from "@/lib/data/items";
 import { ITEM_TYPES, type ItemType } from "@/lib/items-model";
 import { typeLabel, uomLabel } from "@/lib/items-ui";
@@ -32,11 +32,18 @@ export default async function ItemsPage({
         title="Items"
         subtitle={`${counts.total} items · ${counts.active} active`}
         actions={
-          <Link href="/items/new">
-            <Button variant="primary">
-              <Plus className="size-4" /> New item
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/items/import">
+              <Button variant="secondary">
+                <Upload className="size-4" /> Import CSV
+              </Button>
+            </Link>
+            <Link href="/items/new">
+              <Button variant="primary">
+                <Plus className="size-4" /> New item
+              </Button>
+            </Link>
+          </div>
         }
       />
 

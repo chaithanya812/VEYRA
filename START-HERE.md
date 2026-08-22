@@ -6,7 +6,9 @@ Home of the platform planning effort. Everything needed is in here or linked fro
 
 ## If you are a fresh AI agent
 
-Read **`HANDOFF-PROMPT.md`** and follow it. Don't start with this file.
+Read **`HANDOFF-FLEET-AGENT.md`** first — it is the current brief (state as of 2026-08-22 + the
+mandate to finish the backlog using an OpenCode sub-agent fleet). It points to `HANDOFF-BUILD-AGENT.md`
+and `HANDOFF-PROMPT.md` for the foundational detail. Don't start with this file.
 
 ## If you are a human
 

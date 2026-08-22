@@ -17,9 +17,12 @@ import {
   setShare,
   QUOTE_STATUSES,
   DISCOUNT_TYPES,
+  GST_TREATMENTS,
   type QuoteStatus,
   type DiscountType,
+  type GstTreatment,
 } from "@/lib/data/quotations";
+import { deriveTreatment } from "@/lib/quotations-model";
 import { searchItems } from "@/lib/data/items";
 import type { ItemRef } from "@/lib/items-model";
 
@@ -72,13 +75,29 @@ export async function createQuotationAction(
 export async function updateMetaAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const seller_state = (formData.get("seller_state") as string) ?? null;
+  const place_of_supply = (formData.get("place_of_supply") as string) ?? null;
+
+  // Treatment: "auto" derives intra/inter from the two states (falling back to
+  // intra when undeterminable); an explicit intra|inter is honoured as an override.
+  const rawTreatment = String(formData.get("gst_treatment") ?? "");
+  let gst_treatment: GstTreatment | undefined;
+  if (rawTreatment === "auto") {
+    gst_treatment = deriveTreatment(seller_state, place_of_supply) ?? "intra";
+  } else if (GST_TREATMENTS.includes(rawTreatment as GstTreatment)) {
+    gst_treatment = rawTreatment as GstTreatment;
+  }
+
   await updateQuotationMeta(id, {
     title: (formData.get("title") as string) || undefined,
     customer_name: (formData.get("customer_name") as string) ?? null,
     customer_phone: (formData.get("customer_phone") as string) ?? null,
     customer_email: (formData.get("customer_email") as string) ?? null,
     site_address: (formData.get("site_address") as string) ?? null,
-    place_of_supply: (formData.get("place_of_supply") as string) ?? null,
+    place_of_supply,
+    seller_state,
+    gst_treatment,
+    works_contract: formData.get("works_contract") != null,
     notes: (formData.get("notes") as string) ?? null,
     terms: (formData.get("terms") as string) ?? null,
     valid_until: (formData.get("valid_until") as string) || null,

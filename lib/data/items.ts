@@ -9,7 +9,10 @@ import {
   type ItemRef,
   type ItemType,
   type Uom,
+  type BulkItemOutcome,
+  type BulkCreateResult,
 } from "@/lib/items-model";
+import { parseItemsCsv, type CsvItemValues } from "@/lib/items-csv";
 
 /**
  * Item Master data module — follows the Leads reference pattern exactly: no table
@@ -29,6 +32,8 @@ export {
   type ItemRef,
   type ItemType,
   type Uom,
+  type BulkItemOutcome,
+  type BulkCreateResult,
 };
 
 const COLS =
@@ -215,4 +220,101 @@ export async function setItemActive(
     .table("items")
     .updateById(id, { is_active: isActive, updated_at: new Date().toISOString() });
   return error ? { error: error.message } : {};
+}
+
+/**
+ * Bulk-import items from CSV text. Parses + validates client-side-style, then
+ * inserts only the new ones through the SAME createItem path (which also enforces
+ * name/code dedupe and stamps org_id via withOrg). Every failure is reported
+ * per-row — nothing is silently dropped.
+ */
+export async function bulkCreateItems(csv: string): Promise<BulkCreateResult> {
+  const { rows } = parseItemsCsv(csv);
+
+  // Snapshot the org's existing catalogue to flag duplicates up-front.
+  const { db } = await withOrg();
+  const { data, error } = await db.table("items").select("name_key, code");
+  if (error) throw error;
+  const existing = (data ?? []) as unknown as { name_key: string; code: string | null }[];
+  const existingNameKeys = new Set(existing.map((r) => r.name_key));
+  const existingCodes = new Set(
+    existing.map((r) => r.code).filter((c): c is string => !!c),
+  );
+
+  // Track what we've already accepted within this batch.
+  const usedNameKeys = new Set<string>();
+  const usedCodes = new Set<string>();
+
+  const outcomes: BulkItemOutcome[] = [];
+
+  for (const row of rows) {
+    if (row.status === "error") {
+      outcomes.push({
+        index: row.index,
+        name: row.values.name,
+        status: "error",
+        message: row.errors.join("; "),
+      });
+      continue;
+    }
+
+    const key = row.nameKey;
+    const code = codeKey(row.values.code);
+
+    if (usedNameKeys.has(key) || existingNameKeys.has(key)) {
+      outcomes.push({
+        index: row.index,
+        name: row.values.name,
+        status: "skipped_duplicate",
+        message: "An item with this name already exists.",
+      });
+      continue;
+    }
+    if (code && (usedCodes.has(code) || existingCodes.has(code))) {
+      outcomes.push({
+        index: row.index,
+        name: row.values.name,
+        status: "skipped_duplicate",
+        message: `An item with code "${code}" already exists.`,
+      });
+      continue;
+    }
+
+    const input: CsvItemValues = row.values;
+    const res = await createItem({
+      name: input.name,
+      code: input.code,
+      type: input.type,
+      category: input.category,
+      brand: input.brand,
+      base_uom: input.base_uom,
+      base_rate: input.base_rate,
+      hsn_sac: input.hsn_sac,
+      tax_rate: input.tax_rate,
+      description: input.description,
+    });
+
+    if ("error" in res) {
+      outcomes.push({
+        index: row.index,
+        name: row.values.name,
+        status: "error",
+        message: res.error,
+      });
+      continue;
+    }
+
+    usedNameKeys.add(key);
+    if (code) usedCodes.add(code);
+    outcomes.push({ index: row.index, name: row.values.name, status: "created" });
+  }
+
+  return {
+    outcomes,
+    summary: {
+      created: outcomes.filter((o) => o.status === "created").length,
+      skipped: outcomes.filter((o) => o.status === "skipped_duplicate").length,
+      errors: outcomes.filter((o) => o.status === "error").length,
+    },
+  };
 }

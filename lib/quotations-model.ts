@@ -30,6 +30,10 @@ export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
 export const DISCOUNT_TYPES = ["amount", "percent"] as const;
 export type DiscountType = (typeof DISCOUNT_TYPES)[number];
 
+/** GST supply treatment (Indian): intra-state → CGST+SGST, inter-state → IGST. */
+export const GST_TREATMENTS = ["intra", "inter"] as const;
+export type GstTreatment = (typeof GST_TREATMENTS)[number];
+
 export interface Quotation {
   id: string;
   lead_id: string | null;
@@ -44,11 +48,17 @@ export interface Quotation {
   customer_email: string | null;
   site_address: string | null;
   place_of_supply: string | null;
+  seller_state: string | null;
+  gst_treatment: GstTreatment;
+  works_contract: boolean;
   currency: string;
   subtotal: number;
   discount_total: number;
   taxable_total: number;
   tax_total: number;
+  cgst_total: number;
+  sgst_total: number;
+  igst_total: number;
   grand_total: number;
   cost_total: number;
   margin_total: number;
@@ -184,4 +194,150 @@ export function computeQuoteTotals(
 export function marginPct(taxable_total: number, cost_total: number): number {
   if (!taxable_total) return 0;
   return round2(((taxable_total - cost_total) / taxable_total) * 100);
+}
+
+/* ── Indian GST supply model (place-of-supply → CGST/SGST vs IGST) ─────────── */
+
+/**
+ * States & UTs with their 2-digit GST state codes. Client-safe reference data
+ * shared by the quotation forms and the tax engine. (Kept in the pricing model
+ * so the split logic and its data live — and are tested — together.)
+ */
+export const INDIAN_STATES: ReadonlyArray<{ code: string; name: string }> = [
+  { code: "01", name: "Jammu & Kashmir" },
+  { code: "02", name: "Himachal Pradesh" },
+  { code: "03", name: "Punjab" },
+  { code: "04", name: "Chandigarh" },
+  { code: "05", name: "Uttarakhand" },
+  { code: "06", name: "Haryana" },
+  { code: "07", name: "Delhi" },
+  { code: "08", name: "Rajasthan" },
+  { code: "09", name: "Uttar Pradesh" },
+  { code: "10", name: "Bihar" },
+  { code: "11", name: "Sikkim" },
+  { code: "12", name: "Arunachal Pradesh" },
+  { code: "13", name: "Nagaland" },
+  { code: "14", name: "Manipur" },
+  { code: "15", name: "Mizoram" },
+  { code: "16", name: "Tripura" },
+  { code: "17", name: "Meghalaya" },
+  { code: "18", name: "Assam" },
+  { code: "19", name: "West Bengal" },
+  { code: "20", name: "Jharkhand" },
+  { code: "21", name: "Odisha" },
+  { code: "22", name: "Chhattisgarh" },
+  { code: "23", name: "Madhya Pradesh" },
+  { code: "24", name: "Gujarat" },
+  { code: "26", name: "Dadra & Nagar Haveli and Daman & Diu" },
+  { code: "27", name: "Maharashtra" },
+  { code: "29", name: "Karnataka" },
+  { code: "30", name: "Goa" },
+  { code: "31", name: "Lakshadweep" },
+  { code: "32", name: "Kerala" },
+  { code: "33", name: "Tamil Nadu" },
+  { code: "34", name: "Puducherry" },
+  { code: "35", name: "Andaman & Nicobar Islands" },
+  { code: "36", name: "Telangana" },
+  { code: "37", name: "Andhra Pradesh" },
+  { code: "38", name: "Ladakh" },
+];
+
+/**
+ * Resolve a free-text / dropdown state value to a canonical state code.
+ * Tolerant of the historic free-text `place_of_supply` (accepts the name, the
+ * 2-digit code, or a "27-Maharashtra" combo). Returns null when unrecognised —
+ * the caller then leaves the stored treatment untouched rather than guessing.
+ */
+export function normalizeState(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const s = String(input).trim().toLowerCase();
+  if (!s) return null;
+  for (const st of INDIAN_STATES) {
+    if (
+      s === st.name.toLowerCase() ||
+      s === st.code ||
+      s.startsWith(`${st.code}-`) ||
+      s.startsWith(`${st.code} `) ||
+      s === `${st.code}-${st.name.toLowerCase()}`
+    ) {
+      return st.code;
+    }
+  }
+  return null;
+}
+
+/**
+ * Auto-derive the GST treatment from seller vs buyer state. intra when both
+ * resolve to the SAME state, inter when they differ, null when either is
+ * unknown (so an explicit override / stored default wins).
+ */
+export function deriveTreatment(
+  sellerState: string | null | undefined,
+  placeOfSupply: string | null | undefined,
+): GstTreatment | null {
+  const a = normalizeState(sellerState);
+  const b = normalizeState(placeOfSupply);
+  if (!a || !b) return null;
+  return a === b ? "intra" : "inter";
+}
+
+export interface GstSplit {
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/**
+ * Partition a total GST amount into CGST/SGST (intra-state) or IGST (inter-state).
+ * CGST and SGST are each exactly half of the GST for every slab, so splitting the
+ * aggregate is correct; sgst absorbs the rounding remainder so cgst+sgst === tax.
+ */
+export function splitGst(taxTotal: number, treatment: GstTreatment): GstSplit {
+  const tax = round2(Number(taxTotal) || 0);
+  if (treatment === "inter") return { cgst: 0, sgst: 0, igst: tax };
+  const cgst = round2(tax / 2);
+  const sgst = round2(tax - cgst);
+  return { cgst, sgst, igst: 0 };
+}
+
+export interface GstRateRow extends GstSplit {
+  rate: number;
+  taxable: number;
+  tax: number;
+}
+
+/**
+ * Rate-wise GST summary — what a compliant Indian quote/invoice shows: one row
+ * per GST slab (12/18/28…) with its taxable value and CGST/SGST or IGST. The
+ * rows foot to the header totals exactly (per-slab splits sum to the aggregate).
+ */
+export function gstRateSummary(
+  lines: Array<{ tax_rate: number; taxable: number; tax_amount: number }>,
+  treatment: GstTreatment,
+): GstRateRow[] {
+  const map = new Map<number, { taxable: number; tax: number }>();
+  for (const l of lines) {
+    const rate = Number(l.tax_rate) || 0;
+    const cur = map.get(rate) ?? { taxable: 0, tax: 0 };
+    cur.taxable += Number(l.taxable) || 0;
+    cur.tax += Number(l.tax_amount) || 0;
+    map.set(rate, cur);
+  }
+  return [...map.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([rate, v]) => {
+      const s = splitGst(v.tax, treatment);
+      return { rate, taxable: round2(v.taxable), tax: round2(v.tax), ...s };
+    });
+}
+
+/** Header CGST/SGST/IGST totals, derived so they foot to the rate summary. */
+export function computeGstTotals(
+  lines: Array<{ tax_rate: number; taxable: number; tax_amount: number }>,
+  treatment: GstTreatment,
+): GstSplit {
+  return gstRateSummary(lines, treatment).reduce(
+    (a, r) => ({ cgst: round2(a.cgst + r.cgst), sgst: round2(a.sgst + r.sgst), igst: round2(a.igst + r.igst) }),
+    { cgst: 0, sgst: 0, igst: 0 },
+  );
 }

@@ -5,13 +5,16 @@ import { admin } from "@/lib/supabase/admin";
 import {
   computeLine,
   computeQuoteTotals,
+  computeGstTotals,
   QUOTE_STATUSES,
   DISCOUNT_TYPES,
+  GST_TREATMENTS,
   type Quotation,
   type QuotationSection,
   type QuotationLine,
   type QuoteStatus,
   type DiscountType,
+  type GstTreatment,
 } from "@/lib/quotations-model";
 
 /**
@@ -27,11 +30,13 @@ import {
 export {
   QUOTE_STATUSES,
   DISCOUNT_TYPES,
+  GST_TREATMENTS,
   type Quotation,
   type QuotationSection,
   type QuotationLine,
   type QuoteStatus,
   type DiscountType,
+  type GstTreatment,
 };
 
 /* ── Indian financial-year numbering (register: add FY segment) ───────────── */
@@ -156,6 +161,9 @@ export async function updateQuotationMeta(
     customer_email?: string | null;
     site_address?: string | null;
     place_of_supply?: string | null;
+    seller_state?: string | null;
+    gst_treatment?: GstTreatment;
+    works_contract?: boolean;
     notes?: string | null;
     terms?: string | null;
     valid_until?: string | null;
@@ -166,7 +174,10 @@ export async function updateQuotationMeta(
     ...patch,
     updated_at: new Date().toISOString(),
   });
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+  // The GST treatment drives the CGST/SGST vs IGST split — re-partition tax when it changes.
+  if (patch.gst_treatment !== undefined) await recomputeQuotation(id);
+  return {};
 }
 
 export async function setQuotationStatus(
@@ -309,11 +320,13 @@ export async function deleteLine(id: string, quotationId: string): Promise<{ err
  */
 export async function recomputeQuotation(quotationId: string): Promise<void> {
   const { db } = await withOrg();
-  const { data: lines } = await db
-    .table("quotation_lines")
-    .select("*")
-    .eq("quotation_id", quotationId);
+  const [{ data: lines }, { data: header }] = await Promise.all([
+    db.table("quotation_lines").select("*").eq("quotation_id", quotationId),
+    db.table("quotations").select("gst_treatment").eq("id", quotationId).maybeSingle(),
+  ]);
   const rows = (lines ?? []) as unknown as QuotationLine[];
+  const treatment: GstTreatment =
+    ((header as { gst_treatment?: GstTreatment } | null)?.gst_treatment ?? "intra");
 
   const computed = rows.map((l) => {
     const t = computeLine({
@@ -324,7 +337,7 @@ export async function recomputeQuotation(quotationId: string): Promise<void> {
       tax_rate: l.tax_rate,
       cost_rate: l.cost_rate,
     });
-    return { id: l.id, t };
+    return { id: l.id, tax_rate: Number(l.tax_rate) || 0, t };
   });
 
   // Persist any line whose stored snapshot drifted from the engine result.
@@ -335,8 +348,16 @@ export async function recomputeQuotation(quotationId: string): Promise<void> {
   );
 
   const totals = computeQuoteTotals(computed.map((c) => c.t));
+  // Partition the (already-summed) tax into CGST/SGST or IGST per the treatment.
+  const gst = computeGstTotals(
+    computed.map((c) => ({ tax_rate: c.tax_rate, taxable: c.t.taxable, tax_amount: c.t.tax_amount })),
+    treatment,
+  );
   await db.table("quotations").updateById(quotationId, {
     ...totals,
+    cgst_total: gst.cgst,
+    sgst_total: gst.sgst,
+    igst_total: gst.igst,
     updated_at: new Date().toISOString(),
   });
 }
@@ -367,6 +388,9 @@ export async function createNewVersion(
     customer_email: q.customer_email,
     site_address: q.site_address,
     place_of_supply: q.place_of_supply,
+    seller_state: q.seller_state,
+    gst_treatment: q.gst_treatment,
+    works_contract: q.works_contract,
     notes: q.notes,
     terms: q.terms,
     valid_until: q.valid_until,
@@ -442,19 +466,23 @@ export async function getSharedQuotation(token: string): Promise<{
   quotation: Omit<Quotation, "cost_total" | "margin_total" | "lead_id" | "party_id">;
   sections: QuotationSection[];
   lines: Array<Omit<QuotationLine, "cost_rate" | "line_cost" | "item_id">>;
+  seller: { name: string | null; gstin: string | null } | null;
 } | null> {
   if (!token) return null;
+  // org_id is selected internally to brand the document with the seller's business
+  // name; it is stripped from the returned object (never exposed to the recipient).
   const { data: q } = await admin
     .from("quotations")
     .select(
-      "id, number, version_group, version, title, status, customer_name, customer_phone, customer_email, site_address, place_of_supply, currency, subtotal, discount_total, taxable_total, tax_total, grand_total, notes, terms, valid_until, share_token, share_enabled, created_at, updated_at",
+      "id, org_id, number, version_group, version, title, status, customer_name, customer_phone, customer_email, site_address, place_of_supply, seller_state, gst_treatment, works_contract, currency, subtotal, discount_total, taxable_total, tax_total, cgst_total, sgst_total, igst_total, grand_total, notes, terms, valid_until, share_token, share_enabled, created_at, updated_at",
     )
     .eq("share_token", token)
     .eq("share_enabled", true)
     .maybeSingle();
   if (!q) return null;
 
-  const quotationId = (q as { id: string }).id;
+  const { org_id, ...quotationPublic } = q as Record<string, unknown> & { org_id: string };
+  const quotationId = quotationPublic.id as string;
   const [{ data: sections }, { data: lines }] = await Promise.all([
     admin.from("quotation_sections").select("id, quotation_id, title, sort_order").eq("quotation_id", quotationId).order("sort_order", { ascending: true }),
     admin
@@ -466,9 +494,16 @@ export async function getSharedQuotation(token: string): Promise<{
       .order("sort_order", { ascending: true }),
   ]);
 
+  const { data: org } = await admin
+    .from("orgs")
+    .select("name, gstin")
+    .eq("id", org_id)
+    .maybeSingle();
+
   return {
-    quotation: q as never,
+    quotation: quotationPublic as never,
     sections: (sections ?? []) as unknown as QuotationSection[],
     lines: (lines ?? []) as never,
+    seller: (org as { name: string | null; gstin: string | null } | null) ?? null,
   };
 }

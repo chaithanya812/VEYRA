@@ -19,6 +19,8 @@ export const TENANT_TABLES = [
   "quotations",
   "quotation_sections",
   "quotation_lines",
+  "subscriptions",
+  "usage_events",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
@@ -27,5 +29,5 @@ export type TenantTable = (typeof TENANT_TABLES)[number];
  * Platform tables that are NOT org-scoped (they define or cross tenancy).
  * Accessed by the platform layer only, never by feature modules.
  */
-export const PLATFORM_TABLES = ["orgs", "app_users"] as const;
+export const PLATFORM_TABLES = ["orgs", "app_users", "plans"] as const;
 export type PlatformTable = (typeof PLATFORM_TABLES)[number];

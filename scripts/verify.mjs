@@ -186,6 +186,79 @@ async function main() {
   });
   check("duplicate share_token across orgs is rejected", dupToken.error !== null, dupToken.error?.code || "");
 
+  // (10) GST v2 — CGST/SGST (intra) vs IGST (inter) split round-trips + foots.
+  const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+  const taxTotal = round2(7348.32 + 349.92); // the two A lines @ 18% → 7698.24
+  const cgst = round2(taxTotal / 2);
+  const sgst = round2(taxTotal - cgst);
+  await sb
+    .from("quotations")
+    .update({
+      taxable_total: 42768,
+      tax_total: taxTotal,
+      gst_treatment: "intra",
+      works_contract: true,
+      cgst_total: cgst,
+      sgst_total: sgst,
+      igst_total: 0,
+    })
+    .eq("id", qa.id);
+  const { data: qaIntra } = await sb
+    .from("quotations")
+    .select("gst_treatment, works_contract, tax_total, cgst_total, sgst_total, igst_total")
+    .eq("id", qa.id)
+    .single();
+  check(
+    "intra-state split persists and CGST+SGST foots to tax_total",
+    round2(Number(qaIntra.cgst_total) + Number(qaIntra.sgst_total)) === Number(qaIntra.tax_total) &&
+      Number(qaIntra.igst_total) === 0,
+    `${qaIntra.cgst_total}+${qaIntra.sgst_total} vs ${qaIntra.tax_total}`,
+  );
+  check("works_contract flag persists on the quote", qaIntra.works_contract === true, String(qaIntra.works_contract));
+
+  await sb
+    .from("quotations")
+    .update({ gst_treatment: "inter", cgst_total: 0, sgst_total: 0, igst_total: taxTotal })
+    .eq("id", qa.id);
+  const { data: qaInter } = await sb
+    .from("quotations")
+    .select("gst_treatment, tax_total, cgst_total, sgst_total, igst_total")
+    .eq("id", qa.id)
+    .single();
+  check(
+    "inter-state routes the full GST to IGST",
+    Number(qaInter.igst_total) === Number(qaInter.tax_total) &&
+      Number(qaInter.cgst_total) === 0 &&
+      Number(qaInter.sgst_total) === 0,
+    `igst ${qaInter.igst_total} vs tax ${qaInter.tax_total}`,
+  );
+
+  // (12) Subscription + append-only usage ledger (REQ-04).
+  await sb.from("subscriptions").insert([
+    { org_id: A.id, plan_code: "trial", status: "trialing" },
+    { org_id: B.id, plan_code: "trial", status: "trialing" },
+  ]);
+  const dupSub = await sb.from("subscriptions").insert({ org_id: A.id, plan_code: "trial" });
+  check("one subscription per org (unique org_id) enforced", dupSub.error !== null, dupSub.error?.code || "");
+
+  await sb.from("usage_events").insert([
+    { org_id: A.id, metric: "quotations", quantity: 1 },
+    { org_id: A.id, metric: "quotations", quantity: 1 },
+    { org_id: A.id, metric: "items", quantity: 3 },
+    { org_id: B.id, metric: "quotations", quantity: 5 },
+  ]);
+  const { data: aUse } = await sb.from("usage_events").select("metric, quantity").eq("org_id", A.id);
+  const aRows = aUse ?? [];
+  const aQuot = aRows.filter((r) => r.metric === "quotations").reduce((s, r) => s + Number(r.quantity), 0);
+  check("usage ledger is org-scoped (A has exactly its 3 events)", aRows.length === 3, `got ${aRows.length}`);
+  check("usage aggregates from the append-only ledger (A quotations = 2)", aQuot === 2, `got ${aQuot}`);
+  const { data: planRow } = await sb.from("plans").select("code, limits").eq("code", "trial").maybeSingle();
+  check(
+    "trial plan seeded with lifetime limits",
+    !!planRow && planRow.limits && typeof planRow.limits === "object" && Number(planRow.limits.quotations) > 0,
+    "",
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
