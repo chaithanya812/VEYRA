@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileText, Plus } from "lucide-react";
+import { FileText, Plus, LayoutTemplate } from "lucide-react";
 import { listQuotations, quotationCounts } from "@/lib/data/quotations";
 import { statusTone, statusLabel } from "@/lib/quotations-ui";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,18 @@ export default async function QuotationsPage() {
         title="Quotations"
         subtitle={`${counts.total} quotations · ${inr(counts.openValue)} open value`}
         actions={
-          <Link href="/quotations/new">
-            <Button variant="primary">
-              <Plus className="size-4" /> New quotation
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/quotations/templates">
+              <Button variant="secondary">
+                <LayoutTemplate className="size-4" /> Templates
+              </Button>
+            </Link>
+            <Link href="/quotations/new">
+              <Button variant="primary">
+                <Plus className="size-4" /> New quotation
+              </Button>
+            </Link>
+          </div>
         }
       />
 

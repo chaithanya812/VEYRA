@@ -21,6 +21,9 @@ export const TENANT_TABLES = [
   "quotation_lines",
   "subscriptions",
   "usage_events",
+  "quotation_templates",
+  "quotation_template_sections",
+  "quotation_template_lines",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

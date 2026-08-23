@@ -22,6 +22,11 @@ import {
   type DiscountType,
   type GstTreatment,
 } from "@/lib/data/quotations";
+import {
+  createTemplateFromQuotation,
+  instantiateTemplate,
+  deleteTemplate,
+} from "@/lib/data/quotation-templates";
 import { deriveTreatment } from "@/lib/quotations-model";
 import { searchItems } from "@/lib/data/items";
 import type { ItemRef } from "@/lib/items-model";
@@ -266,4 +271,50 @@ export async function deleteLineAction(formData: FormData) {
   if (!id || !quotationId) return;
   await deleteLine(id, quotationId);
   revalidatePath(`/quotations/${quotationId}`);
+}
+
+/* ── Templates / presets ("3BHK Premium") ─────────────────────────────────── */
+const templateSchema = z.object({
+  quotationId: z.string().min(1),
+  name: z.string().min(1, "Template name is required"),
+  description: z.string().optional(),
+});
+
+export async function saveAsTemplateAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const parsed = templateSchema.safeParse({
+    quotationId: formData.get("quotationId"),
+    name: formData.get("name"),
+    description: formData.get("description") || undefined,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const result = await createTemplateFromQuotation(
+    parsed.data.quotationId,
+    parsed.data.name,
+    parsed.data.description,
+  );
+  if ("error" in result) return { error: result.error };
+  revalidatePath("/quotations/templates");
+  redirect("/quotations/templates");
+}
+
+export async function newQuotationFromTemplateAction(formData: FormData) {
+  const templateId = String(formData.get("templateId") ?? "");
+  if (!templateId) return;
+  const result = await instantiateTemplate(templateId);
+  if ("id" in result) {
+    revalidatePath("/quotations");
+    redirect(`/quotations/${result.id}`);
+  }
+}
+
+export async function deleteTemplateAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await deleteTemplate(id);
+  revalidatePath("/quotations/templates");
 }

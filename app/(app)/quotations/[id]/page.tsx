@@ -13,6 +13,7 @@ import type { QuotationPdfData } from "@/lib/quotations-pdf";
 import { fmtDate } from "@/lib/utils";
 import { QuoteBuilder } from "../quote-builder";
 import { setStatusAction, setShareAction, newVersionAction } from "../actions";
+import { SaveAsTemplateButton } from "../save-as-template";
 
 export default async function QuotationDetailPage({
   params,
@@ -126,6 +127,10 @@ export default async function QuotationDetailPage({
             <Copy className="size-3.5" /> /q/{quotation.share_token.slice(0, 10)}…
           </a>
         )}
+
+        <div className="h-6 w-px bg-[var(--color-border)]" />
+
+        <SaveAsTemplateButton quotationId={quotation.id} />
 
         <div className="h-6 w-px bg-[var(--color-border)]" />
 

@@ -259,6 +259,38 @@ async function main() {
     "",
   );
 
+  // (13) Quotation templates (Wave 2) — org-scoped structure snapshots.
+  const { data: tplA } = await sb
+    .from("quotation_templates")
+    .insert({ org_id: A.id, name: "A 3BHK Premium" })
+    .select("id")
+    .single();
+  await sb.from("quotation_templates").insert({ org_id: B.id, name: "B 2BHK" });
+  const { data: tsecA } = await sb
+    .from("quotation_template_sections")
+    .insert({ org_id: A.id, template_id: tplA.id, title: "Wood Work", sort_order: 0 })
+    .select("id")
+    .single();
+  await sb.from("quotation_template_lines").insert({
+    org_id: A.id,
+    template_id: tplA.id,
+    section_id: tsecA.id,
+    title: "Wardrobe",
+    qty: 10,
+    uom: "sqft",
+    unit_price: 1850,
+    tax_rate: 18,
+  });
+  const { data: aTpl } = await sb.from("quotation_templates").select("id").eq("org_id", A.id);
+  const { data: bTpl } = await sb.from("quotation_templates").select("id").eq("org_id", B.id);
+  check(
+    "quotation templates are org-scoped (A=1, B=1)",
+    (aTpl ?? []).length === 1 && (bTpl ?? []).length === 1,
+    `A=${(aTpl ?? []).length} B=${(bTpl ?? []).length}`,
+  );
+  const { data: aTplLines } = await sb.from("quotation_template_lines").select("id").eq("org_id", A.id);
+  check("template lines are org-scoped (A has 1)", (aTplLines ?? []).length === 1, `got ${(aTplLines ?? []).length}`);
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
