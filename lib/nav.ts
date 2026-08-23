@@ -3,6 +3,8 @@ import {
   LayoutDashboard,
   Users,
   Phone,
+  KanbanSquare,
+  CalendarClock,
   FileText,
   FolderKanban,
   ShoppingCart,
@@ -11,6 +13,9 @@ import {
   Factory,
   Package,
   Truck,
+  ClipboardList,
+  ClipboardCheck,
+  Landmark,
   Settings,
 } from "lucide-react";
 
@@ -40,6 +45,8 @@ export const NAV: NavSection[] = [
     heading: "Sales",
     items: [
       { label: "Leads", href: "/leads", icon: Users },
+      { label: "Pipeline", href: "/pipeline", icon: KanbanSquare },
+      { label: "Follow-ups", href: "/followups", icon: CalendarClock },
       { label: "Communication", href: "/communication", icon: Phone },
       { label: "Quotations", href: "/quotations", icon: FileText },
     ],
@@ -54,13 +61,18 @@ export const NAV: NavSection[] = [
       { label: "Vendors", href: "/vendors", icon: Truck },
       { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "Procurement", href: "/procurement", icon: ShoppingCart },
-      { label: "Inventory", href: "/inventory", icon: Boxes, soon: true },
+      { label: "RFQ", href: "/rfq", icon: ClipboardList },
+      { label: "Orders", href: "/orders", icon: ClipboardCheck },
+      { label: "Inventory", href: "/inventory", icon: Boxes },
       { label: "Production", href: "/production", icon: Factory, soon: true },
     ],
   },
   {
     heading: "Finance",
-    items: [{ label: "Billing", href: "/billing", icon: Wallet }],
+    items: [
+      { label: "Finance", href: "/finance", icon: Landmark },
+      { label: "Billing", href: "/billing", icon: Wallet },
+    ],
   },
   {
     heading: "Admin",
