@@ -9,6 +9,7 @@ import {
   Wallet,
   Factory,
   Package,
+  Truck,
   Settings,
 } from "lucide-react";
 
@@ -48,8 +49,9 @@ export const NAV: NavSection[] = [
   {
     heading: "Operations",
     items: [
-      { label: "Projects", href: "/projects", icon: FolderKanban, soon: true },
-      { label: "Procurement", href: "/procurement", icon: ShoppingCart, soon: true },
+      { label: "Vendors", href: "/vendors", icon: Truck },
+      { label: "Projects", href: "/projects", icon: FolderKanban },
+      { label: "Procurement", href: "/procurement", icon: ShoppingCart },
       { label: "Inventory", href: "/inventory", icon: Boxes, soon: true },
       { label: "Production", href: "/production", icon: Factory, soon: true },
     ],
@@ -60,6 +62,6 @@ export const NAV: NavSection[] = [
   },
   {
     heading: "Admin",
-    items: [{ label: "Settings", href: "/settings", icon: Settings, soon: true }],
+    items: [{ label: "Settings", href: "/settings", icon: Settings }],
   },
 ];
