@@ -16,6 +16,10 @@ import {
   ClipboardList,
   ClipboardCheck,
   Landmark,
+  Image,
+  BarChart3,
+  HardHat,
+  CheckCircle2,
   Settings,
 } from "lucide-react";
 
@@ -39,7 +43,7 @@ export interface NavSection {
  */
 export const NAV: NavSection[] = [
   {
-    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, soon: true }],
+    items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard }],
   },
   {
     heading: "Sales",
@@ -64,6 +68,8 @@ export const NAV: NavSection[] = [
       { label: "RFQ", href: "/rfq", icon: ClipboardList },
       { label: "Orders", href: "/orders", icon: ClipboardCheck },
       { label: "Inventory", href: "/inventory", icon: Boxes },
+      { label: "Design", href: "/design", icon: Image },
+      { label: "Site", href: "/site", icon: HardHat },
       { label: "Production", href: "/production", icon: Factory, soon: true },
     ],
   },
@@ -76,6 +82,10 @@ export const NAV: NavSection[] = [
   },
   {
     heading: "Admin",
-    items: [{ label: "Settings", href: "/settings", icon: Settings }],
+    items: [
+      { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
+      { label: "Reports", href: "/reports", icon: BarChart3 },
+      { label: "Settings", href: "/settings", icon: Settings },
+    ],
   },
 ];
