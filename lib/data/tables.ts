@@ -24,6 +24,7 @@ export const TENANT_TABLES = [
   "material_request_items",
   "numbering_series",
   "permissions",
+  "interactions",
   "quotations",
   "quotation_sections",
   "quotation_lines",

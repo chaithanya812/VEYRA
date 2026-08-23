@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   Users,
+  Phone,
   FileText,
   FolderKanban,
   ShoppingCart,
@@ -39,6 +40,7 @@ export const NAV: NavSection[] = [
     heading: "Sales",
     items: [
       { label: "Leads", href: "/leads", icon: Users },
+      { label: "Communication", href: "/communication", icon: Phone },
       { label: "Quotations", href: "/quotations", icon: FileText },
     ],
   },
