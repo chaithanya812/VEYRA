@@ -3,6 +3,7 @@ import { withOrg } from "./with-org";
 import { admin } from "@/lib/supabase/admin";
 import {
   remaining,
+  isOverLimit,
   type Plan,
   type PlanLimits,
   type Subscription,
@@ -110,7 +111,43 @@ export async function usageSummary(): Promise<UsageSummaryRow[]> {
 /** True when the org's subscription has expired (writes are gated read-only). */
 export async function isReadOnly(): Promise<boolean> {
   const { subscription } = await getSubscription();
-  return subscription?.status === "expired";
+  const status = subscription?.status;
+  return status === "expired" || status === "cancelled";
+}
+
+/**
+ * Pre-write gate for a metered create (REQ-04). Blocks when the subscription is
+ * read-only (expired/cancelled) or the metric's lifetime limit is already
+ * reached; otherwise returns {} and the caller records the usage event AFTER a
+ * successful insert. Wiring this into a create path is what makes metering real
+ * — previously recordUsage() had no callers, so the ledger stayed empty and the
+ * read-only banner was never enforced.
+ */
+export async function guardMeteredCreate(
+  metric: UsageMetric,
+): Promise<{ error?: string }> {
+  const { subscription, plan } = await getSubscription();
+  const status = subscription?.status;
+  if (status === "expired" || status === "cancelled") {
+    return {
+      error: "Your plan is read-only. Renew your subscription to add new records.",
+    };
+  }
+  const limit = plan?.limits?.[metric] ?? null;
+  if (limit != null) {
+    const { db } = await withOrg();
+    const { data } = await db.table("usage_events").select("quantity").eq("metric", metric);
+    const used = ((data ?? []) as unknown as { quantity: number | null }[]).reduce(
+      (s, r) => s + (Number(r.quantity) || 0),
+      0,
+    );
+    if (isOverLimit(limit, used)) {
+      return {
+        error: `You've reached your plan's ${metric} limit (${limit}). Upgrade to add more.`,
+      };
+    }
+  }
+  return {};
 }
 
 /* ── Writes ───────────────────────────────────────────────────────────────── */

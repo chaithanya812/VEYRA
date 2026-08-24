@@ -2,6 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { withOrg } from "./with-org";
 import { admin } from "@/lib/supabase/admin";
+import { guardMeteredCreate, recordUsage } from "./subscription";
 import {
   computeLine,
   computeQuoteTotals,
@@ -127,6 +128,11 @@ export async function createQuotation(input: {
 }): Promise<{ id: string } | { error: string }> {
   const { db, ctx } = await withOrg();
 
+  // REQ-04: gate on the subscription (read-only / lifetime limit) before we mint
+  // a quotation, and meter the create on success (below).
+  const gate = await guardMeteredCreate("quotations");
+  if (gate.error) return { error: gate.error };
+
   // Running number with Indian-FY segment, scoped per org.
   const fy = indianFY();
   const { data: existing } = await db
@@ -149,7 +155,10 @@ export async function createQuotation(input: {
     created_by: ctx.userId,
   });
   if (error) return { error: error.message };
-  return { id: (data?.[0] as { id: string }).id };
+  const id = (data?.[0] as { id: string }).id;
+  // Append the usage event (append-only ledger; quota is derived, never a counter).
+  await recordUsage("quotations", 1, id);
+  return { id };
 }
 
 export async function updateQuotationMeta(
