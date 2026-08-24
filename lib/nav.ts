@@ -70,7 +70,7 @@ export const NAV: NavSection[] = [
       { label: "Inventory", href: "/inventory", icon: Boxes },
       { label: "Design", href: "/design", icon: Image },
       { label: "Site", href: "/site", icon: HardHat },
-      { label: "Production", href: "/production", icon: Factory, soon: true },
+      { label: "Production", href: "/production", icon: Factory },
     ],
   },
   {

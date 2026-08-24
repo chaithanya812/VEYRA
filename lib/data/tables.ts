@@ -59,6 +59,10 @@ export const TENANT_TABLES = [
   "quotation_templates",
   "quotation_template_sections",
   "quotation_template_lines",
+  "boms",
+  "bom_lines",
+  "cutlists",
+  "cutlist_panels",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
