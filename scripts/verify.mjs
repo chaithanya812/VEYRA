@@ -473,6 +473,24 @@ async function main() {
   check("site logs are org-scoped (A has 1)", aLogs.length === 1, `got ${aLogs.length}`);
   check("measurement variance computes +20% (quoted 100 → measured 120)", vPct === 20, `got ${vPct}`);
 
+  // ── Production (0020): BOM + Cutlist org-isolation + derived-qty foot ───────
+  const { data: bomA } = await sb.from("boms").insert({ org_id: A.id, title: "Kitchen BOM" }).select().single();
+  await sb.from("boms").insert({ org_id: B.id, title: "B BOM" }); // B leakage guard
+  // qty 10 @ 5% waste → effective_qty 10.5 (server-computed via effectiveQty, stored)
+  await sb.from("bom_lines").insert({ org_id: A.id, bom_id: bomA.id, material_name: "18mm MDF", uom: "sheet", qty: 10, waste_pct: 5, effective_qty: 10.5 });
+  const { data: cutA } = await sb.from("cutlists").insert({ org_id: A.id, bom_id: bomA.id, title: "Kitchen cutlist" }).select().single();
+  // panel 600×400 qty2, band one length-edge + one width-edge
+  await sb.from("cutlist_panels").insert({ org_id: A.id, cutlist_id: cutA.id, panel_name: "Shutter", length_mm: 600, width_mm: 400, qty: 2, grain: "length", edge_l1: true, edge_w1: true });
+  const { data: aBoms } = await sb.from("boms").select("id").eq("org_id", A.id);
+  const { data: aLine } = await sb.from("bom_lines").select("effective_qty").eq("org_id", A.id).single();
+  const { data: p } = await sb.from("cutlist_panels").select("length_mm,width_mm,qty,edge_l1,edge_l2,edge_w1,edge_w2").eq("org_id", A.id).single();
+  const areaSqm = Math.round((p.length_mm / 1000) * (p.width_mm / 1000) * 1000) / 1000; // panelAreaSqm
+  const bandMm = ((p.edge_l1 ? p.length_mm : 0) + (p.edge_l2 ? p.length_mm : 0) + (p.edge_w1 ? p.width_mm : 0) + (p.edge_w2 ? p.width_mm : 0)) * p.qty; // panelBandingMm
+  check("production BOMs are org-scoped (A has 1, no B leak)", aBoms.length === 1, `got ${aBoms.length}`);
+  check("bom_line effective_qty stored = qty×(1+waste%) (10 @5% → 10.5)", Number(aLine.effective_qty) === 10.5, `got ${aLine.effective_qty}`);
+  check("cutlist panel area foots (600×400 → 0.24 sqm)", areaSqm === 0.24, `got ${areaSqm}`);
+  check("cutlist panel banding foots ((600+400)×2 = 2000mm)", bandMm === 2000, `got ${bandMm}`);
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
