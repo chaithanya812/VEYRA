@@ -291,6 +291,188 @@ async function main() {
   const { data: aTplLines } = await sb.from("quotation_template_lines").select("id").eq("org_id", A.id);
   check("template lines are org-scoped (A has 1)", (aTplLines ?? []).length === 1, `got ${(aTplLines ?? []).length}`);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  WAVE 1–3 MODULES — org-isolation + key business rules (Wave-4 QA gap close)
+  //  Every new tenant table proven org-scoped; the pure engine rules that ship
+  //  amounts (landed cost, PO fulfilment state, stock projection, variance)
+  //  proven to round-trip against the real DB.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Grab an A catalogue item id to use as a real reference on procurement lines.
+  const { data: aItemRow } = await sb
+    .from("items").select("id").eq("org_id", A.id).eq("code", "PLY-1").single();
+  const aItemId = aItemRow.id;
+
+  // ── Vendors (0008): name + phone dedupe per org, cross-org reuse allowed ────
+  await sb.from("vendors").insert([
+    { org_id: A.id, name: "A Plywood Co", name_key: nameKey("A Plywood Co"), phone: "+91 90000 11111", phone_key: phoneKey("+91 90000 11111"), category: "Plywood" },
+    { org_id: A.id, name: "A Hardware Mart", name_key: nameKey("A Hardware Mart"), category: "Hardware" },
+    { org_id: B.id, name: "A Plywood Co", name_key: nameKey("A Plywood Co"), category: "Plywood" },
+  ]);
+  const { data: aVend } = await sb.from("vendors").select("id, name").eq("org_id", A.id);
+  const { data: bVend } = await sb.from("vendors").select("id").eq("org_id", B.id);
+  check("org A sees exactly its 2 vendors", aVend.length === 2, `got ${aVend.length}`);
+  check("same vendor name allowed across orgs (B reused A's)", bVend.length === 1, `got ${bVend.length}`);
+  const dupVend = await sb.from("vendors").insert({ org_id: A.id, name: "a  plywood   co", name_key: nameKey("a  plywood   co") });
+  check("duplicate vendor name in same org is rejected", dupVend.error !== null, dupVend.error?.code || "");
+  const dupVendPhone = await sb.from("vendors").insert({ org_id: A.id, name: "A Other", name_key: nameKey("A Other"), phone_key: phoneKey("90000 11111") });
+  check("duplicate vendor phone in same org is rejected", dupVendPhone.error !== null, dupVendPhone.error?.code || "");
+  const aVendId = aVend[0].id;
+
+  // ── Projects (0007): org-scoped ────────────────────────────────────────────
+  await sb.from("projects").insert([
+    { org_id: A.id, name: "A Malviya Nagar 3BHK", stage: "execution", health: "on_track", project_value: 1800000, funds_received: 600000, total_payable: 300000 },
+    { org_id: B.id, name: "B Villa", stage: "planning", health: "on_track", project_value: 0, funds_received: 0, total_payable: 0 },
+  ]);
+  const { data: aProj } = await sb.from("projects").select("name").eq("org_id", A.id);
+  check("org A sees exactly its 1 project (no B leakage)", aProj.length === 1 && !aProj.some((p) => p.name.startsWith("B ")), `got ${aProj.length}`);
+
+  // ── Material Requests (0009): header + catalogue-ref vs flagged ad-hoc line ─
+  const { data: mrA } = await sb.from("material_requests")
+    .insert({ org_id: A.id, title: "A Site MR", project_label: "Malviya Nagar", stage: "requested" }).select("id").single();
+  await sb.from("material_requests").insert({ org_id: B.id, title: "B MR" });
+  await sb.from("material_request_items").insert([
+    { org_id: A.id, mr_id: mrA.id, item_id: aItemId, item_name: "18mm Ply", is_adhoc: false, uom: "sheet", qty: 20 },
+    { org_id: A.id, mr_id: mrA.id, item_id: null, item_name: "Custom bracket", is_adhoc: true, uom: "nos", qty: 8 },
+  ]);
+  const { data: aMr } = await sb.from("material_requests").select("id").eq("org_id", A.id);
+  const { data: aMrItems } = await sb.from("material_request_items").select("item_id, is_adhoc").eq("org_id", A.id);
+  check("org A sees exactly its 1 material request", aMr.length === 1, `got ${aMr.length}`);
+  check("MR lines are org-scoped (A has 2)", aMrItems.length === 2, `got ${aMrItems.length}`);
+  check("uncatalogued MR line is flagged ad-hoc (item_id null ⇔ is_adhoc)",
+    aMrItems.every((l) => (l.item_id === null) === (l.is_adhoc === true)));
+
+  // ── RFQ (0012): items + bid; landed-cost line total round-trips ────────────
+  const { data: rfqA } = await sb.from("rfqs")
+    .insert({ org_id: A.id, title: "A RFQ", mr_id: mrA.id, status: "comparing" }).select("id").single();
+  await sb.from("rfqs").insert({ org_id: B.id, title: "B RFQ" });
+  const { data: rfqItemA } = await sb.from("rfq_items")
+    .insert({ org_id: A.id, rfq_id: rfqA.id, item_id: aItemId, item_name: "18mm Ply", uom: "sheet", qty: 20 }).select("id").single();
+  await sb.from("rfq_vendors").insert({ org_id: A.id, rfq_id: rfqA.id, vendor_id: aVendId, response_status: "submitted" });
+  const { data: bidA } = await sb.from("rfq_bids")
+    .insert({ org_id: A.id, rfq_id: rfqA.id, vendor_id: aVendId, version: 1, entry_mode: "proxy" }).select("id").single();
+  const landed = round2(20 * 1850 + 500); // qty × unit_rate + freight = landedLineTotal
+  await sb.from("rfq_bid_lines").insert({ org_id: A.id, bid_id: bidA.id, rfq_item_id: rfqItemA.id, unit_rate: 1850, tax_pct: 18, freight: 500, line_total: landed });
+  const { data: aRfq } = await sb.from("rfqs").select("id").eq("org_id", A.id);
+  const { data: bidLineA } = await sb.from("rfq_bid_lines").select("line_total").eq("org_id", A.id).single();
+  check("org A sees exactly its 1 RFQ", aRfq.length === 1, `got ${aRfq.length}`);
+  check("RFQ bid line lands at qty×rate+freight (37500)", Number(bidLineA.line_total) === landed, `got ${bidLineA.line_total}`);
+
+  // ── Purchase Orders (0013): amount = Σ lines; order_state derives from receipts ─
+  const poLines = [{ qty: 10, unit_rate: 100 }, { qty: 5, unit_rate: 200 }]; // Σ = 2000
+  const poAmount = round2(poLines.reduce((s, l) => s + round2(l.qty * l.unit_rate), 0));
+  const { data: poA } = await sb.from("purchase_orders")
+    .insert({ org_id: A.id, name: "A PO-1", vendor_id: aVendId, amount: poAmount, order_state: "created", payment_state: "not_initiated" }).select("id").single();
+  await sb.from("purchase_orders").insert({ org_id: B.id, name: "B PO", vendor_id: aVendId });
+  const { data: poL1 } = await sb.from("po_lines")
+    .insert({ org_id: A.id, po_id: poA.id, item_id: aItemId, item_name: "Ply", qty: 10, unit_rate: 100, tax_pct: 18, line_total: round2(10 * 100) }).select("id").single();
+  await sb.from("po_lines").insert({ org_id: A.id, po_id: poA.id, item_name: "Hinge", qty: 5, unit_rate: 200, tax_pct: 18, line_total: round2(5 * 200) });
+  const { data: rcpt } = await sb.from("po_receipts").insert({ org_id: A.id, po_id: poA.id, mode: "admin_override" }).select("id").single();
+  await sb.from("po_receipt_lines").insert({ org_id: A.id, receipt_id: rcpt.id, po_line_id: poL1.id, qty_received: 4 });
+  const { data: aPo } = await sb.from("purchase_orders").select("amount").eq("org_id", A.id).eq("name", "A PO-1").single();
+  const { data: aPoLines } = await sb.from("po_lines").select("qty").eq("org_id", A.id);
+  const { data: aRcptLines } = await sb.from("po_receipt_lines").select("qty_received").eq("org_id", A.id);
+  const ordered = aPoLines.reduce((s, l) => s + Number(l.qty), 0);
+  const received = aRcptLines.reduce((s, l) => s + Number(l.qty_received), 0);
+  const derived = !(received > 0) ? "created" : received < ordered ? "partially_delivered" : "delivered"; // deriveOrderState
+  check("PO amount is the pure sum of line totals (2000)", Number(aPo.amount) === poAmount, `got ${aPo.amount}`);
+  check("PO order_state derives partially_delivered from 4/15 received", derived === "partially_delivered", `ordered=${ordered} received=${received} → ${derived}`);
+
+  // ── Inventory (0014): append-only ledger → projected stock level ────────────
+  const { data: whA } = await sb.from("warehouses").insert({ org_id: A.id, name: "A Store" }).select("id").single();
+  await sb.from("warehouses").insert({ org_id: B.id, name: "B Store" });
+  await sb.from("stock_movements").insert([
+    { org_id: A.id, item_id: aItemId, item_name: "Ply", warehouse_id: whA.id, direction: "in", qty: 100, uom: "sheet", unit_rate: 1850, gst_pct: 18 },
+    { org_id: A.id, item_id: aItemId, item_name: "Ply", warehouse_id: whA.id, direction: "out", qty: 30, uom: "sheet", unit_rate: 1850, gst_pct: 18 },
+    { org_id: A.id, item_id: aItemId, item_name: "Ply", warehouse_id: whA.id, direction: "transfer", qty: 50, uom: "sheet", unit_rate: 1850, gst_pct: 18 },
+  ]);
+  const { data: aMoves } = await sb.from("stock_movements").select("direction, qty").eq("org_id", A.id);
+  const signed = (dir, q) => (dir === "in" ? Number(q) : dir === "out" ? -Number(q) : 0); // signedQty
+  const projected = round2(aMoves.reduce((s, m) => s + signed(m.direction, m.qty), 0));
+  const { data: bMoves } = await sb.from("stock_movements").select("id").eq("org_id", B.id);
+  check("stock ledger is org-scoped (A has 3 movements, B has 0)", aMoves.length === 3 && (bMoves ?? []).length === 0, `A=${aMoves.length} B=${(bMoves ?? []).length}`);
+  check("projected stock = Σ signed qty (100 − 30 + 0(transfer) = 70)", projected === 70, `got ${projected}`);
+
+  // ── Finance (0015): contract + milestones foot to 100% ─────────────────────
+  const { data: ctA } = await sb.from("contracts")
+    .insert({ org_id: A.id, name: "A Contract", amount: 1000000, source: "client", project_label: "Malviya Nagar" }).select("id").single();
+  await sb.from("contracts").insert({ org_id: B.id, name: "B Contract", amount: 500000 });
+  await sb.from("milestones").insert([
+    { org_id: A.id, contract_id: ctA.id, seq: 1, name: "Advance", pct: 40, amount: 400000, work_done: true },
+    { org_id: A.id, contract_id: ctA.id, seq: 2, name: "On completion", pct: 60, amount: 600000, work_done: false },
+  ]);
+  await sb.from("payments").insert([
+    { org_id: A.id, contract_id: ctA.id, direction: "inflow", amount: 400000, mode: "bank_transfer" },
+    { org_id: B.id, direction: "inflow", amount: 100000 },
+  ]);
+  const { data: aMs } = await sb.from("milestones").select("pct").eq("org_id", A.id);
+  const { data: aPay } = await sb.from("payments").select("direction, amount").eq("org_id", A.id);
+  check("milestones are org-scoped and foot to 100%", aMs.length === 2 && round2(aMs.reduce((s, m) => s + Number(m.pct), 0)) === 100, `Σpct=${aMs.reduce((s, m) => s + Number(m.pct), 0)}`);
+  check("payments are org-scoped (A has 1 inflow of 400000)", aPay.length === 1 && Number(aPay[0].amount) === 400000, `got ${aPay.length}`);
+
+  // ── Pipeline (0016): stage name unique per org; follow-up tied to a lead ────
+  await sb.from("pipeline_stages").insert([
+    { org_id: A.id, name: "New Inquiry", seq: 0, is_won: false },
+    { org_id: A.id, name: "Won", seq: 1, is_won: true },
+  ]);
+  const dupStage = await sb.from("pipeline_stages").insert({ org_id: A.id, name: "New Inquiry", seq: 5 });
+  check("duplicate pipeline stage name in same org is rejected", dupStage.error !== null, dupStage.error?.code || "");
+  const okStageB = await sb.from("pipeline_stages").insert({ org_id: B.id, name: "New Inquiry", seq: 0 });
+  check("same stage name allowed in a different org", okStageB.error === null, okStageB.error?.message || "");
+  await sb.from("follow_ups").insert({ org_id: A.id, lead_id: one.id, due_at: new Date().toISOString(), note: "Call back" });
+  const { data: aFu } = await sb.from("follow_ups").select("id").eq("org_id", A.id);
+  check("follow-ups are org-scoped (A has 1)", aFu.length === 1, `got ${aFu.length}`);
+
+  // ── Interactions (0011): channel-agnostic log, org-scoped ──────────────────
+  await sb.from("interactions").insert([
+    { org_id: A.id, lead_id: one.id, channel: "call", direction: "outbound", status: "completed", duration_sec: 120 },
+    { org_id: A.id, lead_id: one.id, channel: "whatsapp", direction: "inbound", status: "completed", duration_sec: 0 },
+    { org_id: B.id, lead_id: null, channel: "call", direction: "inbound", status: "no_answer", duration_sec: 0 },
+  ]);
+  const { data: aInt } = await sb.from("interactions").select("channel").eq("org_id", A.id);
+  check("interactions are org-scoped (A has 2 across channels)", aInt.length === 2, `got ${aInt.length}`);
+
+  // ── Config (0010): numbering series + permissions uniqueness ────────────────
+  await sb.from("numbering_series").insert({ org_id: A.id, doc_type: "purchase_order", prefix: "VEYRA", fy_segment: true, padding: 4, current_int: 41 });
+  const dupSeries = await sb.from("numbering_series").insert({ org_id: A.id, doc_type: "purchase_order" });
+  check("one numbering series per (org, doc_type) enforced", dupSeries.error !== null, dupSeries.error?.code || "");
+  const { data: roleA } = await sb.from("roles").insert({ org_id: A.id, name: "Site Supervisor" }).select("id").single();
+  await sb.from("permissions").insert({ org_id: A.id, role_id: roleA.id, module: "procurement", action: "view", scope: "org" });
+  const dupPerm = await sb.from("permissions").insert({ org_id: A.id, role_id: roleA.id, module: "procurement", action: "view", scope: "team" });
+  check("permission grant unique per (org, role, module, action)", dupPerm.error !== null, dupPerm.error?.code || "");
+
+  // ── Approvals (0017): one rule per (org, module); threshold decides ─────────
+  await sb.from("approval_rules").insert({ org_id: A.id, module: "procurement", threshold_amount: 50000, is_active: true });
+  const dupRule = await sb.from("approval_rules").insert({ org_id: A.id, module: "procurement", threshold_amount: 99999 });
+  check("one approval rule per (org, module) enforced", dupRule.error !== null, dupRule.error?.code || "");
+  const needsApproval = (amount, threshold, active) => active && Number(amount) > Number(threshold); // needsApproval
+  check("needsApproval: 2000-PO under 50000 threshold does NOT need sign-off", needsApproval(poAmount, 50000, true) === false, "");
+  check("needsApproval: 60000 over 50000 threshold DOES need sign-off", needsApproval(60000, 50000, true) === true, "");
+  await sb.from("approval_requests").insert({ org_id: A.id, module: "procurement", entity_label: "A PO-1", amount: 60000, status: "pending" });
+  const { data: aAppr } = await sb.from("approval_requests").select("status").eq("org_id", A.id);
+  check("approval requests are org-scoped (A has 1 pending)", aAppr.length === 1 && aAppr[0].status === "pending", `got ${aAppr.length}`);
+
+  // ── Design vault (0018): asset + pin comment + sign-off, org-scoped ─────────
+  const { data: assetA } = await sb.from("assets").insert({ org_id: A.id, name: "A Living Render", kind: "render", url: "https://ex/a.png", project_label: "Malviya Nagar" }).select("id").single();
+  await sb.from("assets").insert({ org_id: B.id, name: "B Plan", kind: "2d" });
+  await sb.from("asset_comments").insert({ org_id: A.id, asset_id: assetA.id, x_pct: 42.5, y_pct: 60, body: "Move the TV unit left" });
+  await sb.from("asset_signoffs").insert({ org_id: A.id, asset_id: assetA.id, status: "approved", note: "Client approved" });
+  const { data: aAssets } = await sb.from("assets").select("id").eq("org_id", A.id);
+  const { data: aSign } = await sb.from("asset_signoffs").select("status").eq("org_id", A.id);
+  check("design assets are org-scoped (A has 1)", aAssets.length === 1, `got ${aAssets.length}`);
+  check("asset sign-off persists org-scoped (approved)", aSign.length === 1 && aSign[0].status === "approved", `got ${aSign.length}`);
+
+  // ── Site execution (0019): logs + measurement variance (the wedge) ─────────
+  await sb.from("site_logs").insert({ org_id: A.id, project_label: "Malviya Nagar", work_summary: "Carcass install day 1" });
+  await sb.from("site_logs").insert({ org_id: B.id, work_summary: "B day 1" });
+  await sb.from("site_attendance").insert({ org_id: A.id, project_label: "Malviya Nagar", member_name: "Ramesh", lat: 17.385, lng: 78.4867 });
+  await sb.from("measurement_variance").insert({ org_id: A.id, project_label: "Malviya Nagar", item_name: "Wardrobe", uom: "sqft", quoted_qty: 100, measured_qty: 120 });
+  const { data: aLogs } = await sb.from("site_logs").select("id").eq("org_id", A.id);
+  const { data: aVar } = await sb.from("measurement_variance").select("quoted_qty, measured_qty").eq("org_id", A.id).single();
+  const vPct = (() => { const q = Number(aVar.quoted_qty), m = Number(aVar.measured_qty); return q === 0 ? 0 : Math.round(((m - q) / q) * 1000) / 10; })(); // variancePct
+  check("site logs are org-scoped (A has 1)", aLogs.length === 1, `got ${aLogs.length}`);
+  check("measurement variance computes +20% (quoted 100 → measured 120)", vPct === 20, `got ${vPct}`);
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
