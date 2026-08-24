@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_STAGES,
   followUpBucket,
+  resolveLeadColumnIndex,
   stageColumnTotals,
 } from "./pipeline-model";
 
@@ -87,22 +88,64 @@ describe("stageColumnTotals", () => {
     ]);
   });
 
-  it("ignores leads whose status matches no stage", () => {
+  it("never drops a lead — an unmatched status falls into the first column", () => {
+    // "qualified"→"Design Pitch" isn't in this 3-stage board, and "" matches
+    // nothing; both land in the first column rather than vanishing.
     const leads = [
       { status: "qualified", value: 999 },
       { status: "", value: 888 },
     ];
     expect(stageColumnTotals(leads, stages)).toEqual([
-      { stage: "New Inquiry", count: 0, value: 0 },
+      { stage: "New Inquiry", count: 2, value: 1887 },
       { stage: "Quotation", count: 0, value: 0 },
       { stage: "Won", count: 0, value: 0 },
     ]);
+  });
+
+  it("regression: every real lead status lands in a column on the default board", () => {
+    const leads = [
+      { status: "new", value: 1 },
+      { status: "contacted", value: 2 },
+      { status: "qualified", value: 4 },
+      { status: "quoted", value: 8 },
+      { status: "won", value: 16 },
+      { status: "lost", value: 32 },
+    ];
+    const rows = stageColumnTotals(leads, DEFAULT_STAGES);
+    const by = Object.fromEntries(rows.map((r) => [r.stage, r.count]));
+    // new→New Inquiry, contacted→Contacted, qualified→Design Pitch,
+    // quoted→Quotation, won→Won, lost→Lost. Nothing dropped.
+    expect(by["New Inquiry"]).toBe(1);
+    expect(by["Contacted"]).toBe(1);
+    expect(by["Design Pitch"]).toBe(1);
+    expect(by["Quotation"]).toBe(1);
+    expect(by["Won"]).toBe(1);
+    expect(by["Lost"]).toBe(1);
+    expect(rows.reduce((s, r) => s + r.count, 0)).toBe(6); // all six visible
   });
 
   it("never invents money: totals only ever come from the input rows", () => {
     const leads = [{ status: "new inquiry", value: 1234.56 }];
     const [only] = stageColumnTotals(leads, DEFAULT_STAGES.map((s) => s.name));
     expect(only.value).toBeCloseTo(1234.56);
+  });
+});
+
+describe("resolveLeadColumnIndex", () => {
+  it("matches won/lost by flag even when the stage is renamed", () => {
+    const stages = [
+      { name: "Inbox" },
+      { name: "Closed – Won", is_won: true },
+      { name: "Closed – Lost", is_lost: true },
+    ];
+    expect(resolveLeadColumnIndex("won", stages)).toBe(1);
+    expect(resolveLeadColumnIndex("lost", stages)).toBe(2);
+    // an unknown status still never drops — falls to the first column
+    expect(resolveLeadColumnIndex("qualified", stages)).toBe(0);
+  });
+
+  it("returns -1 only when there are no stages", () => {
+    expect(resolveLeadColumnIndex("new", [])).toBe(-1);
   });
 });
 

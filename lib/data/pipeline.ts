@@ -3,6 +3,7 @@ import { withOrg } from "./with-org";
 import {
   DEFAULT_STAGES,
   followUpBucket,
+  resolveLeadColumnIndex,
   type FollowUp,
   type FollowUpBucket,
   type PipelineStage,
@@ -133,12 +134,13 @@ export async function boardColumns(): Promise<BoardColumn[]> {
     value: 0,
     leads: [],
   }));
-  const byName = new Map<string, BoardColumn>();
-  for (const col of columns) byName.set(col.stage.name.trim().toLowerCase(), col);
-
+  // Map each lead to a column via the shared resolver so every lead is visible
+  // (won/lost by flag, else the status→stage map, else the first column) —
+  // fixes new/qualified/quoted leads silently vanishing from the board.
   for (const lead of leads) {
-    const col = byName.get((lead.status ?? "").trim().toLowerCase());
-    if (!col) continue;
+    const idx = resolveLeadColumnIndex(lead.status, stages);
+    if (idx < 0) continue;
+    const col = columns[idx];
     col.leads.push(lead);
     col.count += 1;
     col.value += Number(lead.value) || 0;

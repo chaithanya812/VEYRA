@@ -217,6 +217,18 @@ export async function renameSection(id: string, title: string): Promise<{ error?
 
 export async function deleteSection(id: string, quotationId: string): Promise<{ error?: string }> {
   const { db } = await withOrg();
+  // Re-parent this section's lines to "ungrouped" (section_id = null) FIRST, or
+  // they keep a dangling section_id and vanish from the builder (which groups by
+  // the live section list + null). Totals are unaffected either way.
+  const { data: orphanLines, error: fetchErr } = await db
+    .table("quotation_lines")
+    .select("id")
+    .eq("section_id", id);
+  if (fetchErr) return { error: fetchErr.message };
+  for (const line of (orphanLines ?? []) as unknown as { id: string }[]) {
+    const { error: reErr } = await db.table("quotation_lines").updateById(line.id, { section_id: null });
+    if (reErr) return { error: reErr.message };
+  }
   const { error } = await db.table("quotation_sections").deleteById(id);
   if (error) return { error: error.message };
   await recomputeQuotation(quotationId);

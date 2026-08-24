@@ -84,27 +84,75 @@ export function followUpBucket(
 }
 
 /**
+ * Canonical lead-status → default-stage-name map (OPS-CRM-002). The lead status
+ * enum (new/contacted/qualified/quoted/won/lost) is coarser than the
+ * configurable stage list, so this maps each status to its home stage. Stages
+ * the status vocabulary doesn't reach (Site Measurement, Negotiation) stay valid
+ * but empty until finer stage tracking lands.
+ */
+export const STATUS_TO_STAGE_NAME: Record<string, string> = {
+  new: "New Inquiry",
+  contacted: "Contacted",
+  qualified: "Design Pitch",
+  quoted: "Quotation",
+  won: "Won",
+  lost: "Lost",
+};
+
+/**
+ * Resolve which board column (index into `stages`) a lead belongs in — the fix
+ * for the status↔stage vocabulary mismatch that used to make new/qualified/
+ * quoted leads invisible. Resolution order:
+ *   1. won/lost → the stage flagged is_won/is_lost (rename-safe),
+ *   2. the STATUS_TO_STAGE_NAME mapping (by stage name),
+ *   3. a direct status==stage-name match (custom stages named like a status),
+ *   4. fallback to the FIRST column — a lead is NEVER dropped off the board.
+ * Returns -1 only when there are no stages at all.
+ */
+export function resolveLeadColumnIndex(
+  status: string,
+  stages: { name: string; is_won?: boolean; is_lost?: boolean }[],
+): number {
+  if (stages.length === 0) return -1;
+  const s = (status ?? "").trim().toLowerCase();
+  if (s === "won") {
+    const i = stages.findIndex((st) => st.is_won);
+    if (i >= 0) return i;
+  }
+  if (s === "lost") {
+    const i = stages.findIndex((st) => st.is_lost);
+    if (i >= 0) return i;
+  }
+  const target = (STATUS_TO_STAGE_NAME[s] ?? s).trim().toLowerCase();
+  const byMap = stages.findIndex((st) => st.name.trim().toLowerCase() === target);
+  if (byMap >= 0) return byMap;
+  const byName = stages.findIndex((st) => st.name.trim().toLowerCase() === s);
+  if (byName >= 0) return byName;
+  return 0; // never drop a lead
+}
+
+/**
  * Per-stage count + Σ value for the Kanban column headers — pure SUMs of
- * leads.value (never invented). Leads whose status matches no stage name
- * (case-insensitive) are not counted in any column. One row per stage name,
- * in the given order.
+ * leads.value (never invented). Uses resolveLeadColumnIndex so every lead lands
+ * in exactly one column. One row per stage name, in the given order.
  */
 export function stageColumnTotals(
   leads: { status: string; value: number | null }[],
-  stageNames: string[],
+  stages: (string | StageSeed)[],
 ): { stage: string; count: number; value: number }[] {
-  const buckets = new Map<string, { count: number; value: number }>();
-  for (const name of stageNames) {
-    buckets.set(name.trim().toLowerCase(), { count: 0, value: 0 });
-  }
+  const seeds: StageSeed[] = stages.map((s) =>
+    typeof s === "string" ? { name: s } : s,
+  );
+  const totals = seeds.map(() => ({ count: 0, value: 0 }));
   for (const lead of leads) {
-    const bucket = buckets.get((lead.status ?? "").trim().toLowerCase());
-    if (!bucket) continue;
-    bucket.count += 1;
-    bucket.value += Number(lead.value) || 0;
+    const idx = resolveLeadColumnIndex(lead.status, seeds);
+    if (idx < 0) continue;
+    totals[idx].count += 1;
+    totals[idx].value += Number(lead.value) || 0;
   }
-  return stageNames.map((name) => {
-    const bucket = buckets.get(name.trim().toLowerCase());
-    return { stage: name, count: bucket?.count ?? 0, value: bucket?.value ?? 0 };
-  });
+  return seeds.map((s, i) => ({
+    stage: s.name,
+    count: totals[i].count,
+    value: totals[i].value,
+  }));
 }
