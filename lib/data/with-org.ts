@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { admin } from "@/lib/supabase/admin";
 import { requireUser } from "@/lib/auth/session";
 import type { TenantTable } from "./tables";
@@ -36,8 +37,16 @@ export interface OrgContext {
   memberId: string;
 }
 
-/** Resolve the caller's active org membership. Throws if none. */
-export async function getOrgContext(): Promise<OrgContext> {
+/**
+ * Resolve the caller's active org membership. Throws if none.
+ *
+ * Wrapped in React `cache()`: withOrg() is called many times while rendering a
+ * single page (e.g. quotations resolves it 16×). Without memoization each call
+ * re-ran the auth validation + this org_members lookup, adding dozens of serial
+ * network round-trips per navigation. cache() collapses them to one lookup per
+ * request; it is request-scoped, so tenant isolation is unchanged.
+ */
+export const getOrgContext = cache(async function getOrgContext(): Promise<OrgContext> {
   const user = await requireUser();
   const { data, error } = await admin
     .from("org_members")
@@ -57,7 +66,7 @@ export async function getOrgContext(): Promise<OrgContext> {
     role: data.role as string,
     memberId: data.id as string,
   };
-}
+});
 
 type SelectOptions = { count?: "exact" | "planned" | "estimated"; head?: boolean };
 
