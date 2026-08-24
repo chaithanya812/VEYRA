@@ -62,7 +62,7 @@ export default async function VendorsPage({
             name="active"
             value="1"
             defaultChecked={activeOnly}
-            className="size-4 accent-[var(--color-red)]"
+            className="size-4 accent-[var(--color-ink)]"
           />
           Active only
         </label>
@@ -121,7 +121,7 @@ export default async function VendorsPage({
                     <td className="px-4 py-3">
                       <Link
                         href={`/vendors/${v.id}`}
-                        className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)]"
+                        className="font-medium text-[var(--color-ink)] hover:underline"
                       >
                         {v.name}
                       </Link>

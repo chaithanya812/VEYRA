@@ -66,7 +66,7 @@ export default async function QuotationsPage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/quotations/${q.id}`}
-                        className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)] tabular"
+                        className="font-medium text-[var(--color-ink)] hover:underline tabular"
                       >
                         {q.number}
                         {q.version > 1 && (

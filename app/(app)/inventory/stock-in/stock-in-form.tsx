@@ -168,7 +168,7 @@ export function StockInForm({ warehouses }: { warehouses: WarehouseOption[] }) {
               value="1"
               checked={createGrn}
               onChange={(e) => setCreateGrn(e.target.checked)}
-              className="size-4 accent-[var(--color-red)]"
+              className="size-4 accent-[var(--color-ink)]"
             />
             Generate GRN for this receipt
           </label>

@@ -106,7 +106,7 @@ export function QuoteBuilder({
                   type="checkbox"
                   name="works_contract"
                   defaultChecked={quotation.works_contract}
-                  className="size-4 accent-[var(--color-red)]"
+                  className="size-4 accent-[var(--color-ink)]"
                 />
                 Works contract (turnkey) — shows the works-contract note on the quote
               </label>

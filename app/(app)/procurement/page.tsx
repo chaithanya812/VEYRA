@@ -135,7 +135,7 @@ function MrRow({ mr, creatorLabel }: { mr: MaterialRequest; creatorLabel?: strin
       <td className="px-4 py-3">
         <Link
           href={`/procurement/${mr.id}`}
-          className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)] tabular"
+          className="font-medium text-[var(--color-ink)] hover:underline tabular"
           title={mr.id}
         >
           {mr.id.slice(0, 8)}

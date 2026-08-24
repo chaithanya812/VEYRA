@@ -102,7 +102,7 @@ export default async function OrdersPage({
                 name="os"
                 value={s}
                 defaultChecked={selOs.includes(s)}
-                className="size-4 accent-[var(--color-red)]"
+                className="size-4 accent-[var(--color-ink)]"
               />
               {ORDER_STATE_META[s].label}
             </label>
@@ -195,7 +195,7 @@ function PoRow({ po, vendorLabel }: { po: PurchaseOrder; vendorLabel?: string })
       <td className="px-4 py-3">
         <Link
           href={`/orders/${po.id}`}
-          className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)]"
+          className="font-medium text-[var(--color-ink)] hover:underline"
         >
           {po.name}
         </Link>

@@ -131,7 +131,7 @@ export default async function FinancePage() {
                     <td className="px-4 py-3">
                       <Link
                         href={`/finance/${c.id}`}
-                        className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)]"
+                        className="font-medium text-[var(--color-ink)] hover:underline"
                       >
                         {c.name}
                       </Link>

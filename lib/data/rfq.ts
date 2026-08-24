@@ -495,6 +495,16 @@ export async function awardRfq(rfqId: string): Promise<{ error?: string }> {
   if (status === "awarded") return {}; // idempotent
   if (status === "closed") return { error: "This RFQ is closed." };
 
+  // Guard: an RFQ cannot be awarded before any vendor has actually bid — there
+  // is nothing to compare or award against. (Bids are org-scoped by withOrg.)
+  const { count: bidCount } = await db
+    .table("rfq_bids")
+    .select("id", { count: "exact", head: true })
+    .eq("rfq_id", rfqId);
+  if (!bidCount || bidCount < 1) {
+    return { error: "Award needs at least one submitted bid." };
+  }
+
   const { error } = await db.table("rfqs").updateById(rfqId, {
     status: "awarded" satisfies (typeof RFQ_STATUSES)[number],
     updated_at: new Date().toISOString(),

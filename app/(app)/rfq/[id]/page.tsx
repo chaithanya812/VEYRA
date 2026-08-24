@@ -104,7 +104,7 @@ export default async function RfqDetailPage({
               {rfq.mr_id ? (
                 <Link
                   href={`/procurement/${rfq.mr_id}`}
-                  className="tabular text-[var(--color-ink)] hover:text-[var(--color-red)]"
+                  className="tabular text-[var(--color-ink)] hover:underline"
                 >
                   {rfq.mr_id.slice(0, 8)}
                 </Link>

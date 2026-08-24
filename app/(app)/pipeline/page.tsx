@@ -76,7 +76,7 @@ export default async function PipelinePage() {
                     <Card key={lead.id} className="p-3">
                       <Link
                         href={`/leads/${lead.id}`}
-                        className="block text-sm font-medium text-[var(--color-ink)] hover:text-[var(--color-red)]"
+                        className="block text-sm font-medium text-[var(--color-ink)] hover:underline"
                       >
                         {lead.name}
                       </Link>

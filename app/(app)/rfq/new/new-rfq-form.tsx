@@ -176,7 +176,7 @@ export function NewRfqForm({
                   type="checkbox"
                   checked={selectedVendors.has(v.id)}
                   onChange={() => toggleVendor(v.id)}
-                  className="size-4 accent-[var(--color-red)]"
+                  className="size-4 accent-[var(--color-ink)]"
                 />
                 <span className="truncate font-medium text-[var(--color-ink)]">{v.name}</span>
                 {v.category && (

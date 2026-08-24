@@ -76,7 +76,7 @@ export default async function DesignPage({
                 <div className="flex items-start justify-between gap-2">
                   <Link
                     href={`/design/${asset.id}`}
-                    className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)]"
+                    className="font-medium text-[var(--color-ink)] hover:underline"
                   >
                     {asset.name}
                   </Link>
