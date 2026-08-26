@@ -170,4 +170,7 @@ export async function awardRfqAction(formData: FormData): Promise<void> {
   if (result.error) return;
   revalidatePath(`/rfq/${id}`);
   revalidatePath("/rfq");
+  revalidatePath("/orders");
+  // Jump straight to the auto-drafted PO for the winning vendor when one was made.
+  if (result.poId) redirect(`/orders/${result.poId}`);
 }

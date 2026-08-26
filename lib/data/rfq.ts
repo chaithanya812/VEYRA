@@ -1,5 +1,6 @@
 import "server-only";
 import { withOrg } from "./with-org";
+import { createPurchaseOrder } from "./purchase-orders";
 import {
   landedLineTotal,
   rankBids,
@@ -480,34 +481,87 @@ export async function bidComparison(rfqId: string): Promise<BidComparison | null
 /* ── Award ─────────────────────────────────────────────────────────────────── */
 
 /**
- * One-click award: flips status to 'awarded'. Actual PO creation is a separate
- * downstream module — deliberately NOT built here.
+ * One-click award: flips status to 'awarded' AND auto-creates a draft PO for the
+ * winning (rank-1, lowest landed total) vendor, with lines carried over from that
+ * vendor's active bid (PROC-RFQ-008). Rates are CONFIG copied from the bid — no
+ * LLM. PO creation is best-effort: the award still succeeds if it can't be built,
+ * and re-awarding is a no-op (so no duplicate PO). Returns the new PO id.
  */
-export async function awardRfq(rfqId: string): Promise<{ error?: string }> {
-  const { db } = await withOrg();
-  const { data: rfq } = await db
-    .table("rfqs")
-    .select("id, status")
-    .eq("id", rfqId)
-    .maybeSingle();
-  if (!rfq) return { error: "RFQ not found." };
-  const status = (rfq as unknown as { status: string }).status;
-  if (status === "awarded") return {}; // idempotent
-  if (status === "closed") return { error: "This RFQ is closed." };
+export async function awardRfq(
+  rfqId: string,
+): Promise<{ error?: string; poId?: string }> {
+  const full = await getRfq(rfqId);
+  if (!full) return { error: "RFQ not found." };
+  const { rfq, vendors, items, bids, bidLines } = full;
+  if (rfq.status === "awarded") return {}; // idempotent — don't re-create a PO
+  if (rfq.status === "closed") return { error: "This RFQ is closed." };
+  if (bids.length < 1) return { error: "Award needs at least one submitted bid." };
 
-  // Guard: an RFQ cannot be awarded before any vendor has actually bid — there
-  // is nothing to compare or award against. (Bids are org-scoped by withOrg.)
-  const { count: bidCount } = await db
-    .table("rfq_bids")
-    .select("id", { count: "exact", head: true })
-    .eq("rfq_id", rfqId);
-  if (!bidCount || bidCount < 1) {
-    return { error: "Award needs at least one submitted bid." };
+  const { db } = await withOrg();
+
+  // Active bid per vendor (highest version wins) + its lines by rfq_item.
+  const activeByVendor = new Map<string, RfqBid>();
+  for (const b of [...bids].sort((a, z) => a.version - z.version)) {
+    const cur = activeByVendor.get(b.vendor_id);
+    if (!cur || b.version >= cur.version) activeByVendor.set(b.vendor_id, b);
+  }
+  const linesByBid = new Map<string, Map<string, RfqBidLine>>();
+  for (const l of bidLines) {
+    let m = linesByBid.get(l.bid_id);
+    if (!m) { m = new Map(); linesByBid.set(l.bid_id, m); }
+    m.set(l.rfq_item_id, l);
   }
 
-  const { error } = await db.table("rfqs").updateById(rfqId, {
+  // Rank vendors by total landed cost; the winner is rank 1.
+  const totals = vendors
+    .map((v) => {
+      const bid = activeByVendor.get(v.vendor_id);
+      const lines = bid ? [...(linesByBid.get(bid.id)?.values() ?? [])] : [];
+      return {
+        vendorId: v.vendor_id,
+        total: lines.reduce((s, l) => s + (Number(l.line_total) || 0), 0),
+        hasBid: !!bid && lines.length > 0,
+      };
+    })
+    .filter((t) => t.hasBid);
+  const ranks = rankBids(totals.map((t) => ({ vendorId: t.vendorId, total: t.total })));
+  const winnerId = Object.keys(ranks).find((vid) => ranks[vid] === 1);
+
+  // Flip the RFQ to awarded first (the guaranteed part of the operation).
+  const { error: awardErr } = await db.table("rfqs").updateById(rfqId, {
     status: "awarded" satisfies (typeof RFQ_STATUSES)[number],
     updated_at: new Date().toISOString(),
   });
-  return error ? { error: error.message } : {};
+  if (awardErr) return { error: awardErr.message };
+
+  // Best-effort: draft a PO for the winner from their bid lines.
+  if (!winnerId) return {};
+  const winnerBid = activeByVendor.get(winnerId)!;
+  const winnerLines = linesByBid.get(winnerBid.id);
+  const poLines = items
+    .map((it) => {
+      const bl = winnerLines?.get(it.id);
+      if (!bl) return null;
+      return {
+        item_id: it.item_id ?? null,
+        item_name: it.item_name,
+        uom: it.uom,
+        qty: Number(it.qty) || 0,
+        unit_rate: Number(bl.unit_rate) || 0, // CONFIG from the bid, not an LLM
+        tax_pct: Number(bl.tax_pct) || 0,
+      };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null);
+  if (poLines.length === 0) return {}; // awarded, but nothing to draft
+
+  const names = await vendorNames([winnerId]);
+  const po = await createPurchaseOrder({
+    name: `PO — ${rfq.title}`,
+    vendor_id: winnerId,
+    rfq_id: rfqId,
+    project_label: rfq.project_label,
+    lines: poLines,
+  });
+  if ("error" in po) return {}; // award stands; PO draft can be retried manually
+  return { poId: po.id };
 }
