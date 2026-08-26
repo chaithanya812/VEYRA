@@ -63,6 +63,11 @@ export const TENANT_TABLES = [
   "bom_lines",
   "cutlists",
   "cutlist_panels",
+  "nesting_runs",
+  "nesting_placements",
+  "panel_tags",
+  "panel_events",
+  "work_centers",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

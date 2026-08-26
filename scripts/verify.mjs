@@ -496,6 +496,15 @@ async function main() {
   check("cutlist panel area foots (600×400 → 0.24 sqm)", areaSqm === 0.24, `got ${areaSqm}`);
   check("cutlist panel banding foots ((600+400)×2 = 2000mm)", bandMm === 2000, `got ${bandMm}`);
 
+  // ── Production nesting + panel-QR (0021): org-isolation + token uniqueness ──
+  await sb.from("nesting_runs").insert({ org_id: A.id, cutlist_id: cutA.id, board_length_mm: 2440, board_width_mm: 1220, boards_used: 1, total_panel_area_sqm: 0.48, board_area_sqm: 2.9768, waste_pct: 83.87 });
+  await sb.from("nesting_runs").insert({ org_id: B.id, cutlist_id: cutA.id, board_length_mm: 2440, board_width_mm: 1220 });
+  const { data: aRuns } = await sb.from("nesting_runs").select("id").eq("org_id", A.id);
+  check("nesting runs are org-scoped (A has 1, no B leak)", aRuns.length === 1, `got ${aRuns.length}`);
+  await sb.from("panel_tags").insert({ org_id: A.id, panel_name: "Shutter #1", token: "PT-AAAA1111", stage: "cut" });
+  const dupTag = await sb.from("panel_tags").insert({ org_id: A.id, panel_name: "dup", token: "PT-AAAA1111" });
+  check("panel-QR token is unique per org (dup rejected)", !!dupTag.error, dupTag.error?.code || "no error");
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
