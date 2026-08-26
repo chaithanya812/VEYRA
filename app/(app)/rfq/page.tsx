@@ -90,7 +90,7 @@ function RfqRow({ rfq, vendorCount }: { rfq: Rfq; vendorCount: number }) {
       <td className="px-4 py-3">
         <Link
           href={`/rfq/${rfq.id}`}
-          className="font-medium text-[var(--color-ink)] hover:text-[var(--color-red)] tabular"
+          className="font-medium text-[var(--color-ink)] hover:underline tabular"
           title={rfq.id}
         >
           {rfq.id.slice(0, 8)}
