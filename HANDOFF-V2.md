@@ -57,25 +57,26 @@ Dzylo's CRM+projects+procurement+finance surface AND wins on the half Dzylo lack
 
 ## 3. CURRENT STATE (what's DONE — do not rebuild)
 
-- **Branch:** `quotations-v2-plus-fleet`. **HEAD:** `2c0eaa4` (Measurement-mode wiring).
-  Run `git log --oneline -14` for the true log.
+- **Branch:** `quotations-v2-plus-fleet`. **HEAD:** `b26423b` (AI prompt-to-BOQ).
+  Run `git log --oneline -20` for the true log.
 - **Live prod:** https://veyra-five-beta.vercel.app (Vercel project `veyra`, CLI authed
   `chaithanya812`, functions pinned to **`icn1`/Seoul** via `vercel.json`, co-located with DB).
-  The live deploy contains everything **through `8830b0c`**; the **measurement-mode commit
-  `2c0eaa4` and the pending Production-nesting work are NOT deployed yet** — redeploy after
-  merging nesting (owner's go).
+  **Fully deployed** — everything through `b26423b` is live.
+- **⚠️ LOGIN IS CURRENTLY REMOVED** (owner request, commit `9302fd2`). `getOrgContext`/`getViewer`
+  fall back to the demo tenant when there's no session, so every route is public. Auth code is
+  intact — see the TEMPORARY notes in `lib/data/with-org.ts` + `lib/data/context.ts` for how to
+  re-enable it. Do not put real customer data in prod until login is restored.
 - **Supabase:** project ref `vjupynmjzpdzrluwctzd`. **RLS is OFF by owner decision — never
-  enable it or write policies.** Migrations `0001–0020` + `0022` applied to the live DB.
-  (`0021` is the in-flight Production-nesting migration — see §9, not yet merged/applied.)
+  enable it or write policies.** Migrations **`0001–0022` all applied** to the live DB.
 - **Stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind v4,
-  Supabase over PostgREST, vitest. ~60 routes, **196 unit tests**, **`verify.mjs` = 63/63**
+  Supabase over PostgREST, vitest. ~62 routes, **211 unit tests**, **`verify.mjs` = 65/65**
   green vs real Supabase, `npm run build` green, eslint clean.
 - **22 nav modules** (`lib/nav.ts` = source of truth): Dashboard · Leads · Pipeline ·
   Follow-ups · Communication · Quotations · Items · Vendors · Projects · Procurement(MR) ·
   RFQ · Orders(PO) · Inventory · Design · Site · **Production (BOM+Cutlist — now live)** ·
   Finance · Billing · Approvals · Reports · Settings.
 
-### What this session added (commits `a54ff99` → `2c0eaa4`)
+### What this session added (commits `a54ff99` → `b26423b`)
 - **Perf:** per-request auth/org lookups deduped with React `cache()` (a page did ~32 serial
   auth+org round-trips → now 2); route-group `loading.tsx` skeletons; `vercel.json` region
   pin to Seoul. This was the fix for "everything feels slow."
@@ -90,6 +91,17 @@ Dzylo's CRM+projects+procurement+finance surface AND wins on the half Dzylo lack
   orphans lines; usage metering was dead code + the read-only gate was ornamental — both now
   enforced (`guardMeteredCreate` wired into `createQuotation`); RFQ award blocked with zero
   bids; a route `error.tsx` boundary; decorative-red cleanup on 12 nav links + 5 checkboxes.
+- **Production Wave 5b:** sheet nesting (deterministic shelf/FFDH 2D bin-packing) + panel-QR
+  traceability + work centers — migration 0021, `lib/production-nesting-model.ts` (10 tests).
+- **RFQ → PO (PROC-RFQ-008):** `awardRfq` now auto-drafts a PO for the rank-1 vendor from their
+  bid lines (rates = CONFIG copied from the bid, never an LLM); the award action jumps to the PO.
+- **AI prompt-to-BOQ (REQ-01):** "Generate with AI" on the quote builder — Claude structures a
+  brief into rooms→items with qty/uom; lines created at ₹0 so the engine/user price (AI NEVER
+  prices — system prompt + `parseAiBoq` validator, 5 tests). Claude-only via `@anthropic-ai/sdk`
+  (`lib/ai/anthropic.ts`, model `claude-opus-5`), metered on the REQ-04 ledger. **Needs
+  `ANTHROPIC_API_KEY` (see §4) to run — key-ready and safe without it.**
+- **Coverage report** (`COVERAGE-REPORT.md`) — a Claude sub-agent's feature-register-vs-code audit.
+- **Login removed** (owner request) — demo-tenant fallback; see the ⚠️ in the state list above.
 
 ---
 
@@ -122,7 +134,11 @@ Dzylo's CRM+projects+procurement+finance surface AND wins on the half Dzylo lack
 **Vercel:** project `veyra`, linked in `.vercel/`, CLI authed as `chaithanya812`. Deploy with
 `npx vercel --prod --yes` (owner's go only). `vercel.json` pins functions to `icn1` (Seoul).
 
-**AI (product):** REQ-01 = **Claude-only for the product's AI features** (e.g. prompt-to-BOQ).
+**AI (product):** REQ-01 = **Claude-only for the product's AI features**. The **AI prompt-to-BOQ**
+feature is built and live but needs **`ANTHROPIC_API_KEY`** to run — add it to `.env.local` (local)
+AND the Vercel project's Environment Variables (prod), then redeploy. Optional `ANTHROPIC_MODEL`
+overrides the model (default `claude-opus-5`). Provider client: `lib/ai/anthropic.ts` (`@anthropic-ai/sdk`).
+Without the key the feature returns a clear "not configured" message — it never crashes.
 `GEMINI_API_KEY` in `.env.local` is only for the competitor-video analysis tooling, not product.
 
 ---
@@ -264,25 +280,22 @@ shipped modules — extend/fix them. **Build screens to the owner's frames, not 
 
 > Wave 5 is **deferred by the owner** — do not start it now.
 
-**In flight (finish first):**
-- **Production nesting + panel-QR + work centers** — a fleet worker (`VEYRA-worker`, model
-  `x-preview-f-free --variant max`) was dispatched with a full brief (`WORKER-TASK.md` in that
-  dir). Migration **0021**. On completion: review-gate → merge (owns `app/(app)/production/*`,
-  `lib/production-nesting-model.ts`, `lib/data/production-nesting.ts`, +`tables.ts`) → apply 0021
-  → extend `verify.mjs` → commit. If it failed with a Zen network_error, reroll on hy3-free.
+**✅ DONE this session (was in flight / Wave 2–3):** Production nesting+panel-QR+work centers
+(migration 0021, merged + verified); **RFQ award → auto-create draft PO** (`awardRfq`, PROC-RFQ-008);
+**AI prompt-to-BOQ** (Claude-only, engine prices, metered — needs `ANTHROPIC_API_KEY`);
+measurement-mode wiring (migration 0022).
 
-**Wave 2 (remaining):**
-- **Smaller-gaps sweep:** RFQ award → auto-create draft PO(s) · 3-way match (PO↔GRN↔bill) ·
-  discount/threshold approval wired to the Approval engine · cost roll-up beside quoted price on
-  quotations · inter-site stock transfers. (These edit shipped `rfq`/`orders`/`quotations`/
-  `inventory` data modules — do serially / carefully, not in parallel with each other.)
+**Wave 2 (remaining smaller-gaps sweep):**
+- **3-way match** (PO↔GRN↔bill) · **discount/threshold approval** wired to the Approval engine ·
+  **cost roll-up** beside quoted price on quotations · **inter-site stock transfers**. (These edit
+  shipped `orders`/`quotations`/`inventory` data modules — do serially / carefully.)
 
 **Wave 3 (differentiators — build the sensitive parts yourself, not free models):**
-- **AI prompt-to-BOQ** — Claude-only; AI structures scope (rooms→items→qty/uom), the **engine
-  prices**, a validator verifies, metered via `guardMeteredCreate`/`recordUsage` (REQ-04).
 - **OTP vendor portal** — public tokenized RFQ page (reuse `/q/[token]` pattern), email/WhatsApp
   OTP, vendor enters HSN+GST rates per line → feeds `rfq_bids`/`rfq_bid_lines`. Token→org
   resolution must be watertight (unauthenticated path — security-critical).
+- **MR "AI parse"** (PROC-MR-002) — reuse `lib/ai/anthropic.ts`: paste/upload → Claude → catalogue-
+  matched draft MR lines (same no-price discipline as AI-BOQ).
 
 **Wave 4 (hardening — verified audit gaps, fleet-friendly):**
 - Server actions swallowing `{error}` (leads + quotations) → surface them.
