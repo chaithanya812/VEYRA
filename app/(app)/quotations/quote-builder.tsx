@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
 import { LineDialog } from "./line-dialog";
+import { AiBoqPanel } from "./ai-boq-panel";
 import {
   updateMetaAction,
   addSectionAction,
@@ -124,15 +125,18 @@ export function QuoteBuilder({
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[var(--color-ink)]">Bill of quantities</h2>
-            <LineDialog
-              quotationId={quotation.id}
-              sections={sections}
-              trigger={
-                <Button variant="primary" size="sm">
-                  <Plus className="size-4" /> Add line
-                </Button>
-              }
-            />
+            <div className="flex items-center gap-2">
+              <AiBoqPanel quotationId={quotation.id} />
+              <LineDialog
+                quotationId={quotation.id}
+                sections={sections}
+                trigger={
+                  <Button variant="primary" size="sm">
+                    <Plus className="size-4" /> Add line
+                  </Button>
+                }
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-5">
