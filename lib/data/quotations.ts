@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { withOrg } from "./with-org";
 import { admin } from "@/lib/supabase/admin";
 import { guardMeteredCreate, recordUsage } from "./subscription";
+import { resolveQty, isMeasureMode } from "@/lib/measurement-model";
 import {
   computeLine,
   computeQuoteTotals,
@@ -259,6 +260,70 @@ export interface LineWriteInput {
   discount_value: number;
   tax_rate: number;
   cost_rate?: number;
+  // Optional measurement mode (OPS-EST-002). When measure_mode is a valid mode,
+  // the effective qty is DERIVED server-side from the dimensions via resolveQty
+  // (manual override wins) — the client-typed qty is treated as that override.
+  measure_mode?: string | null;
+  measure_length?: number | null;
+  measure_width?: number | null;
+  measure_height?: number | null;
+  measure_count?: number | null;
+  measure_qty_override?: number | null;
+}
+
+/**
+ * Resolve a line's authoritative qty + the measure fields to persist. When a
+ * valid measure_mode is set, qty is derived from the dimensions by the pure
+ * engine (never trusted from the client / never an LLM); an override wins.
+ * Otherwise qty passes through unchanged (direct entry) and no measure fields
+ * are stored.
+ */
+function resolveLineQty(input: LineWriteInput): {
+  qty: number;
+  measure: {
+    measure_mode: string | null;
+    measure_length: number | null;
+    measure_width: number | null;
+    measure_height: number | null;
+    measure_count: number | null;
+    measure_qty_override: number | null;
+  };
+} {
+  if (input.measure_mode && isMeasureMode(input.measure_mode)) {
+    const override = input.measure_qty_override ?? null;
+    const r = resolveQty(
+      input.measure_mode,
+      {
+        length: input.measure_length ?? null,
+        width: input.measure_width ?? null,
+        height: input.measure_height ?? null,
+        count: input.measure_count ?? null,
+      },
+      override,
+    );
+    return {
+      qty: r.qty,
+      measure: {
+        measure_mode: input.measure_mode,
+        measure_length: input.measure_length ?? null,
+        measure_width: input.measure_width ?? null,
+        measure_height: input.measure_height ?? null,
+        measure_count: input.measure_count ?? null,
+        measure_qty_override: override,
+      },
+    };
+  }
+  return {
+    qty: Number(input.qty) || 0,
+    measure: {
+      measure_mode: null,
+      measure_length: null,
+      measure_width: null,
+      measure_height: null,
+      measure_count: null,
+      measure_qty_override: null,
+    },
+  };
 }
 
 export async function addLine(
@@ -271,7 +336,8 @@ export async function addLine(
     .select("id")
     .eq("quotation_id", quotationId);
 
-  const t = computeLine(input);
+  const { qty, measure } = resolveLineQty(input);
+  const t = computeLine({ ...input, qty });
   const { data, error } = await db.table("quotation_lines").insert({
     quotation_id: quotationId,
     section_id: input.section_id ?? null,
@@ -282,13 +348,14 @@ export async function addLine(
     category: input.category?.trim() || null,
     description: input.description?.trim() || null,
     hsn_sac: input.hsn_sac?.trim() || null,
-    qty: input.qty,
+    qty,
     uom: input.uom,
     unit_price: input.unit_price,
     discount_type: input.discount_type,
     discount_value: input.discount_value,
     tax_rate: input.tax_rate,
     cost_rate: input.cost_rate ?? 0,
+    ...measure,
     ...t,
   });
   if (error) return { error: error.message };
@@ -302,7 +369,8 @@ export async function updateLine(
   input: LineWriteInput,
 ): Promise<{ error?: string }> {
   const { db } = await withOrg();
-  const t = computeLine(input);
+  const { qty, measure } = resolveLineQty(input);
+  const t = computeLine({ ...input, qty });
   const { error } = await db.table("quotation_lines").updateById(id, {
     section_id: input.section_id ?? null,
     item_id: input.item_id ?? null,
@@ -311,13 +379,14 @@ export async function updateLine(
     category: input.category?.trim() || null,
     description: input.description?.trim() || null,
     hsn_sac: input.hsn_sac?.trim() || null,
-    qty: input.qty,
+    qty,
     uom: input.uom,
     unit_price: input.unit_price,
     discount_type: input.discount_type,
     discount_value: input.discount_value,
     tax_rate: input.tax_rate,
     cost_rate: input.cost_rate ?? 0,
+    ...measure,
     ...t,
     updated_at: new Date().toISOString(),
   });

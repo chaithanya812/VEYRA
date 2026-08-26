@@ -181,6 +181,12 @@ const lineSchema = z.object({
   discount_value: z.coerce.number().min(0).default(0),
   tax_rate: z.coerce.number().min(0).max(100).default(18),
   cost_rate: z.coerce.number().min(0).default(0),
+  measure_mode: z.string().optional(),
+  measure_length: z.coerce.number().min(0).optional(),
+  measure_width: z.coerce.number().min(0).optional(),
+  measure_height: z.coerce.number().min(0).optional(),
+  measure_count: z.coerce.number().min(0).optional(),
+  measure_qty_override: z.coerce.number().min(0).optional(),
 });
 
 function parseLine(formData: FormData) {
@@ -201,7 +207,25 @@ function parseLine(formData: FormData) {
     discount_value: formData.get("discount_value") ?? 0,
     tax_rate: formData.get("tax_rate") ?? 18,
     cost_rate: formData.get("cost_rate") ?? 0,
+    measure_mode: formData.get("measure_mode") || undefined,
+    measure_length: formData.get("measure_length") || undefined,
+    measure_width: formData.get("measure_width") || undefined,
+    measure_height: formData.get("measure_height") || undefined,
+    measure_count: formData.get("measure_count") || undefined,
+    measure_qty_override: formData.get("measure_qty_override") || undefined,
   });
+}
+
+/** The optional measure fields, shared by both add/update calls. */
+function measureFrom(d: z.infer<typeof lineSchema>) {
+  return {
+    measure_mode: d.measure_mode || null,
+    measure_length: d.measure_length ?? null,
+    measure_width: d.measure_width ?? null,
+    measure_height: d.measure_height ?? null,
+    measure_count: d.measure_count ?? null,
+    measure_qty_override: d.measure_qty_override ?? null,
+  };
 }
 
 export async function addLineAction(
@@ -228,6 +252,7 @@ export async function addLineAction(
     discount_value: d.discount_value,
     tax_rate: d.tax_rate,
     cost_rate: d.cost_rate,
+    ...measureFrom(d),
   });
   if ("error" in result) return { error: result.error };
   revalidatePath(`/quotations/${d.quotationId}`);
@@ -259,6 +284,7 @@ export async function updateLineAction(
     discount_value: d.discount_value,
     tax_rate: d.tax_rate,
     cost_rate: d.cost_rate,
+    ...measureFrom(d),
   });
   if (result.error) return { error: result.error };
   revalidatePath(`/quotations/${d.quotationId}`);

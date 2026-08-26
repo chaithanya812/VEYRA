@@ -10,6 +10,13 @@ import {
   type QuotationLine,
 } from "@/lib/quotations-model";
 import { UOMS, GST_RATES, type Uom, type ItemRef } from "@/lib/items-model";
+import {
+  MEASURE_MODES,
+  MEASURE_MODE_LABELS,
+  MEASURE_MODE_FIELDS,
+  resolveQty,
+  isMeasureMode,
+} from "@/lib/measurement-model";
 import { uomLabel } from "@/lib/items-ui";
 import { inr } from "@/lib/utils";
 import { ItemCombobox } from "./item-combobox";
@@ -40,7 +47,14 @@ type LineState = {
   discount_value: string;
   tax_rate: string;
   cost_rate: string;
+  measure_mode: string; // "" = direct qty entry
+  measure_length: string;
+  measure_width: string;
+  measure_height: string;
+  measure_count: string;
 };
+
+const dimStr = (n: number | null | undefined) => (n != null ? String(n) : "");
 
 function initial(line?: QuotationLine, defaultSectionId?: string): LineState {
   return {
@@ -58,6 +72,11 @@ function initial(line?: QuotationLine, defaultSectionId?: string): LineState {
     discount_value: String(line?.discount_value ?? 0),
     tax_rate: String(line?.tax_rate ?? 18),
     cost_rate: String(line?.cost_rate ?? 0),
+    measure_mode: line?.measure_mode ?? "",
+    measure_length: dimStr(line?.measure_length),
+    measure_width: dimStr(line?.measure_width),
+    measure_height: dimStr(line?.measure_height),
+    measure_count: dimStr(line?.measure_count),
   };
 }
 
@@ -81,6 +100,33 @@ export function LineDialog({
 
   const set = <K extends keyof LineState>(k: K, v: LineState[K]) =>
     setF((prev) => ({ ...prev, [k]: v }));
+
+  // Dimensions for the current draft, as a MeasureDims object.
+  const dimsOf = (s: LineState) => ({
+    length: s.measure_length,
+    width: s.measure_width,
+    height: s.measure_height,
+    count: s.measure_count,
+  });
+
+  // Apply a change AND, when a measure mode is active, re-derive qty from the
+  // dimensions so the qty field tracks the formula (a later manual edit to qty
+  // still wins — it is sent as the override). Uses the same pure resolveQty the
+  // server uses.
+  const setMeasure = (patch: Partial<LineState>) =>
+    setF((prev) => {
+      const next = { ...prev, ...patch };
+      const mode = next.measure_mode;
+      if (isMeasureMode(mode)) {
+        next.qty = String(resolveQty(mode, dimsOf(next), null).qty);
+      }
+      return next;
+    });
+
+  const measureActive = isMeasureMode(f.measure_mode);
+  const derived = isMeasureMode(f.measure_mode)
+    ? resolveQty(f.measure_mode, dimsOf(f), null)
+    : null;
 
   function onPickItem(it: ItemRef) {
     setF((prev) => ({
@@ -122,6 +168,15 @@ export function LineDialog({
     fd.set("discount_value", f.discount_value);
     fd.set("tax_rate", f.tax_rate);
     fd.set("cost_rate", f.cost_rate);
+    if (measureActive) {
+      fd.set("measure_mode", f.measure_mode);
+      fd.set("measure_length", f.measure_length);
+      fd.set("measure_width", f.measure_width);
+      fd.set("measure_height", f.measure_height);
+      fd.set("measure_count", f.measure_count);
+      // The qty field is the manual override — the server's resolveQty honours it.
+      fd.set("measure_qty_override", f.qty);
+    }
 
     start(async () => {
       const res = await (line ? updateLineAction : addLineAction)(undefined, fd);
@@ -186,6 +241,56 @@ export function LineDialog({
             <Field label="Category" hint="e.g. Wood Work / Partitions">
               <Input value={f.category} onChange={(e) => set("category", e.target.value)} />
             </Field>
+          </div>
+
+          {/* Measurement mode — derive qty from dimensions (OPS-EST-002). */}
+          <div className="rounded-md border border-[var(--color-border)] p-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Measure by" hint="Derive qty from dimensions; a manual Qty edit wins">
+                <Select
+                  value={f.measure_mode}
+                  onChange={(e) => setMeasure({ measure_mode: e.target.value })}
+                >
+                  <option value="">Direct (enter qty)</option>
+                  {MEASURE_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {MEASURE_MODE_LABELS[m]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              {measureActive && (
+                <div className="grid grid-cols-3 gap-2">
+                  {MEASURE_MODE_FIELDS[f.measure_mode as keyof typeof MEASURE_MODE_FIELDS].includes("length") && (
+                    <Field label="Length">
+                      <Input type="number" min="0" step="0.001" value={f.measure_length} onChange={(e) => setMeasure({ measure_length: e.target.value })} />
+                    </Field>
+                  )}
+                  {MEASURE_MODE_FIELDS[f.measure_mode as keyof typeof MEASURE_MODE_FIELDS].includes("width") && (
+                    <Field label="Width">
+                      <Input type="number" min="0" step="0.001" value={f.measure_width} onChange={(e) => setMeasure({ measure_width: e.target.value })} />
+                    </Field>
+                  )}
+                  {MEASURE_MODE_FIELDS[f.measure_mode as keyof typeof MEASURE_MODE_FIELDS].includes("height") && (
+                    <Field label="Height">
+                      <Input type="number" min="0" step="0.001" value={f.measure_height} onChange={(e) => setMeasure({ measure_height: e.target.value })} />
+                    </Field>
+                  )}
+                  {MEASURE_MODE_FIELDS[f.measure_mode as keyof typeof MEASURE_MODE_FIELDS].includes("count") && (
+                    <Field label="Count">
+                      <Input type="number" min="0" step="1" value={f.measure_count} onChange={(e) => setMeasure({ measure_count: e.target.value })} />
+                    </Field>
+                  )}
+                </div>
+              )}
+            </div>
+            {measureActive && derived && (
+              <p className="mt-2 text-xs tabular text-[var(--color-ink-secondary)]">
+                Derived qty ={" "}
+                <span className="font-medium text-[var(--color-ink)]">{derived.formula}</span>{" "}
+                — edit Qty to override
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

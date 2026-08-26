@@ -166,6 +166,8 @@ async function main() {
   await sb.from("quotation_lines").insert([
     { org_id: A.id, quotation_id: qa.id, section_id: sec.id, title: "Wooden Partition", qty: 21, uom: "sqft", unit_price: 2160, tax_rate: 18, line_total: 48172.32 },
     { org_id: A.id, quotation_id: qa.id, section_id: sec.id, title: "Shelf", qty: 1, uom: "sqft", unit_price: 2160, tax_rate: 18, line_total: 2293.92 },
+    // Measurement mode (0022): area 2.4 × 0.6 → derived qty 1.44 (server engine, not LLM).
+    { org_id: A.id, quotation_id: qa.id, section_id: sec.id, title: "Ledge", qty: 1.44, uom: "sqft", unit_price: 1000, tax_rate: 18, line_total: 1699.2, measure_mode: "area", measure_length: 2.4, measure_width: 0.6 },
   ]);
 
   // (8) Tenant isolation on quotations + children.
@@ -174,7 +176,10 @@ async function main() {
   check("org A sees exactly its 1 quotation", aQ.length === 1, `got ${aQ.length}`);
   check("org B sees exactly its 1 quotation", bQ.length === 1, `got ${bQ.length}`);
   const { data: aLines } = await sb.from("quotation_lines").select("id").eq("org_id", A.id);
-  check("A's quotation lines are org-scoped (2 lines)", aLines.length === 2, `got ${aLines.length}`);
+  check("A's quotation lines are org-scoped (3 lines)", aLines.length === 3, `got ${aLines.length}`);
+  const { data: mLine } = await sb.from("quotation_lines").select("measure_mode, measure_length, measure_width, qty").eq("org_id", A.id).eq("measure_mode", "area").single();
+  const mDerived = Math.round(Number(mLine.measure_length) * Number(mLine.measure_width) * 1000) / 1000; // resolveQty(area)
+  check("measure-mode line persists + qty foots the area formula (2.4×0.6=1.44)", mDerived === 1.44 && Number(mLine.qty) === 1.44, `derived ${mDerived}, stored ${mLine?.qty}`);
 
   // (9) Share token is globally unique — a second org cannot collide on it.
   const dupToken = await sb.from("quotations").insert({

@@ -103,6 +103,14 @@ export interface QuotationLine {
   tax_amount: number;
   line_total: number;
   line_cost: number;
+  /** Optional measurement mode (OPS-EST-002): qty derived from dimensions with a
+   * visible formula; a manual override wins. See lib/measurement-model.ts. */
+  measure_mode?: string | null;
+  measure_length?: number | null;
+  measure_width?: number | null;
+  measure_height?: number | null;
+  measure_count?: number | null;
+  measure_qty_override?: number | null;
 }
 
 /* ── The pricing engine ─────────────────────────────────────────────────── */
