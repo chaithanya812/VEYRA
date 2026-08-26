@@ -1,9 +1,9 @@
 import "server-only";
 import { withOrg } from "./with-org";
+import { listLeadStatuses } from "./lead-management";
 import {
   DEFAULT_STAGES,
   followUpBucket,
-  resolveLeadColumnIndex,
   type FollowUp,
   type FollowUpBucket,
   type PipelineStage,
@@ -112,34 +112,50 @@ export async function deleteStage(id: string): Promise<{ error?: string }> {
 }
 
 /**
- * The Kanban board — one column per stage, leads grouped by status name
- * (case-insensitive). Column counts and Σ values are pure aggregations of the
- * real lead rows.
+ * The Kanban board — one column per LEAD STATUS.
+ *
+ * Statuses used to live in two places: `pipeline_stages` (display names) and,
+ * since migration 0024, `lead_statuses` (the slugs `leads.status` actually
+ * stores). Two ladders meant a lead could sit on "negotiation" while the board
+ * only knew a column called "Negotiation", so it silently fell into the first
+ * column. `lead_statuses` is now the single source of truth and the board reads
+ * it directly — the slug a lead stores IS the column it appears in.
+ *
+ * Counts and Σ values are pure aggregations of the real rows.
  */
 export async function boardColumns(): Promise<BoardColumn[]> {
   const { db } = await withOrg();
-  const [stagesRes, leadsRes] = await Promise.all([
-    db.table("pipeline_stages").select("*").order("seq", { ascending: true }),
+  const [statuses, leadsRes] = await Promise.all([
+    listLeadStatuses(),
     db.table("leads").select("id,name,value,status"),
   ]);
-  if (stagesRes.error) throw stagesRes.error;
   if (leadsRes.error) throw leadsRes.error;
 
-  const stages = (stagesRes.data ?? []) as unknown as PipelineStage[];
   const leads = (leadsRes.data ?? []) as unknown as BoardLead[];
+  const active = statuses.filter((s) => s.is_active);
 
-  const columns: BoardColumn[] = stages.map((stage) => ({
-    stage,
+  // Present each status as the PipelineStage shape the board component expects,
+  // so the column rendering is unchanged.
+  const columns: BoardColumn[] = active.map((s) => ({
+    stage: {
+      id: s.id,
+      name: s.label,
+      seq: s.seq,
+      is_won: s.is_won,
+      is_lost: s.is_lost,
+      created_at: new Date(0).toISOString(),
+    },
     count: 0,
     value: 0,
     leads: [],
   }));
-  // Map each lead to a column via the shared resolver so every lead is visible
-  // (won/lost by flag, else the status→stage map, else the first column) —
-  // fixes new/qualified/quoted leads silently vanishing from the board.
+  if (columns.length === 0) return columns;
+
+  const indexOf = new Map(active.map((s, i) => [s.value, i]));
   for (const lead of leads) {
-    const idx = resolveLeadColumnIndex(lead.status, stages);
-    if (idx < 0) continue;
+    // An unknown status (a retired one, or data from before 0024) lands in the
+    // first column rather than disappearing from the board entirely.
+    const idx = indexOf.get(lead.status) ?? 0;
     const col = columns[idx];
     col.leads.push(lead);
     col.count += 1;

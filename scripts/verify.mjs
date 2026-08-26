@@ -505,6 +505,113 @@ async function main() {
   const dupTag = await sb.from("panel_tags").insert({ org_id: A.id, panel_name: "dup", token: "PT-AAAA1111" });
   check("panel-QR token is unique per org (dup rejected)", !!dupTag.error, dupTag.error?.code || "no error");
 
+  // ── Workspace (0023): tasks, attendance, expenses, leave ──────────────────
+  // Both orgs get a member so "my work" vs "their work" is a real distinction.
+  const { data: memA } = await sb
+    .from("org_members")
+    .insert({ org_id: A.id, user_id: crypto.randomUUID(), role: "member", display_name: "A Staff" })
+    .select("id")
+    .single();
+  const { data: memB } = await sb
+    .from("org_members")
+    .insert({ org_id: B.id, user_id: crypto.randomUUID(), role: "member", display_name: "B Staff" })
+    .select("id")
+    .single();
+
+  await sb.from("tasks").insert([
+    { org_id: A.id, title: "A task", assignee_id: memA.id, status: "created", due_at: new Date(Date.now() - 86400000).toISOString() },
+    { org_id: A.id, title: "A done", assignee_id: memA.id, status: "done" },
+    { org_id: B.id, title: "B task", assignee_id: memB.id, status: "created" },
+  ]);
+  const aTasks = await sb.from("tasks").select("id").eq("org_id", A.id);
+  check("tasks are org-scoped (A has 2, no B leak)", (aTasks.data ?? []).length === 2, `got ${(aTasks.data ?? []).length}`);
+
+  // Attendance: at most one OPEN session per member (partial unique index).
+  await sb.from("work_sessions").insert({ org_id: A.id, member_id: memA.id, check_in: new Date().toISOString() });
+  const dupOpen = await sb
+    .from("work_sessions")
+    .insert({ org_id: A.id, member_id: memA.id, check_in: new Date().toISOString() });
+  check("a member cannot be checked in twice at once", !!dupOpen.error, dupOpen.error?.code || "no error");
+
+  // Hours are DERIVED from the stamps, never stored as a total.
+  const inAt = new Date("2026-06-27T09:00:00Z");
+  const outAt = new Date("2026-06-27T17:30:00Z");
+  await sb.from("work_sessions").insert({
+    org_id: A.id, member_id: memB.id, check_in: inAt.toISOString(), check_out: outAt.toISOString(),
+  });
+  const closed = await sb
+    .from("work_sessions").select("check_in, check_out").eq("org_id", A.id).not("check_out", "is", null).single();
+  const hours = (new Date(closed.data.check_out) - new Date(closed.data.check_in)) / 3600000;
+  check("attendance hours derive from the stamps (09:00→17:30 = 8.5h)", hours === 8.5, `got ${hours}`);
+
+  await sb.from("expense_claims").insert([
+    { org_id: A.id, member_id: memA.id, amount: 2500, category: "materials", status: "approved" },
+    { org_id: A.id, member_id: memA.id, amount: 700, category: "transport", status: "reimbursed" },
+    { org_id: B.id, member_id: memB.id, amount: 9999, category: "materials", status: "approved" },
+  ]);
+  const aPayable = await sb.from("expense_claims").select("amount").eq("org_id", A.id).eq("status", "approved");
+  const payable = (aPayable.data ?? []).reduce((t, r) => t + Number(r.amount), 0);
+  check("expense payable sums approved only, org-scoped (2500)", payable === 2500, `got ${payable}`);
+
+  await sb.from("leave_requests").insert({
+    org_id: A.id, member_id: memA.id, leave_type: "casual",
+    from_date: "2026-06-22", to_date: "2026-06-23", days: 2, status: "approved",
+  });
+  const aLeave = await sb.from("leave_requests").select("days").eq("org_id", A.id);
+  check("leave is org-scoped (A has 1 request of 2 days)", (aLeave.data ?? []).length === 1 && Number(aLeave.data[0].days) === 2);
+
+  // ── Lead management (0024) ────────────────────────────────────────────────
+  await sb.from("lead_statuses").insert([
+    { org_id: A.id, value: "negotiation", label: "Negotiation", seq: 0 },
+    { org_id: B.id, value: "negotiation", label: "Haggling", seq: 0 },
+  ]);
+  const dupStatus = await sb.from("lead_statuses").insert({ org_id: A.id, value: "negotiation", label: "Dup" });
+  check("a status slug is unique per org (dup rejected)", !!dupStatus.error, dupStatus.error?.code || "no error");
+  const bLabel = await sb.from("lead_statuses").select("label").eq("org_id", B.id).eq("value", "negotiation").single();
+  check("the same slug carries a different label per tenant", bLabel.data?.label === "Haggling", bLabel.data?.label);
+
+  // Multi-assignee, and the same person cannot be added to one lead twice.
+  const { data: aLeadRow } = await sb
+    .from("leads").select("id").eq("org_id", A.id).eq("name", "A-Lead-1").single();
+  const aLeadId = aLeadRow.id;
+  await sb.from("lead_assignees").insert({ org_id: A.id, lead_id: aLeadId, member_id: memA.id });
+  const dupAssign = await sb.from("lead_assignees").insert({ org_id: A.id, lead_id: aLeadId, member_id: memA.id });
+  check("a member cannot be assigned to the same lead twice", !!dupAssign.error, dupAssign.error?.code || "no error");
+
+  // A follow-up left open past its time is MISSED — derived, never stored.
+  await sb.from("follow_ups").insert([
+    { org_id: A.id, lead_id: aLeadId, due_at: new Date(Date.now() - 3600000).toISOString(), status: "upcoming", kind: "callback", member_id: memA.id },
+    { org_id: A.id, lead_id: aLeadId, due_at: new Date(Date.now() + 3600000).toISOString(), status: "upcoming", kind: "meeting", member_id: memA.id },
+  ]);
+  // Scope to the pair just inserted — an earlier block already left one
+  // follow-up on this org, and counting it would make this assertion lie.
+  const fus = await sb
+    .from("follow_ups").select("due_at, status")
+    .eq("org_id", A.id).eq("status", "upcoming").eq("member_id", memA.id);
+  const missed = (fus.data ?? []).filter((f) => new Date(f.due_at) < new Date()).length;
+  check("a lapsed open follow-up derives as missed (1 of 2)", missed === 1, `got ${missed}`);
+
+  // Promote-to-project is a real FK, not a string match.
+  const { data: proj } = await sb
+    .from("projects").insert({ org_id: A.id, name: "A Promoted", lead_id: aLeadId }).select("id").single();
+  await sb.from("leads").update({ project_id: proj.id }).eq("id", aLeadId);
+  const joined = await sb.from("leads").select("project_id").eq("id", aLeadId).single();
+  check("promote-to-project links lead→project by FK", joined.data?.project_id === proj.id);
+
+  // ── Quotation studio (0025) ───────────────────────────────────────────────
+  const dupSettings = await sb.from("quotation_settings").insert([
+    { org_id: A.id, default_gst_pct: 18 },
+    { org_id: A.id, default_gst_pct: 12 },
+  ]);
+  check("one quotation-settings row per org enforced", !!dupSettings.error, dupSettings.error?.code || "no error");
+
+  await sb.from("ai_requests").insert([
+    { org_id: A.id, provider: "gemini", model: "test", prompt: "A prompt", status: "ok", lines_created: 5 },
+    { org_id: B.id, provider: "gemini", model: "test", prompt: "B prompt", status: "ok", lines_created: 3 },
+  ]);
+  const aAi = await sb.from("ai_requests").select("lines_created").eq("org_id", A.id);
+  check("the AI request log is org-scoped (A has 1)", (aAi.data ?? []).length === 1, `got ${(aAi.data ?? []).length}`);
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

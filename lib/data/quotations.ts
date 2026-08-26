@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { withOrg } from "./with-org";
 import { admin } from "@/lib/supabase/admin";
 import { guardMeteredCreate, recordUsage } from "./subscription";
+import { defaultTermsText, getQuotationSettings } from "./quotation-studio";
 import { resolveQty, isMeasureMode } from "@/lib/measurement-model";
 import {
   computeLine,
@@ -121,6 +122,12 @@ export async function listVersions(versionGroup: string): Promise<Quotation[]> {
 export async function createQuotation(input: {
   title?: string;
   leadId?: string | null;
+  projectId?: string | null;
+  /** lead | project | standalone — where this quote was raised from. */
+  source?: string;
+  /** regular | modular | revision | budget */
+  doc_type?: string;
+  ref_no?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   customer_email?: string | null;
@@ -143,15 +150,71 @@ export async function createQuotation(input: {
   const seq = String(((existing ?? []).length ?? 0) + 1).padStart(4, "0");
   const number = `QT/${fy}/${seq}`;
 
-  const { data, error } = await db.table("quotations").insert({
-    number,
-    title: input.title?.trim() || "Quotation",
-    lead_id: input.leadId ?? null,
+  // Pull the customer snapshot off the source record when the caller did not
+  // supply one, so raising a quote from a lead does not mean retyping the
+  // client. The snapshot is denormalised on purpose: the document must not
+  // change under the client's feet when the lead is later edited.
+  let snap = {
     customer_name: input.customer_name?.trim() || null,
     customer_phone: input.customer_phone?.trim() || null,
     customer_email: input.customer_email?.trim() || null,
     site_address: input.site_address?.trim() || null,
+  };
+
+  if (input.leadId && !snap.customer_name) {
+    const { data: lead } = await db
+      .table("leads")
+      .select("name, phone, email, address_line, city")
+      .eq("id", input.leadId)
+      .maybeSingle();
+    if (lead) {
+      const l = lead as unknown as {
+        name: string; phone: string | null; email: string | null;
+        address_line: string | null; city: string | null;
+      };
+      snap = {
+        customer_name: l.name,
+        customer_phone: l.phone,
+        customer_email: l.email,
+        site_address: [l.address_line, l.city].filter(Boolean).join(", ") || null,
+      };
+    }
+  } else if (input.projectId && !snap.customer_name) {
+    const { data: project } = await db
+      .table("projects")
+      .select("client_name, address, city")
+      .eq("id", input.projectId)
+      .maybeSingle();
+    if (project) {
+      const pr = project as unknown as {
+        client_name: string | null; address: string | null; city: string | null;
+      };
+      snap = {
+        ...snap,
+        customer_name: pr.client_name,
+        site_address: [pr.address, pr.city].filter(Boolean).join(", ") || null,
+      };
+    }
+  }
+
+  const settings = await getQuotationSettings();
+  const terms = await defaultTermsText();
+  const validUntil = new Date(
+    Date.now() + (Number(settings.default_validity_days) || 15) * 86_400_000,
+  );
+
+  const { data, error } = await db.table("quotations").insert({
+    number,
+    title: input.title?.trim() || "Quotation",
+    lead_id: input.leadId ?? null,
+    project_id: input.projectId ?? null,
+    source: input.source || (input.projectId ? "project" : input.leadId ? "lead" : "standalone"),
+    doc_type: input.doc_type || "regular",
+    ref_no: input.ref_no?.trim() || number,
+    ...snap,
     place_of_supply: input.place_of_supply?.trim() || null,
+    terms: terms || null,
+    valid_until: validUntil.toISOString().slice(0, 10),
     status: "draft",
     created_by: ctx.userId,
   });

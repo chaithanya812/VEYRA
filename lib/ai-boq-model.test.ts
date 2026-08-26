@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAiBoq, aiBoqLineCount, type AiBoq } from "./ai-boq-model";
+import { parseAiBoq, aiBoqLineCount } from "./ai-boq-model";
 
 describe("ai-boq-model — parseAiBoq (AI never prices; validator sanitizes)", () => {
   it("parses a valid rooms/lines structure", () => {
@@ -23,7 +23,9 @@ describe("ai-boq-model — parseAiBoq (AI never prices; validator sanitizes)", (
     });
     expect("boq" in r).toBe(true);
     if ("boq" in r) {
-      const line = r.boq.rooms[0].lines[0] as Record<string, unknown>;
+      // AiBoqLine has no index signature, so widen through unknown to probe
+      // for keys the validator is supposed to have stripped.
+      const line = r.boq.rooms[0].lines[0] as unknown as Record<string, unknown>;
       expect(line.unit_price).toBeUndefined();
       expect(line.rate).toBeUndefined();
       expect(line.amount).toBeUndefined();

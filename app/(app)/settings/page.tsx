@@ -4,9 +4,10 @@ import {
   Briefcase,
   Building2,
   Hash,
-  Percent,
   ShieldCheck,
   SlidersHorizontal,
+  Users,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 import { Card, PageHeader, StatusChip } from "@/components/ui/primitives";
@@ -39,6 +40,20 @@ const LIVE_CARDS: ConfigCard[] = [
     icon: ShieldCheck,
     href: "/settings/roles",
   },
+  {
+    title: "Workspace & people",
+    description:
+      "Who works here, and every dropdown the app offers them — task types, expense categories, leave types, lead sources, budget bands and more.",
+    icon: Users,
+    href: "/settings/workspace",
+  },
+  {
+    title: "Quotations",
+    description:
+      "Default GST rate, margin and validity; the terms & conditions library; the AI prompt library and its activity log.",
+    icon: FileText,
+    href: "/settings/quotations",
+  },
 ];
 
 const SOON_CARDS: ConfigCard[] = [
@@ -47,12 +62,6 @@ const SOON_CARDS: ConfigCard[] = [
     description:
       "Branch master, team grouping and default assignment for new records.",
     icon: Building2,
-  },
-  {
-    title: "Taxes & GST",
-    description:
-      "GST rates, HSN/SAC defaults and tax-inclusive pricing rules for documents.",
-    icon: Percent,
   },
   {
     title: "Company profile",

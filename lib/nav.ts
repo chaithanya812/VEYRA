@@ -48,7 +48,7 @@ export const NAV: NavSection[] = [
   {
     heading: "Sales",
     items: [
-      { label: "Leads", href: "/leads", icon: Users },
+      { label: "Lead Management", href: "/leads", icon: Users },
       { label: "Pipeline", href: "/pipeline", icon: KanbanSquare },
       { label: "Follow-ups", href: "/followups", icon: CalendarClock },
       { label: "Communication", href: "/communication", icon: Phone },

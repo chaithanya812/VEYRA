@@ -1,8 +1,8 @@
 import "server-only";
 import { withOrg } from "./with-org";
+import { listLeadStatuses } from "./lead-management";
 import { listWarehouses, stockLevels } from "./inventory";
 import { vendorNames } from "./purchase-orders";
-import { LEAD_STATUSES } from "@/lib/leads-model";
 
 /**
  * Reports data module (FEATURE-REGISTER OPS-REP-001 · PLAN §6.10) — six
@@ -92,13 +92,19 @@ export async function salesFunnel(): Promise<SalesFunnelRow[]> {
     groups.set(r.status, g);
   }
 
-  const out: SalesFunnelRow[] = LEAD_STATUSES.map((s) => ({
-    status: s,
-    count: groups.get(s)?.count ?? 0,
-    value: round2(groups.get(s)?.value ?? 0),
+  // The ladder is tenant-configured (migration 0024), so the funnel follows the
+  // tenant's own stage order rather than a hardcoded six. Any status a lead
+  // still sits on but that has since been retired is appended, so no lead ever
+  // silently vanishes from the funnel.
+  const statuses = await listLeadStatuses();
+  const known = new Set(statuses.map((s) => s.value));
+  const out: SalesFunnelRow[] = statuses.map((s) => ({
+    status: s.label,
+    count: groups.get(s.value)?.count ?? 0,
+    value: round2(groups.get(s.value)?.value ?? 0),
   }));
   for (const [status, g] of groups) {
-    if (!(LEAD_STATUSES as readonly string[]).includes(status)) {
+    if (!known.has(status)) {
       out.push({ status, count: g.count, value: round2(g.value) });
     }
   }

@@ -43,6 +43,10 @@ export async function searchItemsAction(query: string): Promise<ItemRef[]> {
 const createSchema = z.object({
   title: z.string().optional(),
   leadId: z.string().optional(),
+  projectId: z.string().optional(),
+  source: z.enum(["lead", "project", "standalone"]).optional(),
+  doc_type: z.string().optional(),
+  ref_no: z.string().optional(),
   customer_name: z.string().optional(),
   customer_phone: z.string().optional(),
   customer_email: z.string().email("Enter a valid email").optional().or(z.literal("")),
@@ -57,6 +61,10 @@ export async function createQuotationAction(
     title: formData.get("title") || undefined,
     leadId: formData.get("leadId") || undefined,
     customer_name: formData.get("customer_name") || undefined,
+    projectId: formData.get("projectId") || undefined,
+    source: formData.get("source") || undefined,
+    doc_type: formData.get("doc_type") || undefined,
+    ref_no: formData.get("ref_no") || undefined,
     customer_phone: formData.get("customer_phone") || undefined,
     customer_email: formData.get("customer_email") || undefined,
     place_of_supply: formData.get("place_of_supply") || undefined,
@@ -64,9 +72,23 @@ export async function createQuotationAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
+
+  // A quote must hang off something, or the whole point of the spine is lost.
+  const source = parsed.data.source ?? "standalone";
+  if (source === "lead" && !parsed.data.leadId) {
+    return { error: "Pick the lead this quotation is for." };
+  }
+  if (source === "project" && !parsed.data.projectId) {
+    return { error: "Pick the project this quotation is for." };
+  }
+
   const result = await createQuotation({
     title: parsed.data.title,
-    leadId: parsed.data.leadId || null,
+    leadId: source === "lead" ? parsed.data.leadId || null : null,
+    projectId: source === "project" ? parsed.data.projectId || null : null,
+    source,
+    doc_type: parsed.data.doc_type,
+    ref_no: parsed.data.ref_no || null,
     customer_name: parsed.data.customer_name || null,
     customer_phone: parsed.data.customer_phone || null,
     customer_email: parsed.data.customer_email || null,

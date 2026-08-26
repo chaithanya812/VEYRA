@@ -13,6 +13,7 @@ import { inr } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
+import type { PromptTemplate } from "@/lib/data/quotation-studio";
 import { LineDialog } from "./line-dialog";
 import { AiBoqPanel } from "./ai-boq-panel";
 import {
@@ -26,10 +27,17 @@ export function QuoteBuilder({
   quotation,
   sections,
   lines,
+  prompts,
+  ai,
+  scopeContext,
 }: {
   quotation: Quotation;
   sections: QuotationSection[];
   lines: QuotationLine[];
+  prompts: PromptTemplate[];
+  ai: { configured: boolean; provider: string; model: string };
+  /** Scope carried over from the originating lead, fed to the AI as context. */
+  scopeContext?: string | null;
 }) {
   const linesBySection = new Map<string | null, QuotationLine[]>();
   for (const l of lines) {
@@ -126,7 +134,14 @@ export function QuoteBuilder({
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-[var(--color-ink)]">Bill of quantities</h2>
             <div className="flex items-center gap-2">
-              <AiBoqPanel quotationId={quotation.id} />
+              <AiBoqPanel
+                quotationId={quotation.id}
+                prompts={prompts}
+                context={scopeContext}
+                configured={ai.configured}
+                provider={ai.provider}
+                model={ai.model}
+              />
               <LineDialog
                 quotationId={quotation.id}
                 sections={sections}

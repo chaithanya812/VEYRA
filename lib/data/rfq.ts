@@ -554,7 +554,6 @@ export async function awardRfq(
     .filter((l): l is NonNullable<typeof l> => l !== null);
   if (poLines.length === 0) return {}; // awarded, but nothing to draft
 
-  const names = await vendorNames([winnerId]);
   const po = await createPurchaseOrder({
     name: `PO — ${rfq.title}`,
     vendor_id: winnerId,

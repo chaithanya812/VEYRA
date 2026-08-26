@@ -68,6 +68,19 @@ export const TENANT_TABLES = [
   "panel_tags",
   "panel_events",
   "work_centers",
+  "workspace_options",
+  "tasks",
+  "task_checklist",
+  "work_sessions",
+  "leave_requests",
+  "expense_claims",
+  "field_visits",
+  "lead_statuses",
+  "lead_assignees",
+  "quotation_terms",
+  "quotation_settings",
+  "ai_prompt_templates",
+  "ai_requests",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

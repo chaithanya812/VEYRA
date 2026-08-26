@@ -1,28 +1,36 @@
-import { signOut } from "@/app/(auth)/actions";
-import { Button } from "@/components/ui/button";
+import { ViewAs } from "./view-as";
+import type { Member } from "@/lib/data/team";
 
+/**
+ * The app chrome. While login is removed (owner request) the right-hand side
+ * carries the "View as" picker instead of an account menu — pick a profile and
+ * the whole workspace re-scopes to that person. When auth returns, swap this
+ * back for the signed-in user + sign-out control.
+ */
 export function TopBar({
   orgName,
-  userEmail,
+  members,
+  currentId,
+  currentName,
+  currentRole,
 }: {
   orgName: string;
-  userEmail: string | null;
+  members: Member[];
+  currentId: string;
+  currentName: string;
+  currentRole: string;
 }) {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6">
-      <span className="text-sm font-semibold text-[var(--color-ink)]">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6">
+      <span className="truncate text-sm font-semibold text-[var(--color-ink)]">
         {orgName}
       </span>
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-[var(--color-ink-secondary)]">
-          {userEmail}
-        </span>
-        <form action={signOut}>
-          <Button type="submit" variant="ghost" size="sm">
-            Sign out
-          </Button>
-        </form>
-      </div>
+      <ViewAs
+        members={members}
+        currentId={currentId}
+        currentName={currentName}
+        currentRole={currentRole}
+      />
     </header>
   );
 }

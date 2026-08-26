@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Link2, Copy, GitBranch } from "lucide-react";
 import { getQuotation, listVersions } from "@/lib/data/quotations";
+import { aiBackendStatus, listPrompts } from "@/lib/data/quotation-studio";
+import { leadScopeContext } from "@/lib/data/quotation-context";
 import { getViewer } from "@/lib/data/context";
 import { QUOTE_STATUSES } from "@/lib/quotations-model";
 import { statusTone, statusLabel } from "@/lib/quotations-ui";
@@ -24,10 +26,13 @@ export default async function QuotationDetailPage({
   const data = await getQuotation(id);
   if (!data) notFound();
   const { quotation, sections, lines } = data;
-  const [versions, viewer] = await Promise.all([
+  const [versions, viewer, prompts, scopeContext] = await Promise.all([
     listVersions(quotation.version_group),
     getViewer(),
+    listPrompts(),
+    leadScopeContext(quotation.lead_id),
   ]);
+  const ai = aiBackendStatus();
 
   // Customer-facing PDF payload — cost/margin are intentionally excluded.
   const pdfData: QuotationPdfData = {
@@ -174,7 +179,14 @@ export default async function QuotationDetailPage({
         )}
       </Card>
 
-      <QuoteBuilder quotation={quotation} sections={sections} lines={lines} />
+      <QuoteBuilder
+        quotation={quotation}
+        sections={sections}
+        lines={lines}
+        prompts={prompts}
+        ai={ai}
+        scopeContext={scopeContext}
+      />
     </div>
   );
 }
