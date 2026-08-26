@@ -1,8 +1,17 @@
 import "server-only";
 import { cache } from "react";
 import { admin } from "@/lib/supabase/admin";
-import { requireUser } from "@/lib/auth/session";
+import { getUser } from "@/lib/auth/session";
 import type { TenantTable } from "./tables";
+
+/**
+ * TEMPORARY: login removed by owner request (auth to be implemented later). When
+ * no authenticated session resolves, the app operates as this demo tenant so
+ * every route is usable without logging in. To restore auth: make getOrgContext
+ * throw when there is no user (see the block below) and restore the /login
+ * redirect in app/(app)/layout.tsx.
+ */
+const DEMO_ORG_ID = "d46a53af-58b1-4ed7-87be-c675e5803802";
 
 /**
  * ────────────────────────────────────────────────────────────────────────────
@@ -47,24 +56,44 @@ export interface OrgContext {
  * request; it is request-scoped, so tenant isolation is unchanged.
  */
 export const getOrgContext = cache(async function getOrgContext(): Promise<OrgContext> {
-  const user = await requireUser();
-  const { data, error } = await admin
+  const user = await getUser();
+  if (user) {
+    const { data, error } = await admin
+      .from("org_members")
+      .select("id, org_id, role")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) {
+      return {
+        orgId: data.org_id as string,
+        userId: user.id,
+        role: data.role as string,
+        memberId: data.id as string,
+      };
+    }
+  }
+
+  // TEMPORARY (login removed) — no session: operate as the demo tenant. Restore
+  // auth by throwing NotAuthenticatedError here instead. See top-of-file note.
+  const { data: demo, error: demoErr } = await admin
     .from("org_members")
-    .select("id, org_id, role")
-    .eq("user_id", user.id)
+    .select("id, org_id, role, user_id")
+    .eq("org_id", DEMO_ORG_ID)
     .eq("status", "active")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
-
-  if (error) throw error;
-  if (!data) throw new NoOrgMembershipError();
-
+  if (demoErr) throw demoErr;
+  if (!demo) throw new NoOrgMembershipError();
   return {
-    orgId: data.org_id as string,
-    userId: user.id,
-    role: data.role as string,
-    memberId: data.id as string,
+    orgId: DEMO_ORG_ID,
+    userId: demo.user_id as string,
+    role: demo.role as string,
+    memberId: demo.id as string,
   };
 });
 
