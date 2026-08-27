@@ -1,20 +1,58 @@
 "use client";
 
-import { useRef, useTransition } from "react";
-import { ChevronDown, UserRound } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Check, ChevronDown, UserRound } from "lucide-react";
 import { setActingMemberAction } from "@/app/(app)/actions";
 import { ROLE_LABELS, asMemberRole, groupByRole } from "@/lib/workspace-model";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import type { Member } from "@/lib/data/team";
 
 /**
  * "View as" — the stand-in for login while auth is removed.
  *
  * No passwords: pick Admin, Owner, Manager or a named Staff profile and the
- * whole app re-scopes to that person. The list is grouped by role so the three
- * tiers read at a glance. The chosen id is validated server-side against this
- * org's own membership list, so this can only ever move between people inside
- * one workspace.
+ * whole app re-scopes to that person. The chosen id is validated server-side
+ * against this org's own membership list, so this can only ever move between
+ * people inside one workspace — never a privilege-escalation path.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * Why a popover and not a <select>.
+ * ────────────────────────────────────────────────────────────────────────────
+ * The previous version was an uncontrolled `<select defaultValue={currentId}>`.
+ * React applies `defaultValue` on mount only, so after the server action set
+ * the cookie and revalidatePath() re-rendered this layout, React reconciled the
+ * SAME DOM node and the browser's dirty-value flag kept the stale selection:
+ * the page said "Good morning, Rahul" while the picker still read "Meghana Rao".
+ * The control lied about who you were, which read as the switch being broken.
+ *
+ * Every label below is derived from the `current*` props on each render, so it
+ * cannot drift from the server's answer.
  */
+
+/** First letters of the first two words — "Meghana Rao" → "MR". */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+function Avatar({ name, active }: { name: string; active?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-semibold",
+        active
+          ? "border-[color-mix(in_srgb,var(--color-red)_30%,white)] bg-[var(--color-red-tint)] text-[var(--color-red-hover)]"
+          : "border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-[var(--color-ink-secondary)]",
+      )}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
 export function ViewAs({
   members,
   currentId,
@@ -28,7 +66,9 @@ export function ViewAs({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
 
+  // A workspace of one has nobody to switch to — show the person, not a picker.
   if (members.length < 2) {
     return (
       <span className="inline-flex items-center gap-2 text-sm text-[var(--color-ink-secondary)]">
@@ -40,36 +80,110 @@ export function ViewAs({
 
   const groups = groupByRole(members);
 
+  function choose(id: string) {
+    if (id === currentId) {
+      setOpen(false);
+      return;
+    }
+    const form = formRef.current;
+    if (!form) return;
+    const field = form.elements.namedItem("memberId") as HTMLInputElement | null;
+    if (!field) return;
+    field.value = id;
+    setOpen(false);
+    start(() => form.requestSubmit());
+  }
+
   return (
-    <form ref={formRef} action={setActingMemberAction} className="flex items-center gap-2">
-      <span className="hidden text-[13px] text-[var(--color-ink-secondary)] sm:inline">
-        View as
-      </span>
-      <div className="relative">
-        <select
-          name="memberId"
-          defaultValue={currentId}
-          disabled={pending}
-          aria-label="View the workspace as"
-          onChange={() => start(() => formRef.current?.requestSubmit())}
-          className="h-8 appearance-none rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] pl-3 pr-8 text-[13px] font-medium text-[var(--color-ink)] outline-none focus:border-[var(--color-red)] disabled:opacity-60"
-        >
-          {groups.map((g) => (
-            <optgroup key={g.role} label={g.label}>
-              {g.people.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                  {m.designation ? ` — ${m.designation}` : ""}
-                </option>
+    <>
+      {/* The action carries a single hidden field; the popover sets it. */}
+      <form ref={formRef} action={setActingMemberAction} className="hidden">
+        <input type="hidden" name="memberId" defaultValue={currentId} />
+      </form>
+
+      <div className="flex items-center gap-2">
+        <span className="hidden text-[13px] text-[var(--color-ink-secondary)] sm:inline">
+          View as
+        </span>
+
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            disabled={pending}
+            aria-label={`Viewing as ${currentName}. Change person.`}
+            className={cn(
+              "flex h-10 items-center gap-2.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] py-1 pl-1 pr-3 text-left transition-colors",
+              "hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-sunken)]",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-red)]",
+              "disabled:opacity-60",
+            )}
+          >
+            <Avatar name={currentName} active />
+            <span className="flex flex-col leading-tight">
+              <span className="text-[13px] font-medium text-[var(--color-ink)]">
+                {currentName}
+              </span>
+              <span className="text-[11px] text-[var(--color-ink-secondary)]">
+                {ROLE_LABELS[asMemberRole(currentRole)]}
+              </span>
+            </span>
+            <ChevronDown className="size-3.5 shrink-0 text-[var(--color-ink-secondary)]" />
+          </PopoverTrigger>
+
+          <PopoverContent align="end" sideOffset={6} className="w-72 p-0">
+            <p className="border-b border-[var(--color-border)] px-3 py-2 text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-secondary)]">
+              View the workspace as
+            </p>
+            <div className="max-h-[70vh] overflow-y-auto py-1">
+              {groups.map((g) => (
+                <div key={g.role} className="py-1">
+                  <p className="px-3 pb-1 pt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--color-ink-disabled)]">
+                    {g.label}
+                  </p>
+                  {g.people.map((m) => {
+                    const on = m.id === currentId;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => choose(m.id)}
+                        aria-current={on ? "true" : undefined}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+                          "hover:bg-[var(--color-surface-sunken)]",
+                          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-red)]",
+                          on && "bg-[var(--color-red-tint)]",
+                        )}
+                      >
+                        <Avatar name={m.name} active={on} />
+                        <span className="flex min-w-0 flex-col leading-tight">
+                          <span
+                            className={cn(
+                              "truncate text-[13px] font-medium",
+                              on
+                                ? "text-[var(--color-red-hover)]"
+                                : "text-[var(--color-ink)]",
+                            )}
+                          >
+                            {m.name}
+                          </span>
+                          {m.designation && (
+                            <span className="truncate text-[11px] text-[var(--color-ink-secondary)]">
+                              {m.designation}
+                            </span>
+                          )}
+                        </span>
+                        {on && (
+                          <Check className="ml-auto size-4 shrink-0 text-[var(--color-red)]" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
-            </optgroup>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-[var(--color-ink-secondary)]" />
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
-      <span className="hidden rounded-full border border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-ink-secondary)] md:inline">
-        {ROLE_LABELS[asMemberRole(currentRole)]}
-      </span>
-    </form>
+    </>
   );
 }

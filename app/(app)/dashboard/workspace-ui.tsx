@@ -40,11 +40,11 @@ export function TabBar({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="-mx-1 overflow-x-auto pb-1">
+    <div className="-mx-1 overflow-x-auto px-1 pb-1">
       <div
         role="tablist"
         aria-label="Workspace sections"
-        className="flex w-max items-center gap-1 px-1"
+        className="inline-flex w-max items-center gap-1 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-1"
       >
         {tabs.map((t) => {
           const on = t.id === active;
@@ -56,13 +56,19 @@ export function TabBar({
               aria-selected={on}
               onClick={() => onSelect(t.id)}
               className={cn(
-                "inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-[13px] font-medium transition-colors",
+                "relative inline-flex items-center gap-2 whitespace-nowrap rounded-md px-3.5 py-2 text-[13px] font-medium transition-colors",
+                "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--color-red)]",
                 on
-                  ? "border-[color-mix(in_srgb,var(--color-red)_25%,white)] bg-[var(--color-red-tint)] text-[var(--color-red-hover)]"
-                  : "border-transparent text-[var(--color-ink-secondary)] hover:bg-[var(--color-surface-sunken)] hover:text-[var(--color-ink)]",
+                  ? "bg-[var(--color-surface)] text-[var(--color-ink)] shadow-[0_1px_2px_rgba(23,23,26,0.06),0_1px_1px_rgba(23,23,26,0.04)]"
+                  : "text-[var(--color-ink-secondary)] hover:bg-[color-mix(in_srgb,var(--color-surface)_70%,transparent)] hover:text-[var(--color-ink)]",
               )}
             >
-              <span className={cn("shrink-0", on && "text-[var(--color-red)]")}>
+              <span
+                className={cn(
+                  "shrink-0",
+                  on ? "text-[var(--color-red)]" : "text-[var(--color-ink-disabled)]",
+                )}
+              >
                 {t.icon}
               </span>
               {t.label}
@@ -72,11 +78,20 @@ export function TabBar({
                     "rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular",
                     t.alert
                       ? "bg-[var(--color-red)] text-white"
-                      : "bg-[var(--color-surface-sunken)] text-[var(--color-ink-secondary)]",
+                      : on
+                        ? "bg-[var(--color-surface-sunken)] text-[var(--color-ink-secondary)]"
+                        : "bg-[var(--color-surface)] text-[var(--color-ink-secondary)]",
                   )}
                 >
                   {t.badge}
                 </span>
+              )}
+              {/* Active marker — "active navigation" is on red's closed list. */}
+              {on && (
+                <span
+                  aria-hidden
+                  className="absolute inset-x-3 bottom-0.5 h-0.5 rounded-full bg-[var(--color-red)]"
+                />
               )}
             </button>
           );
