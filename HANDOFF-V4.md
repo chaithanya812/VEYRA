@@ -60,18 +60,34 @@ they drive the Progress Report, which is what actually reaches the client.
 
 ## Already done — do not redo
 
-Phase 0 is partly complete. `git diff` shows two finished, gate-green changes:
+Phase 0 is partly complete and **committed**. `git log --oneline -4`:
 
-- **`components/shell/view-as.tsx` — rewritten.** The "View as" picker was an uncontrolled
+```
+2b758fb  Phase 0: stop the View-as switch throwing you onto /leads
+2df3fe8  docs: V4 plan, frame register and handoff, with the source screenshots
+db30b36  Phase 0: fix the stale View-as picker, rebuild the dashboard tab bar
+9dd62d1  chore: stop tracking tsconfig.tsbuildinfo
+```
+
+Three finished changes:
+
+- **`components/shell/view-as.tsx` — rewritten.** The picker was an uncontrolled
   `<select defaultValue>`; React applies `defaultValue` on mount only, so after the server action
   revalidated the layout the DOM kept the stale selection — the page said "Good morning, Rahul"
-  while the picker still read "Meghana Rao". Replaced with an avatar + role popover driven by
-  server props on every render. Fixes both the stale value and the owner's "too small" complaint.
-- **`app/(app)/dashboard/workspace-ui.tsx` — `TabBar` rebuilt** as a segmented control
-  (white card on sunken ground, red icon, red active underline). The owner rejected the old pills.
+  while the picker still read "Meghana Rao". Now an avatar + role popover driven by server props
+  on every render. Fixes both the stale value and the owner's "too small" complaint.
+- **`app/(app)/actions.ts` — `revalidatePath("/", "layout")` removed.** It re-ran `app/page.tsx`,
+  which is a `redirect()` to `/leads`, so switching person threw you off whatever page you were
+  on. The picker now calls `router.refresh()` after the action resolves. **If you ever reach for
+  `revalidatePath("/")` in this app, remember the root route is a redirect.**
+- **`app/(app)/dashboard/workspace-ui.tsx` — `TabBar` rebuilt** as a segmented control (white card
+  on a sunken track, red icon, red active underline). The owner rejected the old pills.
   **This component is reused by every module tab row in Phases 7–12 — do not fork it.**
 
-`tsc --noEmit` and `eslint` are green on both.
+All five gates green at that commit: tsc 0 · eslint 0 · vitest 267/267 · next build 56 routes ·
+verify 77/77.
+
+The only untracked file is `HANDOFF-NEXT.md`, which is stale — see the note above.
 
 ## Start here
 
