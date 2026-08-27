@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Check, ChevronDown, UserRound } from "lucide-react";
 import { setActingMemberAction } from "@/app/(app)/actions";
 import { ROLE_LABELS, asMemberRole, groupByRole } from "@/lib/workspace-model";
@@ -64,7 +65,7 @@ export function ViewAs({
   currentName: string;
   currentRole: string;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
 
@@ -80,27 +81,28 @@ export function ViewAs({
 
   const groups = groupByRole(members);
 
+  /**
+   * Set the cookie, then re-render the page we are already on.
+   *
+   * router.refresh() rather than the action calling revalidatePath("/", "layout"):
+   * revalidating "/" re-runs app/page.tsx, which is a redirect() to /leads, so
+   * the action's response carried that redirect and switching person threw you
+   * off whatever page you were viewing. refresh() re-runs the CURRENT route's
+   * server components with the new cookie and leaves you where you were.
+   */
   function choose(id: string) {
-    if (id === currentId) {
-      setOpen(false);
-      return;
-    }
-    const form = formRef.current;
-    if (!form) return;
-    const field = form.elements.namedItem("memberId") as HTMLInputElement | null;
-    if (!field) return;
-    field.value = id;
     setOpen(false);
-    start(() => form.requestSubmit());
+    if (id === currentId) return;
+    start(async () => {
+      const data = new FormData();
+      data.set("memberId", id);
+      await setActingMemberAction(data);
+      router.refresh();
+    });
   }
 
   return (
     <>
-      {/* The action carries a single hidden field; the popover sets it. */}
-      <form ref={formRef} action={setActingMemberAction} className="hidden">
-        <input type="hidden" name="memberId" defaultValue={currentId} />
-      </form>
-
       <div className="flex items-center gap-2">
         <span className="hidden text-[13px] text-[var(--color-ink-secondary)] sm:inline">
           View as

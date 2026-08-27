@@ -1,7 +1,6 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ACTING_COOKIE, listMembers } from "@/lib/data/team";
 
@@ -36,6 +35,9 @@ export async function setActingMemberAction(formData: FormData): Promise<void> {
     maxAge: 60 * 60 * 24 * 30,
   });
 
-  // Every surface reads "my" data — re-render the whole app shell.
-  revalidatePath("/", "layout");
+  // Deliberately NOT revalidatePath("/", "layout"): revalidating "/" makes Next
+  // re-run app/page.tsx, which is a redirect() to /leads — so the action's
+  // response carried that redirect and switching person threw you off whatever
+  // page you were on. The caller calls router.refresh() instead, which re-runs
+  // the CURRENT route's server components with the new cookie and stays put.
 }
