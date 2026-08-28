@@ -33,10 +33,34 @@
 
   /* Informational — the neutral-but-notable state (a count in flight, a
      baseline, an estimate). Blue carries no alarm, which is exactly why it
-     exists: it keeps counts off red. Same hue as chart-1 will be, so a tile
-     and its series read as one thing. */
+     exists: it keeps counts off red. Deliberately the same hue as chart-1, so
+     a tile and its series read as one thing. */
   --color-info: #2563eb;
   --color-info-tint: #eaf0fd;
+
+  /* ── Categorical data palette (PLAN-V4 §4.1) ─────────────────────────────
+     Charts and module identity ONLY. Never buttons, borders, nav pills or
+     text emphasis. The competitor's screens read as colourful because their
+     tiles and charts are tinted — not because red is used more — and this is
+     how VEYRA gets the same effect without spending red.
+
+     THE ORDER IS FIXED. Series 1 is always the first series on every screen,
+     so the same colour means the same thing everywhere. Do not reorder to
+     make one chart look nicer. */
+  --color-chart-1: #2563eb; /* blue    */
+  --color-chart-2: #0d9488; /* teal    */
+  --color-chart-3: #7c3aed; /* violet  */
+  --color-chart-4: #c2410c; /* orange  */
+  --color-chart-5: #4d7c0f; /* olive   */
+  --color-chart-6: #be185d; /* magenta */
+
+  /* ~8% fills for areas, segments and card washes. */
+  --color-chart-1-tint: #eaf0fd;
+  --color-chart-2-tint: #e6f4f2;
+  --color-chart-3-tint: #f1ecfd;
+  --color-chart-4-tint: #fbeee7;
+  --color-chart-5-tint: #eef3e6;
+  --color-chart-6-tint: #fceaf1;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;

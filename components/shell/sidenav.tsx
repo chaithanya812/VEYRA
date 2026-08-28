@@ -12,6 +12,7 @@ import {
   type NavGroup,
   type NavLeaf,
 } from "@/lib/nav";
+import { MODULE_COLOR } from "@/lib/palette";
 import { cn } from "@/lib/utils";
 
 /**
@@ -168,7 +169,7 @@ function Group({
               : "text-[var(--color-ink-secondary)] hover:bg-[var(--color-surface-sunken)] hover:text-[var(--color-ink)]",
           )}
         >
-          <Icon className="size-4" />
+          <Icon className="size-4" style={{ color: MODULE_COLOR[group.id] }} />
         </button>
         <div className="invisible absolute left-full top-0 z-50 ml-1 w-56 rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 opacity-0 shadow-lg transition-opacity group-focus-within/nav:visible group-focus-within/nav:opacity-100 group-hover/nav:visible group-hover/nav:opacity-100">
           <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-disabled)]">
@@ -204,7 +205,12 @@ function Group({
         )}
       >
         <span className="flex items-center gap-2.5">
-          <Icon className="size-4 shrink-0" />
+          {/* Module identity colour (PLAN-V4 §4.3) — it makes six groups
+              scannable at a glance and costs red nothing. */}
+          <Icon
+            className="size-4 shrink-0"
+            style={{ color: MODULE_COLOR[group.id] }}
+          />
           {group.label}
         </span>
         <span className="flex items-center gap-1.5">
