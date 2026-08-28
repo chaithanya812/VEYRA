@@ -103,47 +103,118 @@ export function TabBar({
 
 /* ── Stat tile ────────────────────────────────────────────────────────────── */
 
+/**
+ * Semantic tile tones (PLAN-V4 §4.2). The colour carries the meaning exactly
+ * like a status chip does — `positive` is money in / on time / done, `warning`
+ * is pending, `negative` is a genuine alert, `info` is a notable-but-calm
+ * count. Four flat grey boxes give the eye nowhere to land; a tinted tile says
+ * what kind of number it is before you read it.
+ *
+ * `negative` stays rare. It is red's "genuine alert" job, not decoration — a
+ * tile is never negative just because it is important.
+ *
+ * The green/amber/red aliases exist because the shared `Tone` vocabulary
+ * (StatusChip, chips, rows) already speaks them and dozens of call sites pass
+ * them. They map onto the semantic names rather than duplicating the palette.
+ */
+export type TileTone = Tone | "positive" | "warning" | "negative" | "info";
+
+type ToneSkin = { bg: string; border: string; value: string; label: string };
+
+const TILE_TONES: Record<
+  "neutral" | "positive" | "warning" | "negative" | "info",
+  ToneSkin
+> = {
+  neutral: {
+    bg: "bg-[var(--color-surface)]",
+    border: "border-[var(--color-border)]",
+    value: "text-[var(--color-ink)]",
+    label: "text-[var(--color-ink-secondary)]",
+  },
+  positive: {
+    bg: "bg-[var(--color-green-tint)]",
+    border: "border-[color-mix(in_srgb,var(--color-green)_22%,white)]",
+    value: "text-[var(--color-green)]",
+    label: "text-[color-mix(in_srgb,var(--color-green)_75%,var(--color-ink))]",
+  },
+  warning: {
+    bg: "bg-[var(--color-amber-tint)]",
+    border: "border-[color-mix(in_srgb,var(--color-amber)_25%,white)]",
+    value: "text-[var(--color-amber)]",
+    label: "text-[color-mix(in_srgb,var(--color-amber)_75%,var(--color-ink))]",
+  },
+  negative: {
+    bg: "bg-[var(--color-red-tint)]",
+    border: "border-[color-mix(in_srgb,var(--color-red)_22%,white)]",
+    value: "text-[var(--color-red)]",
+    label: "text-[color-mix(in_srgb,var(--color-red)_70%,var(--color-ink))]",
+  },
+  info: {
+    bg: "bg-[var(--color-info-tint)]",
+    border: "border-[color-mix(in_srgb,var(--color-info)_22%,white)]",
+    value: "text-[var(--color-info)]",
+    label: "text-[color-mix(in_srgb,var(--color-info)_70%,var(--color-ink))]",
+  },
+};
+
+const TONE_ALIAS: Record<TileTone, keyof typeof TILE_TONES> = {
+  neutral: "neutral",
+  green: "positive",
+  positive: "positive",
+  amber: "warning",
+  warning: "warning",
+  red: "negative",
+  negative: "negative",
+  info: "info",
+};
+
 export function StatTile({
   label,
   value,
   hint,
   tone = "neutral",
   hero,
+  icon,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
-  tone?: Tone;
-  /** The single number this panel exists to show. At most one per panel. */
+  tone?: TileTone;
+  /**
+   * The single number this panel exists to show. At most one per panel — a
+   * grid where everything is the hero has no hero.
+   */
   hero?: boolean;
+  icon?: ReactNode;
 }) {
-  const toneText: Record<Tone, string> = {
-    neutral: "text-[var(--color-ink)]",
-    green: "text-[var(--color-green)]",
-    amber: "text-[var(--color-amber)]",
-    red: "text-[var(--color-red)]",
-  };
-  const toneBorder: Record<Tone, string> = {
-    neutral: "border-[var(--color-border)]",
-    green: "border-[color-mix(in_srgb,var(--color-green)_25%,white)]",
-    amber: "border-[color-mix(in_srgb,var(--color-amber)_30%,white)]",
-    red: "border-[color-mix(in_srgb,var(--color-red)_25%,white)]",
-  };
+  const skin = TILE_TONES[TONE_ALIAS[tone]];
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-card)] border bg-[var(--color-surface)] p-4",
-        toneBorder[tone],
+        "relative overflow-hidden rounded-[var(--radius-card)] border p-4",
+        skin.bg,
+        skin.border,
+        // The hero earns its weight from size and a lift, not from a sixth use
+        // of red: a neutral hero stays neutral.
+        hero && "p-5 shadow-[0_1px_3px_rgba(23,23,26,0.07),0_1px_2px_rgba(23,23,26,0.04)]",
       )}
     >
-      <p className="text-[12px] font-medium uppercase tracking-wide text-[var(--color-ink-secondary)]">
-        {label}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p
+          className={cn(
+            "text-[12px] font-medium uppercase tracking-wide",
+            skin.label,
+          )}
+        >
+          {label}
+        </p>
+        {icon && <span className={cn("shrink-0 opacity-70", skin.value)}>{icon}</span>}
+      </div>
       <p
         className={cn(
           "mt-1.5 font-semibold tabular",
-          hero ? "text-3xl" : "text-xl",
-          toneText[tone],
+          hero ? "text-[32px] leading-[1.1]" : "text-xl",
+          skin.value,
         )}
       >
         {value}

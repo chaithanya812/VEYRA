@@ -2,9 +2,13 @@
 
 import { useActionState } from "react";
 import {
+  AlertTriangle,
+  CalendarClock,
   CalendarDays,
   Check,
+  CheckCircle2,
   CircleCheck,
+  ClipboardList,
   Clock,
   MapPin,
   Play,
@@ -158,32 +162,48 @@ export function OverviewPanel({ w }: { w: MyWorkspace }) {
   return (
     <>
       <TileGrid>
+        {/* Hours today is the hero — it is the one number on this panel you can
+            act on right now (check in, check out). Overdue is the only tile
+            allowed to go red, and only when there is something actually
+            overdue: red's "genuine alert" job, never decoration. */}
         <StatTile
+          hero
           label="Hours today"
           value={hoursLabel(w.hoursToday)}
           hint={w.openSession ? "Currently checked in" : "Not checked in"}
-          tone={w.openSession ? "green" : "neutral"}
+          tone={w.openSession ? "positive" : "neutral"}
+          icon={<Clock className="size-4" />}
         />
         <StatTile
           label="Open tasks"
           value={w.taskCounts.open}
           hint={`${w.taskCounts.today} due today`}
+          tone={w.taskCounts.open > 0 ? "info" : "neutral"}
+          icon={<ClipboardList className="size-4" />}
         />
         <StatTile
           label="Overdue"
           value={w.taskCounts.overdue}
-          tone={w.taskCounts.overdue > 0 ? "red" : "neutral"}
+          tone={w.taskCounts.overdue > 0 ? "negative" : "positive"}
           hint={w.taskCounts.overdue > 0 ? "Needs attention" : "All clear"}
+          icon={
+            w.taskCounts.overdue > 0 ? (
+              <AlertTriangle className="size-4" />
+            ) : (
+              <CheckCircle2 className="size-4" />
+            )
+          }
         />
         <StatTile
           label="Client follow-ups"
           value={w.followUps.length}
-          tone={missedFollowUps > 0 ? "red" : "neutral"}
+          tone={missedFollowUps > 0 ? "warning" : "neutral"}
           hint={
             missedFollowUps > 0
               ? `${missedFollowUps} missed`
               : `${inr(w.expenseSummary.payable)} expenses owed to you`
           }
+          icon={<CalendarClock className="size-4" />}
         />
       </TileGrid>
 

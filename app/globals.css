@@ -31,6 +31,13 @@
   --color-amber: #9a6700;
   --color-amber-tint: #fbf1dc;
 
+  /* Informational — the neutral-but-notable state (a count in flight, a
+     baseline, an estimate). Blue carries no alarm, which is exactly why it
+     exists: it keeps counts off red. Same hue as chart-1 will be, so a tile
+     and its series read as one thing. */
+  --color-info: #2563eb;
+  --color-info-tint: #eaf0fd;
+
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
 

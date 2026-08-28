@@ -72,13 +72,6 @@ type View = "my" | "team";
  */
 export const TEAM_VIEW_ENABLED = false;
 
-function greeting(now: Date): string {
-  const h = now.getHours();
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  return "Good evening";
-}
-
 export function WorkspaceShell({
   w,
   team,
@@ -87,16 +80,15 @@ export function WorkspaceShell({
 }: {
   w: MyWorkspace;
   team: TeamWorkspace | null;
-  org: DashboardData;
+  org: DashboardData | null;
   members: Member[];
 }) {
   const teamView = TEAM_VIEW_ENABLED ? team : null;
   const [view, setView] = useState<View>("my");
   const [tab, setTab] = useState("overview");
-  const [today, setToday] = useState<string>("");
 
-  // Restore the last position from the URL, and render the date client-side so
-  // the server render is not pinned to the build machine's clock.
+  // Restore the last position from the URL. The greeting and the date are
+  // rendered on the server (see page.tsx) — this only restores position.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const v = params.get("view");
@@ -104,13 +96,6 @@ export function WorkspaceShell({
     const tabs = v === "team" && teamView ? TEAM_TABS : MY_TABS;
     if (v === "team" && teamView) setView("team");
     if (t && tabs.some((x) => x.id === t)) setTab(t);
-    setToday(
-      new Date().toLocaleDateString("en-IN", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      }),
-    );
   }, [teamView]);
 
   const sync = useCallback((nextView: View, nextTab: string) => {
@@ -156,23 +141,12 @@ export function WorkspaceShell({
   });
 
   return (
-    <div className="mx-auto max-w-6xl">
-      {/* Header — who you are, what day it is, and which lens you're using. */}
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-[var(--color-ink)]">
-            {greeting(new Date())},{" "}
-            <span className="text-[var(--color-ink)]">
-              {w.member.name.split(" ")[0]}
-            </span>
-          </h1>
-          <p className="mt-1 text-sm text-[var(--color-ink-secondary)]">
-            {today || " "}
-            {isTeam ? " · Managing the whole workspace" : " · Your work today"}
-          </p>
-        </div>
-
-        {teamView && (
+    <>
+      {/* The greeting lives in page.tsx so it can paint before any query
+          resolves. What stays here is the scope switch, which depends on the
+          data this shell was given. */}
+      {teamView && (
+        <div className="mb-3 flex justify-end">
           <div
             role="tablist"
             aria-label="Dashboard scope"
@@ -201,8 +175,8 @@ export function WorkspaceShell({
               </button>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="sticky top-0 z-10 -mx-1 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-1 pt-1">
         <TabBar tabs={tabs} active={tab} onSelect={selectTab} />
@@ -220,7 +194,9 @@ export function WorkspaceShell({
         )}
         {isTeam && teamView && (
           <>
-            {tab === "overview" && <TeamOverviewPanel team={teamView} org={org} />}
+            {tab === "overview" && org && (
+              <TeamOverviewPanel team={teamView} org={org} />
+            )}
             {tab === "team" && <TeamPanel team={teamView} />}
             {tab === "board" && (
               <TaskBoardPanel team={teamView} w={w} members={members} />
@@ -238,7 +214,7 @@ export function WorkspaceShell({
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }
 

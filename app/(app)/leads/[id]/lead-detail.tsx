@@ -10,9 +10,18 @@ import {
   IdCard,
   MapPin,
   Phone,
+  Plus,
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { cn, fmtDate, inr } from "@/lib/utils";
 import {
@@ -455,15 +464,22 @@ export function FollowUpForm({
   leadName,
   members,
   compact,
+  onDone,
 }: {
   leadId: string;
   leadName?: string;
   members: Member[];
   compact?: boolean;
+  /** Called once the follow-up is actually written — the dialog closes on it. */
+  onDone?: () => void;
 }) {
   const [state, create] = useActionState(createFollowUpAction, initial);
   const [kind, setKind] = useState<"callback" | "meeting">("callback");
   const today = new Date().toISOString().slice(0, 10);
+
+  useEffect(() => {
+    if (state?.ok) onDone?.();
+  }, [state, onDone]);
 
   return (
     <form action={create} className="flex flex-col gap-4">
@@ -541,6 +557,51 @@ export function FollowUpForm({
         <SubmitButton pendingLabel="Scheduling…">Create</SubmitButton>
       </div>
     </form>
+  );
+}
+
+/**
+ * A lead carries as many follow-ups as the conversation needs — that is the
+ * normal case, not the exception. This used to be a `Disclosure` that folded
+ * shut the moment one follow-up existed, so the screen read "one and done".
+ * Now the primary sits at the top-right of the tab and stays there: the answer
+ * to "can I add another?" is always visibly yes.
+ */
+function NewFollowUpDialog({
+  leadId,
+  leadName,
+  members,
+}: {
+  leadId: string;
+  leadName: string;
+  members: Member[];
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="primary" size="sm">
+          <Plus className="size-4" /> Add follow-up
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>New follow-up</DialogTitle>
+          <DialogDescription>
+            A callback is a reminder to phone this client — VEYRA never dials.
+            Add as many as the conversation needs.
+          </DialogDescription>
+        </DialogHeader>
+        <FollowUpForm
+          leadId={leadId}
+          leadName={leadName}
+          members={members}
+          onDone={close}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -638,15 +699,22 @@ function FollowUpsTab({
 
   return (
     <>
-      <Section title="Schedule a follow-up">
-        <Disclosure label="New follow-up" defaultOpen={followUps.length === 0}>
-          <FollowUpForm leadId={leadId} leadName={leadName} members={members} />
-        </Disclosure>
-      </Section>
-
-      <Section title="Open" description="Anything still owed to this client.">
+      <Section
+        title="Open"
+        description="Anything still owed to this client."
+        action={
+          <NewFollowUpDialog
+            leadId={leadId}
+            leadName={leadName}
+            members={members}
+          />
+        }
+      >
         {open.length === 0 ? (
-          <Empty message="Nothing scheduled" hint="Add a callback or a meeting above." />
+          <Empty
+            message="Nothing scheduled"
+            hint="Use “Add follow-up” to book the next callback or meeting."
+          />
         ) : (
           <List>
             {open.map((f) => (
