@@ -355,7 +355,13 @@ function MilestoneTable({ data }: { data: ProjectWorkspaceData }) {
       <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center">
         <p className="text-sm font-medium text-[var(--color-ink)]">No plan yet</p>
         <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          Add milestones from Project Planning to start tracking delivery.
+          <Link
+            href={`/projects/${data.project.id}/plan`}
+            className="font-medium text-[var(--color-red)] hover:underline"
+          >
+            Open Project planning
+          </Link>{" "}
+          to lay one out — start from a template or write your own.
         </p>
       </div>
     );
@@ -506,6 +512,7 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
   const live: ModuleCard[] = [
     { key: "details", label: "Details", icon: <FolderKanban className="size-5" />, href: `/projects/${id}?tab=summary`, hint: "The project's own record" },
     { key: "report", label: "Progress report", icon: <FileText className="size-5" />, href: `/projects/${id}/report`, hint: "What reaches the client" },
+    { key: "planning", label: "Project planning", icon: <ListChecks className="size-5" />, href: `/projects/${id}/plan`, hint: "Milestones grouped by scope" },
     { key: "procurement", label: "Procurement", icon: <ShoppingCart className="size-5" />, href: "/procurement", hint: "Requests, RFQs and orders" },
     { key: "site", label: "Site", icon: <HardHat className="size-5" />, href: "/site", hint: "Logs, photos and attendance" },
     { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: "/design", hint: "Drawings and approvals" },
@@ -516,7 +523,6 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
   // should describe the real product shape (and never an "(Old)" tile, which
   // is what `104705` ships).
   const soon: ModuleCard[] = [
-    { key: "planning", label: "Project planning", icon: <ListChecks className="size-5" />, hint: "Milestones, Gantt, tasks" },
     { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, hint: "Inflow and outflow contracts" },
     { key: "labour", label: "Labour report", icon: <Users className="size-5" />, hint: "Daily attendance by trade" },
     { key: "mb", label: "MB sheet", icon: <Ruler className="size-5" />, hint: "Awaiting a spec" },

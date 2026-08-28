@@ -164,6 +164,8 @@ export function milestoneVariance(m: ProjectMilestone): Variance {
 export interface ScopeGroupRollup extends MilestoneRollup {
   scopeItemId: string | null;
   name: string;
+  /** The band's own milestones, in sort order. */
+  rows: ProjectMilestone[];
 }
 
 /**
@@ -188,6 +190,7 @@ export function groupByScope(
       name: scopeItemId
         ? (scopeNames.get(scopeItemId) ?? "Unnamed scope")
         : "Default project scope",
+      rows,
       ...rollupMilestones(rows, now),
     }))
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
