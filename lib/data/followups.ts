@@ -2,6 +2,7 @@ import "server-only";
 import { withOrg } from "./with-org";
 import { getActingContext, listMembers, type Member } from "./team";
 import { listOptions } from "./workspace";
+import { listLeadStatuses } from "./lead-management";
 import {
   agentPerformance,
   callSummary,
@@ -196,19 +197,37 @@ export async function createFollowUp(
  * value, and it lands on the lead as the latest remark so the list column the
  * owner asked for actually has something in it.
  */
+export interface CompleteFollowUpOptions {
+  /**
+   * The status the user CONFIRMED in the dialog — usually what
+   * `proposeFromOutcome` suggested, sometimes an override, often nothing.
+   * Validated against the tenant's own ladder before anything moves.
+   */
+  nextStatus?: string | null;
+  /** `yyyy-mm-dd` for the follow-on the user chose to book. */
+  followOnDate?: string | null;
+  followOnTime?: string | null;
+}
+
 export async function completeFollowUp(
   id: string,
   outcome?: string | null,
   note?: string | null,
+  options: CompleteFollowUpOptions = {},
 ): Promise<{ error?: string }> {
   const { db, ctx } = await withOrg();
   const { data } = await db
     .table("follow_ups")
-    .select("lead_id, kind")
+    .select("lead_id, kind, title, member_id")
     .eq("id", id)
     .maybeSingle();
   if (!data) return { error: "Follow-up not found." };
-  const row = data as unknown as { lead_id: string; kind: string };
+  const row = data as unknown as {
+    lead_id: string;
+    kind: string;
+    title: string | null;
+    member_id: string | null;
+  };
 
   const { error } = await db.table("follow_ups").updateById(id, {
     status: "completed",
@@ -232,6 +251,46 @@ export async function completeFollowUp(
       created_by: ctx.userId,
     });
   }
+
+  // ── The outcome moves the lead — but only because someone said so ────────
+  // `proposeFromOutcome` suggests; the dialog preselects; this writes what
+  // came back. A status is never changed by the rule alone (PLAN-V4 §5.1c).
+  const wanted = options.nextStatus?.trim();
+  if (wanted) {
+    const statuses = await listLeadStatuses();
+    const def = statuses.find((s) => s.value === wanted && s.is_active);
+    if (!def) return { error: "That status does not exist in this workspace." };
+
+    const { error: statusError } = await db.table("leads").updateById(row.lead_id, {
+      status: def.value,
+      updated_at: new Date().toISOString(),
+    });
+    if (statusError) return { error: statusError.message };
+
+    await db.table("lead_activities").insert({
+      lead_id: row.lead_id,
+      kind: "status_change",
+      note: `Status changed to ${def.label} after a follow-up${
+        outcome?.trim() ? ` (${outcome.trim()})` : ""
+      }`,
+      created_by: ctx.userId,
+    });
+  }
+
+  // ── And books the next one, if the user kept the offer ───────────────────
+  if (options.followOnDate) {
+    const due = new Date(`${options.followOnDate}T${options.followOnTime || "10:00"}:00`);
+    if (Number.isFinite(due.getTime())) {
+      await createFollowUp({
+        lead_id: row.lead_id,
+        kind: row.kind === "meeting" ? "meeting" : "callback",
+        title: row.title,
+        due_at: due.toISOString(),
+        member_id: row.member_id,
+      });
+    }
+  }
+
   return {};
 }
 

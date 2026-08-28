@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useCallback, useEffect, useState } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -30,10 +30,12 @@ import {
   FOLLOW_UP_STATUS_TONE,
   effectiveFollowUpStatus,
   formatTalkTime,
+  proposeFromOutcome,
   statusLabelOf,
   statusToneOf,
   type FollowUpRow,
   type LeadStatusDef,
+  type OutcomeRule,
 } from "@/lib/lead-management-model";
 import { STATUS_META } from "@/lib/interactions-model";
 import { optionLabel, type WorkspaceOption } from "@/lib/workspace-model";
@@ -105,7 +107,10 @@ function fmtWhen(iso: string | null): string {
 }
 
 export function LeadDetailView({ detail }: { detail: LeadDetail }) {
-  const { lead, statuses, options, members, assignees, followUps, calls, activities } = detail;
+  const {
+    lead, statuses, options, members, assignees, followUps, calls, activities,
+    outcomeRules, followUpAssignees,
+  } = detail;
   const [tab, setTab] = useState("details");
 
   // Deep links from the list ("Add follow-up") land on the right tab.
@@ -159,6 +164,10 @@ export function LeadDetailView({ detail }: { detail: LeadDetail }) {
             followUps={followUps}
             members={members}
             options={options}
+            statuses={statuses}
+            outcomeRules={outcomeRules}
+            currentStatus={lead.status}
+            assigneesByFollowUp={followUpAssignees}
           />
         )}
         {tab === "calls" && (
@@ -608,15 +617,20 @@ function NewFollowUpDialog({
 function FollowUpRowView({
   fu,
   options,
-  assigneeName,
+  statuses,
+  outcomeRules,
+  currentStatus,
+  assigneeNames,
   leadName,
 }: {
   fu: FollowUpRow;
   options: WorkspaceOption[];
-  assigneeName?: string | null;
+  statuses: LeadStatusDef[];
+  outcomeRules: OutcomeRule[];
+  currentStatus: string;
+  assigneeNames: string[];
   leadName?: string;
 }) {
-  const [state, complete] = useActionState(completeFollowUpAction, initial);
   const status = effectiveFollowUpStatus(fu);
   const open = status === "upcoming" || status === "missed";
 
@@ -635,7 +649,8 @@ function FollowUpRowView({
       }
       meta={[
         fmtWhen(fu.due_at),
-        assigneeName,
+        // Many people can carry one follow-up now; the owner is simply first.
+        assigneeNames.join(", ") || null,
         fu.outcome ? optionLabel(options, "followup_outcome", fu.outcome) : null,
         fu.note,
       ]
@@ -643,36 +658,171 @@ function FollowUpRowView({
         .join(" · ")}
       right={
         open ? (
-          <form action={cancelFollowUpAction}>
-            <input type="hidden" name="id" value={fu.id} />
-            <RowAction title="Cancel">Cancel</RowAction>
-          </form>
+          <>
+            <CompleteFollowUpDialog
+              fu={fu}
+              options={options}
+              statuses={statuses}
+              outcomeRules={outcomeRules}
+              currentStatus={currentStatus}
+            />
+            <form action={cancelFollowUpAction}>
+              <input type="hidden" name="id" value={fu.id} />
+              <RowAction title="Cancel">Cancel</RowAction>
+            </form>
+          </>
         ) : undefined
       }
-    >
-      {open && (
-        <form action={complete} className="mt-2 flex flex-wrap items-center gap-2">
+    />
+  );
+}
+
+/**
+ * Closing a follow-up is where the lead actually moves.
+ *
+ * The owner: *"based on those follow-ups, you got to change the status… once
+ * you finish with the follow-up… you even had to do multiple follow-ups."*
+ * Choosing an outcome looks up the tenant's rule and PRESELECTS both halves —
+ * the next status and a date for the next conversation. Both are visible, both
+ * are editable, and nothing is written until this form is submitted. A status
+ * that changed on its own is a status nobody trusts.
+ */
+function CompleteFollowUpDialog({
+  fu,
+  options,
+  statuses,
+  outcomeRules,
+  currentStatus,
+}: {
+  fu: FollowUpRow;
+  options: WorkspaceOption[];
+  statuses: LeadStatusDef[];
+  outcomeRules: OutcomeRule[];
+  currentStatus: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, complete] = useActionState(completeFollowUpAction, initial);
+  const [outcome, setOutcome] = useState("");
+
+  const proposal = useMemo(
+    () => proposeFromOutcome(outcomeRules, outcome || null, statuses, currentStatus),
+    [outcomeRules, outcome, statuses, currentStatus],
+  );
+  const [nextStatus, setNextStatus] = useState("");
+  const [bookNext, setBookNext] = useState(false);
+  const [followOn, setFollowOn] = useState("");
+
+  // The rule proposes; these fields are what the user is about to confirm.
+  useEffect(() => {
+    setNextStatus(proposal.nextStatus ?? "");
+    setFollowOn(proposal.followOnDate ?? "");
+    setBookNext(!!proposal.followOnDate);
+  }, [proposal]);
+
+  useEffect(() => {
+    if (state?.ok) setOpen(false);
+  }, [state]);
+
+  const outcomeOptions = options.filter(
+    (o) => o.kind === "followup_outcome" && o.is_active,
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary" size="sm">
+          Mark done
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Complete follow-up</DialogTitle>
+          <DialogDescription>
+            What came of it — and what happens to the lead next.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form action={complete} className="flex flex-col gap-4">
           <input type="hidden" name="id" value={fu.id} />
           <input type="hidden" name="lead_id" value={fu.lead_id} />
-          <Select name="outcome" className="h-8 w-44 text-[13px]" aria-label="Outcome">
-            <option value="">Outcome…</option>
-            {options
-              .filter((o) => o.kind === "followup_outcome" && o.is_active)
-              .map((o) => (
-                <option key={o.id} value={o.value}>{o.label}</option>
-              ))}
-          </Select>
-          <Input
-            name="note"
-            placeholder="What happened?"
-            className="h-8 min-w-48 flex-1 text-[13px]"
-            aria-label="Follow-up note"
-          />
-          <RowAction variant="secondary">Mark done</RowAction>
           <FormError error={state?.error} />
+
+          <Field label="Outcome" htmlFor={`outcome-${fu.id}`}>
+            <Select
+              id={`outcome-${fu.id}`}
+              name="outcome"
+              value={outcome}
+              onChange={(e) => setOutcome(e.target.value)}
+            >
+              <option value="">Select an outcome…</option>
+              {outcomeOptions.map((o) => (
+                <option key={o.id} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          <Field label="What happened" htmlFor={`note-${fu.id}`}>
+            <Input
+              id={`note-${fu.id}`}
+              name="note"
+              placeholder="Asked for a revised quote on the wardrobe"
+            />
+          </Field>
+
+          {proposal.reason && (
+            <p className="rounded-md bg-[var(--color-surface-sunken)] px-3 py-2 text-xs text-[var(--color-ink-secondary)]">
+              {proposal.reason} Change or clear either one — nothing moves until
+              you save.
+            </p>
+          )}
+
+          <Field label="Move the lead to" htmlFor={`status-${fu.id}`}>
+            <Select
+              id={`status-${fu.id}`}
+              name="next_status"
+              value={nextStatus}
+              onChange={(e) => setNextStatus(e.target.value)}
+            >
+              <option value="">Leave the status unchanged</option>
+              {statuses
+                .filter((st) => st.is_active)
+                .map((st) => (
+                  <option key={st.id} value={st.value}>
+                    {st.label}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-[13px] text-[var(--color-ink)]">
+              <input
+                type="checkbox"
+                checked={bookNext}
+                onChange={(e) => setBookNext(e.target.checked)}
+                className="size-4 accent-[var(--color-red)]"
+              />
+              Book the next follow-up
+            </label>
+            {bookNext && (
+              <Input
+                type="date"
+                name="follow_on_date"
+                aria-label="Next follow-up date"
+                value={followOn}
+                onChange={(e) => setFollowOn(e.target.value)}
+              />
+            )}
+          </div>
+
+          <div>
+            <SubmitButton pendingLabel="Saving…">Complete follow-up</SubmitButton>
+          </div>
         </form>
-      )}
-    </Row>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -682,14 +832,26 @@ function FollowUpsTab({
   followUps,
   members,
   options,
+  statuses,
+  outcomeRules,
+  currentStatus,
+  assigneesByFollowUp,
 }: {
   leadId: string;
   leadName: string;
   followUps: FollowUpRow[];
   members: Member[];
   options: WorkspaceOption[];
+  statuses: LeadStatusDef[];
+  outcomeRules: OutcomeRule[];
+  currentStatus: string;
+  assigneesByFollowUp: Record<string, string[]>;
 }) {
   const nameById = new Map(members.map((m) => [m.id, m.name]));
+  const namesFor = (f: FollowUpRow): string[] => {
+    const ids = assigneesByFollowUp[f.id] ?? (f.member_id ? [f.member_id] : []);
+    return ids.map((id) => nameById.get(id)).filter((n): n is string => !!n);
+  };
   const now = new Date();
   const open = followUps.filter((f) => {
     const s = effectiveFollowUpStatus(f, now);
@@ -722,7 +884,10 @@ function FollowUpsTab({
                 key={f.id}
                 fu={f}
                 options={options}
-                assigneeName={f.member_id ? nameById.get(f.member_id) : null}
+                statuses={statuses}
+                outcomeRules={outcomeRules}
+                currentStatus={currentStatus}
+                assigneeNames={namesFor(f)}
                 leadName={leadName}
               />
             ))}
@@ -738,7 +903,10 @@ function FollowUpsTab({
                 key={f.id}
                 fu={f}
                 options={options}
-                assigneeName={f.member_id ? nameById.get(f.member_id) : null}
+                statuses={statuses}
+                outcomeRules={outcomeRules}
+                currentStatus={currentStatus}
+                assigneeNames={namesFor(f)}
                 leadName={leadName}
               />
             ))}

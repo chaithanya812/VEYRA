@@ -73,7 +73,7 @@ export const NAV: NavEntry[] = [
     icon: Briefcase,
     items: [
       { label: "Lead Management", href: "/leads", icon: Users },
-      { label: "Lead Insights", href: "/leads/insights", icon: LineChart, soon: true },
+      { label: "Lead Insights", href: "/leads/insights", icon: LineChart },
       // The Kanban is being replaced by a funnel over a grouped table
       // (PLAN-V4 §6). It stays in the rail meanwhile — a live screen that
       // nothing links to is worse than one that is about to change.

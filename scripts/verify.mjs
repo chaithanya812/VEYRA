@@ -598,6 +598,38 @@ async function main() {
   const joined = await sb.from("leads").select("project_id").eq("id", aLeadId).single();
   check("promote-to-project links lead→project by FK", joined.data?.project_id === proj.id);
 
+  // ── Follow-up assignees + outcome rules (0026) ────────────────────────────
+  const { data: aFuRow } = await sb
+    .from("follow_ups").select("id").eq("org_id", A.id).eq("member_id", memA.id).limit(1).single();
+  await sb.from("follow_up_assignees").insert({ org_id: A.id, follow_up_id: aFuRow.id, member_id: memA.id });
+  const dupFuAssign = await sb
+    .from("follow_up_assignees").insert({ org_id: A.id, follow_up_id: aFuRow.id, member_id: memA.id });
+  check("a member cannot be assigned to the same follow-up twice", !!dupFuAssign.error, dupFuAssign.error?.code || "no error");
+
+  const aAssignees = await sb.from("follow_up_assignees").select("id").eq("org_id", A.id);
+  const bAssignees = await sb.from("follow_up_assignees").select("id").eq("org_id", B.id);
+  check(
+    "follow-up assignees are org-scoped (A has rows, B has none)",
+    (aAssignees.data ?? []).length > 0 && (bAssignees.data ?? []).length === 0,
+    `A=${(aAssignees.data ?? []).length} B=${(bAssignees.data ?? []).length}`,
+  );
+
+  await sb.from("followup_outcome_rules").insert([
+    { org_id: A.id, outcome_slug: "interested", next_status: "negotiation", auto_schedule_days: 3 },
+    { org_id: B.id, outcome_slug: "interested", next_status: "negotiation", auto_schedule_days: 7 },
+  ]);
+  const dupOutcomeRule = await sb
+    .from("followup_outcome_rules").insert({ org_id: A.id, outcome_slug: "interested" });
+  check("one outcome rule per outcome per org enforced", !!dupOutcomeRule.error, dupOutcomeRule.error?.code || "no error");
+  const bOutcomeRule = await sb
+    .from("followup_outcome_rules").select("auto_schedule_days").eq("org_id", B.id).eq("outcome_slug", "interested").single();
+  check("each tenant tunes the same outcome differently", bOutcomeRule.data?.auto_schedule_days === 7, `got ${bOutcomeRule.data?.auto_schedule_days}`);
+
+  // A lead feed would attach by id; the column exists and is per-tenant.
+  await sb.from("leads").update({ external_ref: "FEED-001" }).eq("id", aLeadId);
+  const extRef = await sb.from("leads").select("external_ref").eq("id", aLeadId).single();
+  check("a lead carries an external reference for a future feed", extRef.data?.external_ref === "FEED-001");
+
   // ── Quotation studio (0025) ───────────────────────────────────────────────
   const dupSettings = await sb.from("quotation_settings").insert([
     { org_id: A.id, default_gst_pct: 18 },

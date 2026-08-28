@@ -5,6 +5,7 @@ import { listOptions, ensureDefaultOptions } from "./workspace";
 import { phoneKey } from "@/lib/utils";
 import {
   DEFAULT_LEAD_STATUSES,
+  DEFAULT_OUTCOME_RULES,
   financialYearOf,
   nextFollowUp,
   overdueCount,
@@ -12,7 +13,9 @@ import {
   type FollowUpRow,
   type LeadRow,
   type LeadStatusDef,
+  type OutcomeRule,
 } from "@/lib/lead-management-model";
+import type { InsightLead } from "@/lib/lead-insights-model";
 import type { WorkspaceOption } from "@/lib/workspace-model";
 import type { LeadActivity } from "@/lib/leads-model";
 
@@ -62,6 +65,153 @@ export async function listLeadStatuses(): Promise<LeadStatusDef[]> {
     .order("seq", { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as LeadStatusDef[];
+}
+
+/* ── Outcome rules ────────────────────────────────────────────────────────── */
+
+/**
+ * Seed the tenant's outcome rules once, the same two-tier way statuses and
+ * workspace options are seeded: `is_system` rows the tenant edits or switches
+ * off. Never resurrects a rule the tenant removed.
+ */
+export async function ensureDefaultOutcomeRules(): Promise<void> {
+  const { db } = await withOrg();
+  const { data } = await db.table("followup_outcome_rules").select("outcome_slug");
+  const have = new Set(
+    ((data ?? []) as unknown as { outcome_slug: string }[]).map((r) => r.outcome_slug),
+  );
+  const missing = DEFAULT_OUTCOME_RULES.filter((r) => !have.has(r.outcome_slug));
+  if (missing.length === 0) return;
+  await db.table("followup_outcome_rules").insert(
+    missing.map((r) => ({
+      outcome_slug: r.outcome_slug,
+      next_status: r.next_status,
+      auto_schedule_days: r.auto_schedule_days,
+      is_active: r.is_active,
+      is_system: true,
+    })),
+  );
+}
+
+export async function listOutcomeRules(): Promise<OutcomeRule[]> {
+  await ensureDefaultOutcomeRules();
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("followup_outcome_rules")
+    .select("*")
+    .order("outcome_slug", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as OutcomeRule[];
+}
+
+/** One rule per outcome per org — the unique index makes this an upsert. */
+export async function upsertOutcomeRule(input: {
+  outcome_slug: string;
+  next_status?: string | null;
+  auto_schedule_days?: number | null;
+  is_active?: boolean;
+}): Promise<{ error?: string }> {
+  const slug = input.outcome_slug.trim();
+  if (!slug) return { error: "Pick an outcome." };
+
+  // A rule may only point at a status that exists and is live — otherwise the
+  // dialog would offer a move the lead cannot make.
+  if (input.next_status) {
+    const statuses = await listLeadStatuses();
+    if (!statuses.some((st) => st.value === input.next_status && st.is_active)) {
+      return { error: "That status does not exist in this workspace." };
+    }
+  }
+  const days = input.auto_schedule_days;
+  if (days != null && (!Number.isFinite(days) || days < 0 || days > 365)) {
+    return { error: "Schedule the follow-on between 0 and 365 days out." };
+  }
+
+  const { db } = await withOrg();
+  const { data } = await db
+    .table("followup_outcome_rules")
+    .select("id")
+    .eq("outcome_slug", slug)
+    .maybeSingle();
+
+  const values = {
+    outcome_slug: slug,
+    next_status: input.next_status || null,
+    auto_schedule_days: days ?? null,
+    is_active: input.is_active ?? true,
+  };
+
+  const { error } = data
+    ? await db
+        .table("followup_outcome_rules")
+        .updateById((data as unknown as { id: string }).id, values)
+    : await db.table("followup_outcome_rules").insert(values);
+  return error ? { error: error.message } : {};
+}
+
+/* ── Follow-up assignees ──────────────────────────────────────────────────── */
+
+/**
+ * Replace the assignee set wholesale — the form posts the full list, exactly
+ * as `setLeadAssignees` does. `follow_ups.member_id` stays the primary owner
+ * and is kept inside the set, so "who is on this?" is one read.
+ */
+export async function setFollowUpAssignees(
+  followUpId: string,
+  memberIds: string[],
+): Promise<{ error?: string }> {
+  const members = await listMembers();
+  const valid = memberIds.filter((id) => members.some((m) => m.id === id));
+
+  const { db } = await withOrg();
+  const { data: fu } = await db
+    .table("follow_ups")
+    .select("id, member_id")
+    .eq("id", followUpId)
+    .maybeSingle();
+  if (!fu) return { error: "That follow-up is not in this workspace." };
+  const owner = (fu as unknown as { member_id: string | null }).member_id;
+
+  const wanted = new Set(valid);
+  if (owner) wanted.add(owner);
+
+  const { data: current } = await db
+    .table("follow_up_assignees")
+    .select("id, member_id")
+    .eq("follow_up_id", followUpId);
+  const rows = (current ?? []) as unknown as { id: string; member_id: string }[];
+
+  for (const r of rows) {
+    if (!wanted.has(r.member_id)) await db.table("follow_up_assignees").deleteById(r.id);
+  }
+  const have = new Set(rows.map((r) => r.member_id));
+  const add = [...wanted].filter((id) => !have.has(id));
+  if (add.length === 0) return {};
+
+  const { error } = await db
+    .table("follow_up_assignees")
+    .insert(add.map((member_id) => ({ follow_up_id: followUpId, member_id })));
+  return error ? { error: error.message } : {};
+}
+
+/** Assignee ids keyed by follow-up, for a set of follow-ups. */
+export async function followUpAssignees(
+  followUpIds: string[],
+): Promise<Record<string, string[]>> {
+  if (followUpIds.length === 0) return {};
+  const { db } = await withOrg();
+  const { data } = await db
+    .table("follow_up_assignees")
+    .select("follow_up_id, member_id")
+    .in("follow_up_id", followUpIds);
+  const out: Record<string, string[]> = {};
+  for (const r of (data ?? []) as unknown as {
+    follow_up_id: string;
+    member_id: string;
+  }[]) {
+    (out[r.follow_up_id] ??= []).push(r.member_id);
+  }
+  return out;
 }
 
 export async function upsertLeadStatus(input: {
@@ -247,6 +397,47 @@ export async function getLeadListData(): Promise<LeadListData> {
   };
 }
 
+/* ── Lead Insights ────────────────────────────────────────────────────────── */
+
+export interface LeadInsightsData {
+  leads: InsightLead[];
+  statuses: LeadStatusDef[];
+  members: Member[];
+  options: WorkspaceOption[];
+}
+
+/**
+ * Everything the insights screen aggregates, read once through withOrg().
+ *
+ * Deliberately a narrow select rather than reusing getLeadListData(): the
+ * insights need six columns from every lead, not every column plus its
+ * follow-ups, assignees and calls. The maths then happens in
+ * lib/lead-insights-model.ts, which is pure and tested — so the range toggles
+ * recompute in the browser without a round-trip.
+ */
+export async function getLeadInsightsData(): Promise<LeadInsightsData> {
+  await ensureDefaultOptions();
+  const { db } = await withOrg();
+
+  const [statuses, options, members, leadRes] = await Promise.all([
+    listLeadStatuses(),
+    listOptions(),
+    listMembers(),
+    db
+      .table("leads")
+      .select("id, created_at, status, value, source, sales_owner_id, assigned_to")
+      .order("created_at", { ascending: false }),
+  ]);
+  if (leadRes.error) throw leadRes.error;
+
+  return {
+    leads: (leadRes.data ?? []) as unknown as InsightLead[],
+    statuses,
+    members,
+    options,
+  };
+}
+
 export interface LeadDetail {
   lead: LeadRow;
   assignees: Member[];
@@ -269,6 +460,10 @@ export interface LeadDetail {
   statuses: LeadStatusDef[];
   options: WorkspaceOption[];
   members: Member[];
+  /** What each outcome proposes when a follow-up is completed (§5.1c). */
+  outcomeRules: OutcomeRule[];
+  /** Member ids on each follow-up, keyed by follow-up id. */
+  followUpAssignees: Record<string, string[]>;
 }
 
 /** One lead with everything its five tabs render. */
@@ -285,11 +480,21 @@ export async function getLeadDetail(id: string): Promise<LeadDetail | null> {
   if (!leadRow) return null;
   const lead = leadRow as unknown as LeadRow;
 
-  const [statuses, options, members, activityRes, followUpRes, callRes, assigneeRes] =
+  const [
+    statuses,
+    options,
+    members,
+    outcomeRules,
+    activityRes,
+    followUpRes,
+    callRes,
+    assigneeRes,
+  ] =
     await Promise.all([
       listLeadStatuses(),
       listOptions(),
       listMembers(),
+      listOutcomeRules(),
       db.table("lead_activities").select("*").eq("lead_id", id).order("created_at", { ascending: false }),
       db.table("follow_ups").select("*").eq("lead_id", id).order("due_at", { ascending: false }),
       db.table("interactions").select("*").eq("lead_id", id).order("occurred_at", { ascending: false }),
@@ -301,15 +506,19 @@ export async function getLeadDetail(id: string): Promise<LeadDetail | null> {
     .map((a) => memberById.get(a.member_id))
     .filter((m): m is Member => !!m);
 
+  const followUps = (followUpRes.data ?? []) as unknown as FollowUpRow[];
+
   return {
     lead: { ...lead, rooms: lead.rooms ?? [] },
     assignees,
     activities: (activityRes.data ?? []) as unknown as LeadActivity[],
-    followUps: (followUpRes.data ?? []) as unknown as FollowUpRow[],
+    followUps,
     calls: (callRes.data ?? []) as unknown as LeadDetail["calls"],
     statuses,
     options,
     members,
+    outcomeRules,
+    followUpAssignees: await followUpAssignees(followUps.map((f) => f.id)),
   };
 }
 

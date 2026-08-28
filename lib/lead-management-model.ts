@@ -422,3 +422,103 @@ export function searchLeads<T extends LeadRow>(leads: T[], query: string): T[] {
       .some((f) => String(f).toLowerCase().includes(q)),
   );
 }
+
+/* ── Outcome rules: the follow-up that moves the lead ─────────────────────── */
+
+/**
+ * The owner: *"based on those follow-ups, you got to change the status."*
+ *
+ * Until now an outcome was recorded and nothing happened, which is how a lead
+ * sits in "Contacted" through four conversations. A rule maps the tenant's own
+ * outcome vocabulary (`workspace_options.followup_outcome`) onto a next status
+ * and an optional follow-on date.
+ *
+ * **A rule proposes; a person confirms.** The completion dialog preselects
+ * what the rule says and the user can override or clear it. Nothing here
+ * mutates a lead on its own — a status that changes without anyone choosing it
+ * is how a pipeline stops being believed.
+ */
+export interface OutcomeRule {
+  id: string;
+  outcome_slug: string;
+  /** lead_statuses.value to move to; null = leave the status alone. */
+  next_status: string | null;
+  /** Days out to prefill the follow-on; null = do not offer one. */
+  auto_schedule_days: number | null;
+  is_active: boolean;
+  is_system: boolean;
+}
+
+/**
+ * Seeds, keyed to the outcome vocabulary already seeded in
+ * `lib/workspace-model.ts`. `is_system` rows a tenant edits or retires — the
+ * same two-tier pattern as lead statuses and workspace options.
+ */
+export const DEFAULT_OUTCOME_RULES: Omit<OutcomeRule, "id">[] = [
+  { outcome_slug: "interested",      next_status: "negotiation",    auto_schedule_days: 3,  is_active: true, is_system: true },
+  { outcome_slug: "needs_time",      next_status: "qualified",      auto_schedule_days: 7,  is_active: true, is_system: true },
+  { outcome_slug: "reschedule",      next_status: null,             auto_schedule_days: 2,  is_active: true, is_system: true },
+  { outcome_slug: "not_reachable",   next_status: null,             auto_schedule_days: 1,  is_active: true, is_system: true },
+  { outcome_slug: "not_interested",  next_status: "not_interested", auto_schedule_days: null, is_active: true, is_system: true },
+  { outcome_slug: "budget_mismatch", next_status: "on_hold",        auto_schedule_days: 14, is_active: true, is_system: true },
+];
+
+export function ruleFor(
+  rules: OutcomeRule[],
+  outcomeSlug: string | null | undefined,
+): OutcomeRule | undefined {
+  if (!outcomeSlug) return undefined;
+  return rules.find((r) => r.is_active && r.outcome_slug === outcomeSlug);
+}
+
+export interface OutcomeProposal {
+  /** Preselected in the dialog's status picker; null = no change proposed. */
+  nextStatus: string | null;
+  /** `yyyy-mm-dd` prefilled on the follow-on; null = none offered. */
+  followOnDate: string | null;
+  /** Why the dialog is proposing this, shown to the user. */
+  reason: string | null;
+}
+
+/**
+ * What the completion dialog should suggest for a given outcome. Pure, so the
+ * suggestion is identical on the server (when it writes) and in the browser
+ * (when it previews).
+ */
+export function proposeFromOutcome(
+  rules: OutcomeRule[],
+  outcomeSlug: string | null | undefined,
+  statuses: LeadStatusDef[],
+  currentStatus: string,
+  now: Date = new Date(),
+): OutcomeProposal {
+  const rule = ruleFor(rules, outcomeSlug);
+  if (!rule) return { nextStatus: null, followOnDate: null, reason: null };
+
+  // A rule pointing at a status the tenant has since retired must not offer an
+  // invalid move — statuses are data, and data changes underneath rules.
+  const target = rule.next_status
+    ? statuses.find((s) => s.value === rule.next_status && s.is_active)
+    : undefined;
+
+  const nextStatus =
+    target && target.value !== currentStatus ? target.value : null;
+
+  let followOnDate: string | null = null;
+  if (rule.auto_schedule_days != null) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + rule.auto_schedule_days);
+    const m = `${d.getMonth() + 1}`.padStart(2, "0");
+    const day = `${d.getDate()}`.padStart(2, "0");
+    followOnDate = `${d.getFullYear()}-${m}-${day}`;
+  }
+
+  const parts: string[] = [];
+  if (nextStatus && target) parts.push(`move this lead to ${target.label}`);
+  if (followOnDate) parts.push(`book the next follow-up for ${followOnDate}`);
+  const reason = parts.length
+    ? `This outcome usually means: ${parts.join(", and ")}.`
+    : null;
+
+  return { nextStatus, followOnDate, reason };
+}

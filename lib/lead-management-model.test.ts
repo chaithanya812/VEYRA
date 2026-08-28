@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_LEAD_STATUSES,
+  DEFAULT_OUTCOME_RULES,
+  proposeFromOutcome,
+  ruleFor,
+  type OutcomeRule,
   activityStreak,
   agentPerformance,
   callSummary,
@@ -293,5 +297,78 @@ describe("lead list", () => {
     expect(searchLeads(rows, "skyview").map((l) => l.id)).toEqual(["b"]);
     expect(searchLeads(rows, "connect tomorrow").map((l) => l.id)).toEqual(["b"]);
     expect(searchLeads(rows, "  ")).toHaveLength(2);
+  });
+});
+
+/* ── Outcome rules ────────────────────────────────────────────────────────── */
+
+describe("proposeFromOutcome", () => {
+  const rules: OutcomeRule[] = DEFAULT_OUTCOME_RULES.map((r, i) => ({
+    ...r,
+    id: `r${i}`,
+  }));
+  const statuses = DEFAULT_LEAD_STATUSES.map((s, i) => ({ ...s, id: `s${i}` }));
+  const NOW = new Date(2026, 7, 28); // 28 Aug 2026
+
+  it("proposes the next status and a follow-on date", () => {
+    const p = proposeFromOutcome(rules, "interested", statuses, "contacted", NOW);
+    expect(p.nextStatus).toBe("negotiation");
+    expect(p.followOnDate).toBe("2026-08-31");
+    expect(p.reason).toContain("Negotiation");
+  });
+
+  it("proposes only a date when the rule changes no status", () => {
+    const p = proposeFromOutcome(rules, "not_reachable", statuses, "contacted", NOW);
+    expect(p.nextStatus).toBe(null);
+    expect(p.followOnDate).toBe("2026-08-29");
+  });
+
+  it("proposes no move when the lead is already on that status", () => {
+    const p = proposeFromOutcome(rules, "interested", statuses, "negotiation", NOW);
+    expect(p.nextStatus).toBe(null);
+    expect(p.followOnDate).toBe("2026-08-31");
+  });
+
+  it("closes without offering a follow-on when the pursuit ends", () => {
+    const p = proposeFromOutcome(rules, "not_interested", statuses, "contacted", NOW);
+    expect(p.nextStatus).toBe("not_interested");
+    expect(p.followOnDate).toBe(null);
+  });
+
+  it("never proposes a status the tenant has retired", () => {
+    // Statuses are data; a rule can outlive the status it points at.
+    const retired = statuses.map((s) =>
+      s.value === "negotiation" ? { ...s, is_active: false } : s,
+    );
+    const p = proposeFromOutcome(rules, "interested", retired, "contacted", NOW);
+    expect(p.nextStatus).toBe(null);
+    expect(p.followOnDate).toBe("2026-08-31"); // the reminder still stands
+  });
+
+  it("has nothing to say about an outcome with no rule", () => {
+    expect(proposeFromOutcome(rules, "invented", statuses, "contacted", NOW)).toEqual({
+      nextStatus: null,
+      followOnDate: null,
+      reason: null,
+    });
+    expect(proposeFromOutcome(rules, null, statuses, "contacted", NOW).reason).toBe(null);
+  });
+
+  it("ignores a rule the tenant has switched off", () => {
+    const off = rules.map((r) =>
+      r.outcome_slug === "interested" ? { ...r, is_active: false } : r,
+    );
+    expect(ruleFor(off, "interested")).toBeUndefined();
+  });
+
+  it("crosses a month boundary correctly", () => {
+    const p = proposeFromOutcome(
+      rules,
+      "budget_mismatch",
+      statuses,
+      "contacted",
+      new Date(2026, 7, 25),
+    );
+    expect(p.followOnDate).toBe("2026-09-08");
   });
 });

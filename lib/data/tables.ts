@@ -81,6 +81,8 @@ export const TENANT_TABLES = [
   "quotation_settings",
   "ai_prompt_templates",
   "ai_requests",
+  "follow_up_assignees",
+  "followup_outcome_rules",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

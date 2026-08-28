@@ -259,6 +259,12 @@ export async function completeFollowUpAction(
     id,
     opt(formData.get("outcome")) ?? null,
     opt(formData.get("note")) ?? null,
+    {
+      // Both come from the completion dialog, where the rule's proposal was
+      // preselected and the user could change or clear it (PLAN-V4 §5.1c).
+      nextStatus: opt(formData.get("next_status")) ?? null,
+      followOnDate: opt(formData.get("follow_on_date")) ?? null,
+    },
   );
   return r.error ? fail(r.error) : refresh(opt(formData.get("lead_id")));
 }
