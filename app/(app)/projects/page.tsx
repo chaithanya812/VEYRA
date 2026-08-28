@@ -1,24 +1,29 @@
 import Link from "next/link";
-import { FolderKanban, Plus } from "lucide-react";
+import { AlertTriangle, FolderKanban, Plus } from "lucide-react";
 import { listProjects, projectPortfolio } from "@/lib/data/projects";
+import { milestonesByProject } from "@/lib/data/project-milestones";
 import {
   PROJECT_STAGES,
   STAGE_LABELS,
-  HEALTH_META,
   type ProjectStage,
 } from "@/lib/projects-model";
+import { dueVariance } from "@/lib/schedule-model";
 import { Button } from "@/components/ui/button";
-import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
+import { Card, PageHeader, EmptyState } from "@/components/ui/primitives";
 import { Select } from "@/components/ui/field";
+import { MilestoneCell, MilestoneLegend } from "@/components/ui/milestone-cell";
+import { StatTile, TileGrid } from "../dashboard/workspace-ui";
 import { inr, fmtDate } from "@/lib/utils";
 
-/** HEALTH_META tone (positive/warning/alert) → StatusChip tone. Red = true alert only. */
-const healthChipTone = {
-  positive: "green",
-  warning: "amber",
-  alert: "red",
-} as const;
-
+/**
+ * Projects (PLAN-V4 §8.1, frame `104420`).
+ *
+ * The rebuild is about one column. The old list showed name / client / stage /
+ * value / health / dates — everything except whether the project is actually
+ * going well. The Milestones cell answers that in one glance, and the handover
+ * date now says "running late by 65 days" in red with an icon rather than
+ * printing a date and leaving the arithmetic to the reader.
+ */
 export default async function ProjectsPage({
   searchParams,
 }: {
@@ -33,53 +38,48 @@ export default async function ProjectsPage({
     listProjects({ stage }),
     projectPortfolio(),
   ]);
+  const plans = await milestonesByProject(projects.map((p) => p.id));
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="mx-auto max-w-[1440px]">
       <PageHeader
         title="Projects"
+        subtitle={`${portfolio.total} projects · ${inr(portfolio.portfolioValue)} in the book`}
         actions={
           <Link href="/projects/new">
             <Button variant="primary">
-              <Plus className="size-4" /> New Project
+              <Plus className="size-4" /> New project
             </Button>
           </Link>
         }
       />
 
-      {/* KPI tiles — Portfolio Value is the hero metric; red allowed for it alone
-          (DESIGN-DIRECTION §2.5). Everything else neutral. */}
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="p-5">
-          <p className="text-[13px] font-medium text-[var(--color-ink-secondary)]">
-            Total Projects
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular text-[var(--color-ink)]">
-            {portfolio.total}
-          </p>
-        </Card>
-        <Card className="p-5 border-[color-mix(in_srgb,var(--color-red)_25%,white)]">
-          <p className="text-[13px] font-medium text-[var(--color-ink-secondary)]">
-            Portfolio Value
-          </p>
-          <p className="mt-1 text-2xl font-semibold tabular text-[var(--color-red)]">
-            {inr(portfolio.portfolioValue)}
-          </p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-[13px] font-medium text-[var(--color-ink-secondary)]">
-            Delayed
-          </p>
-          <p className="mt-1 flex items-center gap-2 text-2xl font-semibold tabular text-[var(--color-ink)]">
-            {portfolio.delayed}
-            {portfolio.delayed > 0 && (
-              <span className="inline-flex size-2 rounded-full bg-[var(--color-amber)]" />
-            )}
-          </p>
-        </Card>
+      <div className="mb-6">
+        <TileGrid>
+          <StatTile hero label="Portfolio value" value={inr(portfolio.portfolioValue)} />
+          <StatTile label="Projects" value={portfolio.total} tone="info" />
+          <StatTile
+            label="Delayed"
+            value={portfolio.delayed}
+            tone={portfolio.delayed > 0 ? "negative" : "positive"}
+            hint={portfolio.delayed > 0 ? "Needs attention" : "All on track"}
+          />
+          <StatTile
+            label="Handover this month"
+            value={
+              projects.filter((p) => {
+                if (!p.handover_date) return false;
+                const d = new Date(p.handover_date);
+                const now = new Date();
+                return (
+                  d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+                );
+              }).length
+            }
+          />
+        </TileGrid>
       </div>
 
-      {/* Stage filter — server-rendered GET form, no client JS. */}
       <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
         <Select name="stage" defaultValue={stage ?? ""} className="w-44">
           <option value="">All stages</option>
@@ -108,13 +108,13 @@ export default async function ProjectsPage({
           description={
             stage
               ? "Try a different stage or clear the filter."
-              : "Create your first project to start tracking execution."
+              : "Create one here, or promote a won lead from Lead Management."
           }
           action={
             !stage && (
               <Link href="/projects/new">
                 <Button variant="primary">
-                  <Plus className="size-4" /> New Project
+                  <Plus className="size-4" /> New project
                 </Button>
               </Link>
             )
@@ -123,55 +123,71 @@ export default async function ProjectsPage({
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1100px] text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[13px] text-[var(--color-ink-secondary)]">
-                  <th className="px-4 py-3 font-medium">Name</th>
-                  <th className="px-4 py-3 font-medium">Client</th>
-                  <th className="px-4 py-3 font-medium">Stage</th>
-                  <th className="px-4 py-3 font-medium text-right">Value</th>
-                  <th className="px-4 py-3 font-medium">Health</th>
-                  <th className="px-4 py-3 font-medium text-right">Start</th>
-                  <th className="px-4 py-3 font-medium text-right">Handover</th>
+                <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
+                  <th className="px-4 py-2.5 font-medium">Client</th>
+                  <th className="px-4 py-2.5 font-medium">Project</th>
+                  <th className="px-4 py-2.5 font-medium">Stage</th>
+                  <th className="px-4 py-2.5 font-medium">
+                    Milestones
+                    <MilestoneLegend />
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-medium">Value</th>
+                  <th className="px-4 py-2.5 font-medium">Start</th>
+                  <th className="px-4 py-2.5 font-medium">Hand-over</th>
                 </tr>
               </thead>
               <tbody>
-                {projects.map((project) => (
-                  <tr
-                    key={project.id}
-                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-sunken)]"
-                  >
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/projects/${project.id}`}
-                        className="font-medium text-[var(--color-ink)] hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-ink-secondary)]">
-                      {project.client_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-ink-secondary)]">
-                      {STAGE_LABELS[project.stage]}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular">
-                      {inr(project.project_value)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusChip
-                        tone={healthChipTone[HEALTH_META[project.health].tone]}
-                        label={HEALTH_META[project.health].label}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-right text-[var(--color-ink-secondary)] tabular">
-                      {fmtDate(project.start_date)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-[var(--color-ink-secondary)] tabular">
-                      {fmtDate(project.handover_date)}
-                    </td>
-                  </tr>
-                ))}
+                {projects.map((project) => {
+                  const late =
+                    project.handover_date && project.stage !== "closed"
+                      ? dueVariance(project.handover_date)
+                      : null;
+                  return (
+                    <tr
+                      key={project.id}
+                      className="border-b border-[var(--color-border)] last:border-0 odd:bg-[var(--color-surface)] even:bg-[color-mix(in_srgb,var(--color-surface-sunken)_55%,white)] hover:bg-[var(--color-surface-sunken)]"
+                    >
+                      <td className="px-4 py-3 text-[var(--color-ink-secondary)]">
+                        {project.client_name ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/projects/${project.id}`}
+                          className="font-medium text-[var(--color-ink)] hover:underline"
+                        >
+                          {project.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-[var(--color-surface-sunken)] px-2.5 py-0.5 text-[12px] font-medium text-[var(--color-ink)]">
+                          {STAGE_LABELS[project.stage]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <MilestoneCell milestones={plans.get(project.id) ?? []} />
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium tabular">
+                        {inr(project.project_value)}
+                      </td>
+                      <td className="px-4 py-3 text-[var(--color-ink-secondary)] tabular">
+                        {fmtDate(project.start_date)}
+                      </td>
+                      <td className="px-4 py-3 tabular">
+                        <span className="text-[var(--color-ink-secondary)]">
+                          {fmtDate(project.handover_date)}
+                        </span>
+                        {late?.state === "late" && (
+                          <span className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-[var(--color-red)]">
+                            <AlertTriangle aria-hidden className="size-3" />
+                            {late.label}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

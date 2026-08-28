@@ -89,6 +89,11 @@ export const TENANT_TABLES = [
   // The spine (PLAN-V4 7). Every module's line table points at it; nothing
   // gets its own private linkage again.
   "scope_items",
+  // The DELIVERY schedule. `milestones` (0015) is the PAYMENT schedule and is
+  // a different table on purpose — see 0032's header.
+  "project_milestones",
+  "project_milestone_deps",
+  "milestone_templates",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

@@ -693,6 +693,42 @@ async function main() {
     `got ${(afterRename.data ?? []).length} rows`,
   );
 
+  // ── Project milestones: the DELIVERY schedule (0032) ──────────────────────
+  await sb.from("project_milestones").insert([
+    { org_id: A.id, project_id: payProj.id, name: "Site Measurements", status: "completed", progress_pct: 100, planned_end: "2026-04-05", actual_end: "2026-04-04", client_visible: true },
+    // Every row carries the same keys on purpose: a PostgREST bulk insert sends
+    // an explicit NULL for a key one row omits, which defeats the column
+    // default and trips the not-null constraint.
+    { org_id: A.id, project_id: payProj.id, name: "Internal snag list", status: "not_started", progress_pct: 0, planned_end: "2026-09-01", actual_end: null, client_visible: false },
+  ]);
+  const aDelivery = await sb.from("project_milestones").select("id").eq("org_id", A.id);
+  const bDelivery = await sb.from("project_milestones").select("id").eq("org_id", B.id);
+  check(
+    "project milestones are org-scoped (A has 2, B has none)",
+    (aDelivery.data ?? []).length === 2 && (bDelivery.data ?? []).length === 0,
+    `A=${(aDelivery.data ?? []).length} B=${(bDelivery.data ?? []).length}`,
+  );
+
+  // client_visible is what the Progress Report filters on — it must be stored
+  // per row, not inferred, or the report leaks the internal plan.
+  const visible = await sb
+    .from("project_milestones").select("name").eq("org_id", A.id).eq("client_visible", true);
+  check(
+    "only client-visible milestones come back for a client-facing report",
+    (visible.data ?? []).length === 1 && visible.data[0].name === "Site Measurements",
+    `got ${(visible.data ?? []).length}`,
+  );
+
+  // The DELIVERY schedule and the PAYMENT schedule are different tables on
+  // purpose — asserting it here so a later "cleanup" does not merge them.
+  const deliveryCols = await sb.from("project_milestones").select("planned_end, actual_end").limit(1);
+  const paymentCols = await sb.from("milestones").select("pct, amount, work_done").limit(1);
+  check(
+    "delivery milestones and payment milestones stay separate tables",
+    !deliveryCols.error && !paymentCols.error,
+    `${deliveryCols.error?.message ?? "ok"} / ${paymentCols.error?.message ?? "ok"}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
