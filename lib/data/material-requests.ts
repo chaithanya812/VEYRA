@@ -1,6 +1,8 @@
 import "server-only";
 import { admin } from "@/lib/supabase/admin";
 import { withOrg } from "./with-org";
+import { listScopeItems } from "./scope-items";
+import { num, orderableScope, scopeLabel } from "@/lib/scope-model";
 import {
   MR_STAGES,
   MR_SOURCES,
@@ -218,4 +220,78 @@ export async function removeMRItem(itemId: string): Promise<{ error?: string }> 
     .table("material_request_items")
     .deleteById(itemId);
   return error ? { error: error.message } : {};
+}
+
+/* ── The spine's proof (PLAN-V4 §7.4) ─────────────────────────────────────── */
+
+/**
+ * Approved quotation → draft Material Request, with the lines coming from the
+ * quotation's own `scope_items` rather than being re-typed.
+ *
+ * This function IS the test of §7. The plan says: *"if that button is more
+ * than ~40 lines, the spine is not right."* The body below is thirty. Every
+ * item it creates carries `scope_item_id`, so from here on the material
+ * requested is joinable to the line it was sold on — and, once the PO and the
+ * cutlist point at the same scope item, to what was bought and cut too.
+ *
+ * No prices cross over. An MR is a request for quantities; rates arrive from
+ * the RFQ.
+ */
+export async function createMaterialRequestFromQuotation(
+  quotationId: string,
+): Promise<{ id?: string; error?: string; skipped?: number }> {
+  const { db, ctx } = await withOrg();
+
+  const { data: quote, error: quoteErr } = await db
+    .table("quotations")
+    .select("id, title, status, project_id, customer_name")
+    .eq("id", quotationId)
+    .maybeSingle();
+  // Report a query error as itself. Collapsing it into "not in this workspace"
+  // sent me chasing a tenancy bug that was really a mistyped column.
+  if (quoteErr) return { error: quoteErr.message };
+  if (!quote) return { error: "That quotation is not in this workspace." };
+  const q = quote as unknown as {
+    id: string;
+    title: string | null;
+    status: string;
+    project_id: string | null;
+    customer_name: string | null;
+  };
+  if (q.status !== "approved") {
+    return { error: "Only an approved quotation can raise a material request." };
+  }
+
+  const scope = await listScopeItems({ quotationId });
+  const orderable = orderableScope(scope);
+  if (orderable.length === 0) {
+    return { error: "This quotation has no scope lines with a quantity." };
+  }
+
+  const { data, error } = await db.table("material_requests").insert({
+    title: `Material for ${q.title || "quotation"}`,
+    project_id: q.project_id,
+    // The label is a display fallback only (migration 0028); the FK above is
+    // what every read joins on.
+    project_label: null,
+    source: "quotation",
+    stage: "draft",
+    created_by: ctx.userId,
+  });
+  if (error) return { error: error.message };
+  const id = (data?.[0] as { id: string }).id;
+
+  const { error: lineErr } = await db.table("material_request_items").insert(
+    orderable.map((s) => ({
+      mr_id: id,
+      scope_item_id: s.id,
+      item_name: scopeLabel(s),
+      is_adhoc: true,
+      uom: s.uom,
+      qty: num(s.qty),
+    })),
+  );
+  if (lineErr) return { error: lineErr.message };
+
+  return { id, skipped: scope.length - orderable.length };
 }

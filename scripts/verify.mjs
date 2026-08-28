@@ -644,6 +644,55 @@ async function main() {
   const aAi = await sb.from("ai_requests").select("lines_created").eq("org_id", A.id);
   check("the AI request log is org-scoped (A has 1)", (aAi.data ?? []).length === 1, `got ${(aAi.data ?? []).length}`);
 
+  // ── The spine: scope_items + real project FKs (0027 / 0028) ───────────────
+  const { data: aScope } = await sb.from("scope_items").insert([
+    { org_id: A.id, name: "Kitchen", room: "Kitchen" },
+  ]).select("id").single();
+  await sb.from("scope_items").insert([
+    { org_id: A.id, parent_id: aScope.id, name: "Base cabinets", uom: "rft", qty: 18 },
+    { org_id: B.id, name: "B's own scope" },
+  ]);
+  const aScopeRows = await sb.from("scope_items").select("id").eq("org_id", A.id);
+  const bScopeRows = await sb.from("scope_items").select("id").eq("org_id", B.id);
+  check(
+    "scope items are org-scoped (A has 2, B has 1)",
+    (aScopeRows.data ?? []).length === 2 && (bScopeRows.data ?? []).length === 1,
+    `A=${(aScopeRows.data ?? []).length} B=${(bScopeRows.data ?? []).length}`,
+  );
+
+  // Deleting a parent takes its children — the cascade the section-delete path
+  // has to work around, asserted here so nobody "simplifies" that away.
+  await sb.from("scope_items").delete().eq("id", aScope.id);
+  const afterCascade = await sb.from("scope_items").select("id").eq("org_id", A.id);
+  check(
+    "deleting a scope parent cascades to its children",
+    (afterCascade.data ?? []).length === 0,
+    `got ${(afterCascade.data ?? []).length}`,
+  );
+
+  // A payment now joins its project by FK, not by name.
+  const { data: payProj } = await sb
+    .from("projects").insert({ org_id: A.id, name: "A Spine Project" }).select("id").single();
+  await sb.from("payments").insert([
+    { org_id: A.id, direction: "inflow", amount: 100000, project_id: payProj.id, project_label: "A Spine Project" },
+    { org_id: B.id, direction: "inflow", amount: 999, project_label: "A Spine Project" },
+  ]);
+  const byFk = await sb.from("payments").select("amount").eq("org_id", A.id).eq("project_id", payProj.id);
+  check(
+    "payments join their project by FK, and the join is org-scoped",
+    (byFk.data ?? []).length === 1 && Number(byFk.data[0].amount) === 100000,
+    `got ${(byFk.data ?? []).length} rows`,
+  );
+
+  // Renaming the project must NOT empty its P&L — the whole point of 0028.
+  await sb.from("projects").update({ name: "A Spine Project (renamed)" }).eq("id", payProj.id);
+  const afterRename = await sb.from("payments").select("amount").eq("org_id", A.id).eq("project_id", payProj.id);
+  check(
+    "renaming a project keeps its payments attached",
+    (afterRename.data ?? []).length === 1,
+    `got ${(afterRename.data ?? []).length} rows`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

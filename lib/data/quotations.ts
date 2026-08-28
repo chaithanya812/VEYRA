@@ -279,13 +279,42 @@ export async function addSection(
     sort_order: (existing ?? []).length,
   });
   if (error) return { error: error.message };
-  return { id: (data?.[0] as { id: string }).id };
+
+  const sectionId = (data?.[0] as { id: string }).id;
+  // A section is a room in scope terms — the parent its lines hang under.
+  const { data: quote } = await db
+    .table("quotations")
+    .select("project_id")
+    .eq("id", quotationId)
+    .maybeSingle();
+  await db.table("scope_items").insert({
+    quotation_id: quotationId,
+    project_id: (quote as unknown as { project_id: string | null } | null)?.project_id ?? null,
+    code: `QS:${sectionId}`,
+    name: title.trim() || "Section",
+    room: title.trim() || "Section",
+    sort_order: (existing ?? []).length,
+  });
+  return { id: sectionId };
 }
 
 export async function renameSection(id: string, title: string): Promise<{ error?: string }> {
   const { db } = await withOrg();
-  const { error } = await db.table("quotation_sections").updateById(id, { title: title.trim() || "Section" });
-  return error ? { error: error.message } : {};
+  const name = title.trim() || "Section";
+  const { error } = await db.table("quotation_sections").updateById(id, { title: name });
+  if (error) return { error: error.message };
+
+  const { data: parent } = await db
+    .table("scope_items")
+    .select("id")
+    .eq("code", `QS:${id}`)
+    .maybeSingle();
+  if (parent) {
+    await db
+      .table("scope_items")
+      .updateById((parent as unknown as { id: string }).id, { name, room: name });
+  }
+  return {};
 }
 
 export async function deleteSection(id: string, quotationId: string): Promise<{ error?: string }> {
@@ -302,6 +331,27 @@ export async function deleteSection(id: string, quotationId: string): Promise<{ 
     const { error: reErr } = await db.table("quotation_lines").updateById(line.id, { section_id: null });
     if (reErr) return { error: reErr.message };
   }
+  // Same move on the scope side, and it is load-bearing: scope_items.parent_id
+  // cascades on delete, so removing the section's scope item while its children
+  // still point at it would delete the scope of every line in the section —
+  // lines that are about to survive as "ungrouped".
+  const { data: parent } = await db
+    .table("scope_items")
+    .select("id")
+    .eq("code", `QS:${id}`)
+    .maybeSingle();
+  if (parent) {
+    const parentId = (parent as unknown as { id: string }).id;
+    const { data: children } = await db
+      .table("scope_items")
+      .select("id")
+      .eq("parent_id", parentId);
+    for (const c of (children ?? []) as unknown as { id: string }[]) {
+      await db.table("scope_items").updateById(c.id, { parent_id: null });
+    }
+    await db.table("scope_items").deleteById(parentId);
+  }
+
   const { error } = await db.table("quotation_sections").deleteById(id);
   if (error) return { error: error.message };
   await recomputeQuotation(quotationId);
@@ -422,8 +472,16 @@ export async function addLine(
     ...t,
   });
   if (error) return { error: error.message };
+  const lineId = (data?.[0] as { id: string }).id;
+  await syncScopeItemForLine(lineId, quotationId, {
+    title: input.title,
+    area: input.area,
+    uom: input.uom,
+    qty,
+    section_id: input.section_id ?? null,
+  });
   await recomputeQuotation(quotationId);
-  return { id: (data?.[0] as { id: string }).id };
+  return { id: lineId };
 }
 
 export async function updateLine(
@@ -454,16 +512,98 @@ export async function updateLine(
     updated_at: new Date().toISOString(),
   });
   if (error) return { error: error.message };
+  await syncScopeItemForLine(id, quotationId, {
+    title: input.title,
+    area: input.area,
+    uom: input.uom,
+    qty,
+    section_id: input.section_id ?? null,
+  });
   await recomputeQuotation(quotationId);
   return {};
 }
 
 export async function deleteLine(id: string, quotationId: string): Promise<{ error?: string }> {
   const { db } = await withOrg();
+  // Take the derived scope item with it. A scope item authored by hand (no
+  // `QL:` origin code) is left alone — deleting a quotation line must not
+  // silently remove scope somebody added to the project.
+  const { data: derived } = await db
+    .table("scope_items")
+    .select("id")
+    .eq("code", `QL:${id}`)
+    .maybeSingle();
+
   const { error } = await db.table("quotation_lines").deleteById(id);
   if (error) return { error: error.message };
+  if (derived) {
+    await db.table("scope_items").deleteById((derived as unknown as { id: string }).id);
+  }
   await recomputeQuotation(quotationId);
   return {};
+}
+
+/**
+ * Keep a quotation line's scope item in step with it (PLAN-V4 §7).
+ *
+ * Migration 0027 backfilled scope for every line that existed; without this,
+ * that backfill would have been a one-off and every line added afterwards
+ * would have had no scope — so "raise a material request" would work on old
+ * quotations and quietly fail on new ones.
+ *
+ * The scope item carries `QL:<line id>` as its origin code, which is what makes
+ * this an upsert rather than a duplicate factory, and what tells a later reader
+ * which scope was derived rather than authored.
+ */
+async function syncScopeItemForLine(
+  lineId: string,
+  quotationId: string,
+  input: {
+    title: string;
+    area?: string | null;
+    uom?: string | null;
+    qty: number;
+    section_id: string | null;
+  },
+): Promise<void> {
+  const { db } = await withOrg();
+  const code = `QL:${lineId}`;
+
+  const [{ data: existing }, { data: quote }] = await Promise.all([
+    db.table("scope_items").select("id").eq("code", code).maybeSingle(),
+    db.table("quotations").select("project_id").eq("id", quotationId).maybeSingle(),
+  ]);
+
+  // Under its section's scope item when the line sits in a section.
+  let parentId: string | null = null;
+  if (input.section_id) {
+    const { data: parent } = await db
+      .table("scope_items")
+      .select("id")
+      .eq("code", `QS:${input.section_id}`)
+      .maybeSingle();
+    parentId = (parent as unknown as { id: string } | null)?.id ?? null;
+  }
+
+  const values = {
+    quotation_id: quotationId,
+    project_id: (quote as unknown as { project_id: string | null } | null)?.project_id ?? null,
+    parent_id: parentId,
+    code,
+    name: input.title.trim() || "Line item",
+    room: input.area?.trim() || null,
+    uom: input.uom ?? null,
+    qty: input.qty,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    await db
+      .table("scope_items")
+      .updateById((existing as unknown as { id: string }).id, values);
+  } else {
+    await db.table("scope_items").insert(values);
+  }
 }
 
 /**

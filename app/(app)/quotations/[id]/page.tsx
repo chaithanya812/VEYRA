@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Link2, Copy, GitBranch } from "lucide-react";
+import { ArrowLeft, Link2, Copy, GitBranch, PackagePlus } from "lucide-react";
 import { getQuotation, listVersions } from "@/lib/data/quotations";
 import { aiBackendStatus, listPrompts } from "@/lib/data/quotation-studio";
 import { leadScopeContext } from "@/lib/data/quotation-context";
@@ -14,7 +14,7 @@ import { DownloadQuoteButton } from "@/components/download-quote-button";
 import type { QuotationPdfData } from "@/lib/quotations-pdf";
 import { fmtDate } from "@/lib/utils";
 import { QuoteBuilder } from "../quote-builder";
-import { setStatusAction, setShareAction, newVersionAction } from "../actions";
+import { raiseMaterialRequestAction, setStatusAction, setShareAction, newVersionAction } from "../actions";
 import { SaveAsTemplateButton } from "../save-as-template";
 
 export default async function QuotationDetailPage({
@@ -112,6 +112,17 @@ export default async function QuotationDetailPage({
         </form>
 
         <div className="h-6 w-px bg-[var(--color-border)]" />
+
+        {/* The spine, made visible: an approved quote raises a material request
+            whose lines are its scope items (PLAN-V4 7.4). */}
+        {quotation.status === "approved" && (
+          <form action={raiseMaterialRequestAction}>
+            <input type="hidden" name="id" value={quotation.id} />
+            <Button type="submit" variant="secondary" size="sm">
+              <PackagePlus className="size-4" /> Raise material request
+            </Button>
+          </form>
+        )}
 
         <form action={setShareAction}>
           <input type="hidden" name="id" value={quotation.id} />

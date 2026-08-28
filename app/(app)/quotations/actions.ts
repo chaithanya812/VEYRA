@@ -29,6 +29,7 @@ import {
 } from "@/lib/data/quotation-templates";
 import { deriveTreatment } from "@/lib/quotations-model";
 import { searchItems } from "@/lib/data/items";
+import { createMaterialRequestFromQuotation } from "@/lib/data/material-requests";
 import type { ItemRef } from "@/lib/items-model";
 
 export type FormState = { error?: string } | undefined;
@@ -139,6 +140,23 @@ export async function setStatusAction(formData: FormData) {
   await setQuotationStatus(id, status as QuoteStatus);
   revalidatePath(`/quotations/${id}`);
   revalidatePath("/quotations");
+}
+
+/**
+ * The spine's proof (PLAN-V4 §7.4): an approved quotation raises a draft
+ * material request whose lines ARE its scope items — not a re-typed copy of
+ * them. Everything this action does is validate, call one data function and
+ * navigate; the linkage lives in the schema, which is the point.
+ */
+export async function raiseMaterialRequestAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const result = await createMaterialRequestFromQuotation(id);
+  if (result.error || !result.id) {
+    redirect(`/quotations/${id}?mr_error=${encodeURIComponent(result.error ?? "Failed")}`);
+  }
+  revalidatePath("/procurement");
+  redirect(`/procurement/${result.id}`);
 }
 
 export async function newVersionAction(formData: FormData) {

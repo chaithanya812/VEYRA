@@ -286,37 +286,60 @@ export async function gstSummary(): Promise<GstSummaryRow[]> {
 }
 
 /**
- * Projects with their configured value next to the cash P&L booked under the
- * same project_label (Σ inflow − Σ outflow of matching payments — the same
- * definition financeSummary uses). Projects without matching payments show a
- * zero P&L rather than disappearing.
+ * Projects with their configured value next to the cash P&L booked against
+ * them (Σ inflow − Σ outflow — the same definition financeSummary uses).
+ * Projects with no payments show a zero P&L rather than disappearing.
+ *
+ * **This used to join `projects.name === payments.project_label`.** A string
+ * equality produced the flagship per-project P&L: renaming a project silently
+ * emptied it, and two projects sharing a name shared their money. Migration
+ * 0028 gave `payments` a real `project_id`, and this reads it.
+ *
+ * The label is still honoured as a fallback, for payments recorded against a
+ * project name that never resolved to a row (the backfill reports those in
+ * `v_project_label_unmatched`). Money that was really spent should not vanish
+ * from a report because nobody tidied a name.
  */
 export async function projectProfitability(): Promise<ProjectProfitabilityRow[]> {
   const { db } = await withOrg();
   const [projectsRes, paymentsRes] = await Promise.all([
-    db.table("projects").select("name, project_value").order("created_at", { ascending: false }),
-    db.table("payments").select("direction, amount, project_label"),
+    db
+      .table("projects")
+      .select("id, name, project_value")
+      .order("created_at", { ascending: false }),
+    db.table("payments").select("direction, amount, project_id, project_label"),
   ]);
   if (projectsRes.error) throw projectsRes.error;
   if (paymentsRes.error) throw paymentsRes.error;
 
-  const cashByLabel = new Map<string, number>();
+  const projects = (projectsRes.data ?? []) as unknown as {
+    id: string;
+    name: string;
+    project_value: number | string | null;
+  }[];
+
+  const byId = new Map<string, number>();
+  const byLabel = new Map<string, number>();
   for (const p of (paymentsRes.data ?? []) as unknown as {
     direction: string;
     amount: number | string | null;
+    project_id: string | null;
     project_label: string | null;
   }[]) {
-    if (!p.project_label) continue;
     const delta = p.direction === "inflow" ? num(p.amount) : -num(p.amount);
-    cashByLabel.set(p.project_label, (cashByLabel.get(p.project_label) ?? 0) + delta);
+    if (p.project_id) {
+      byId.set(p.project_id, (byId.get(p.project_id) ?? 0) + delta);
+    } else if (p.project_label) {
+      const key = p.project_label.trim().toLowerCase();
+      byLabel.set(key, (byLabel.get(key) ?? 0) + delta);
+    }
   }
 
-  return ((projectsRes.data ?? []) as unknown as {
-    name: string;
-    project_value: number | string | null;
-  }[]).map((pr) => ({
+  return projects.map((pr) => ({
     project: pr.name,
     value: round2(num(pr.project_value)),
-    pnl: round2(cashByLabel.get(pr.name) ?? 0),
+    pnl: round2(
+      (byId.get(pr.id) ?? 0) + (byLabel.get(pr.name.trim().toLowerCase()) ?? 0),
+    ),
   }));
 }

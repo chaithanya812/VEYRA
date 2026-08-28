@@ -191,6 +191,9 @@ export async function recordPayment(input: {
  * amounts. Pure aggregation of stored config — scoped to the caller's org.
  */
 export async function financeSummary(filter?: {
+  /** Preferred: the real FK added in migration 0028. */
+  project_id?: string;
+  /** Legacy display name, kept for rows whose label never resolved. */
   project_label?: string;
 }): Promise<{
   inflow: number;
@@ -200,15 +203,17 @@ export async function financeSummary(filter?: {
 }> {
   const { db } = await withOrg();
 
-  let pq = db.table("payments").select("direction, amount, project_label");
-  if (filter?.project_label)
-    pq = pq.eq("project_label", filter.project_label);
+  // Scope by id when we have one — a name filter matched two projects that
+  // happened to share a name and silently merged their books.
+  let pq = db.table("payments").select("direction, amount, project_id, project_label");
+  if (filter?.project_id) pq = pq.eq("project_id", filter.project_id);
+  else if (filter?.project_label) pq = pq.eq("project_label", filter.project_label);
   const { data: payments, error: pErr } = await pq;
   if (pErr) throw pErr;
 
-  let cq = db.table("contracts").select("amount, source, project_label");
-  if (filter?.project_label)
-    cq = cq.eq("project_label", filter.project_label);
+  let cq = db.table("contracts").select("amount, source, project_id, project_label");
+  if (filter?.project_id) cq = cq.eq("project_id", filter.project_id);
+  else if (filter?.project_label) cq = cq.eq("project_label", filter.project_label);
   const { data: contracts, error: cErr } = await cq;
   if (cErr) throw cErr;
 

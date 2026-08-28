@@ -86,6 +86,9 @@ export const TENANT_TABLES = [
   "ai_requests",
   "follow_up_assignees",
   "followup_outcome_rules",
+  // The spine (PLAN-V4 7). Every module's line table points at it; nothing
+  // gets its own private linkage again.
+  "scope_items",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
