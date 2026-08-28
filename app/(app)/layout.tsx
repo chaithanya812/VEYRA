@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getViewer } from "@/lib/data/context";
 import { getActingContext, listMembers } from "@/lib/data/team";
@@ -14,11 +15,19 @@ export default async function AppLayout({
 
   // Who is acting, and who else could be. Both are request-cached, so the
   // panels below reuse these reads rather than issuing their own.
-  const [acting, members] = await Promise.all([getActingContext(), listMembers()]);
+  const [acting, members, jar] = await Promise.all([
+    getActingContext(),
+    listMembers(),
+    cookies(),
+  ]);
+
+  // Read on the server so a collapsed rail renders at 64px on the first paint
+  // instead of snapping in after hydration.
+  const navCollapsed = jar.get("veyra_nav_collapsed")?.value === "1";
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <SideNav />
+      <SideNav defaultCollapsed={navCollapsed} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar
           orgName={viewer.orgName}
