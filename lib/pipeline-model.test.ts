@@ -4,6 +4,10 @@ import {
   followUpBucket,
   resolveLeadColumnIndex,
   stageColumnTotals,
+  daysInStage,
+  groupByStatus,
+  stageAgeTone,
+  type PipelineRow,
 } from "./pipeline-model";
 
 /**
@@ -176,5 +180,88 @@ describe("DEFAULT_STAGES", () => {
         expect(s.is_lost ?? false).toBe(false);
       }
     }
+  });
+});
+
+/* ── The board that replaced the Kanban ───────────────────────────────────── */
+
+describe("daysInStage", () => {
+  const NOW = new Date(2026, 7, 28); // 28 Aug 2026
+
+  it("counts whole days since the lead entered its status", () => {
+    expect(daysInStage({ stageSince: "2026-07-29T10:00:00Z" }, NOW)).toBe(30);
+  });
+
+  it("is 0 on the day it moved, not negative", () => {
+    expect(daysInStage({ stageSince: "2026-08-28T23:00:00Z" }, NOW)).toBe(0);
+    expect(daysInStage({ stageSince: "2026-09-05T00:00:00Z" }, NOW)).toBe(0);
+  });
+
+  it("survives a missing timestamp", () => {
+    expect(daysInStage({ stageSince: "" }, NOW)).toBe(0);
+  });
+});
+
+describe("stageAgeTone", () => {
+  it("stays neutral inside a month", () => {
+    expect(stageAgeTone(30)).toBe("neutral");
+  });
+
+  it("warns past 30 days and alerts past 60", () => {
+    expect(stageAgeTone(31)).toBe("amber");
+    expect(stageAgeTone(61)).toBe("red");
+  });
+});
+
+describe("groupByStatus", () => {
+  const statuses = [
+    { value: "new", label: "New", seq: 0, is_active: true },
+    { value: "contacted", label: "Contacted", seq: 1, is_active: true },
+    { value: "old_stage", label: "Retired stage", seq: 2, is_active: false },
+  ];
+
+  function row(over: Partial<PipelineRow> & { id: string }): PipelineRow {
+    return {
+      name: "A lead",
+      project_name: null,
+      budget_band: null,
+      status: "new",
+      value: 100000,
+      ownerId: null,
+      ownerName: null,
+      nextFollowUpAt: null,
+      overdueFollowUps: 0,
+      stageSince: "2026-08-01T00:00:00Z",
+      lastActivityAt: null,
+      ...over,
+    };
+  }
+
+  it("keeps the tenant's ladder order and sums each group", () => {
+    const groups = groupByStatus(
+      [row({ id: "1" }), row({ id: "2", status: "contacted", value: 50000 })],
+      statuses,
+    );
+    expect(groups.map((g) => g.status)).toEqual(["new", "contacted"]);
+    expect(groups[0]).toMatchObject({ count: 1, value: 100000 });
+    expect(groups[1]).toMatchObject({ count: 1, value: 50000 });
+  });
+
+  it("keeps an empty live status so the ladder stays legible", () => {
+    const groups = groupByStatus([], statuses);
+    expect(groups.map((g) => g.status)).toEqual(["new", "contacted"]);
+  });
+
+  it("still shows leads sitting on a retired status", () => {
+    const groups = groupByStatus([row({ id: "1", status: "old_stage" })], statuses);
+    const retired = groups.find((g) => g.status === "old_stage");
+    expect(retired?.count).toBe(1);
+    expect(retired?.label).toBe("Retired stage");
+  });
+
+  it("never loses a lead, whatever its status", () => {
+    const rows = [row({ id: "1" }), row({ id: "2", status: "invented" })];
+    const groups = groupByStatus(rows, statuses);
+    expect(groups.reduce((n, g) => n + g.count, 0)).toBe(rows.length);
   });
 });

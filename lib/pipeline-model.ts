@@ -156,3 +156,107 @@ export function stageColumnTotals(
     value: totals[i].value,
   }));
 }
+
+/* ── The board that replaced the Kanban ───────────────────────────────────── */
+
+/**
+ * The owner, on the Kanban: *"it looks absolute garbage… you cannot put a
+ * kanban board… change it."* He is right, and the reason is structural: with
+ * fourteen statuses a column-per-stage board is a horizontal-scroll wall whose
+ * cards carry a name and a number. Everything you actually need to triage a
+ * pipeline — how long a deal has been stuck, when someone is next calling it,
+ * who owns it — had nowhere to go.
+ *
+ * What replaces it is a funnel over a grouped table (PLAN-V4 §6), and these are
+ * the two facts it can show that the board could not.
+ */
+
+export interface PipelineRow {
+  id: string;
+  name: string;
+  project_name: string | null;
+  budget_band: string | null;
+  status: string;
+  value: number | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  /** Next open follow-up, or null when nobody has booked one. */
+  nextFollowUpAt: string | null;
+  overdueFollowUps: number;
+  /** When this lead entered its current status. */
+  stageSince: string;
+  lastActivityAt: string | null;
+}
+
+/**
+ * Days on the current status. **This is the number the Kanban could never
+ * show and the one that finds stuck deals** — a column tells you where a lead
+ * is, never how long it has been there.
+ */
+export function daysInStage(row: Pick<PipelineRow, "stageSince">, now: Date = new Date()): number {
+  const since = Date.parse((row.stageSince ?? "").slice(0, 10) + "T00:00:00Z");
+  if (Number.isNaN(since)) return 0;
+  const today = Date.parse(isoDay(now) + "T00:00:00Z");
+  return Math.max(0, Math.round((today - since) / 86_400_000));
+}
+
+function isoDay(d: Date): string {
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  const day = `${d.getDate()}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Ageing thresholds. Over 60 days is a genuine alert; over 30 is a warning. */
+export function stageAgeTone(days: number): "neutral" | "amber" | "red" {
+  if (days > 60) return "red";
+  if (days > 30) return "amber";
+  return "neutral";
+}
+
+export interface PipelineGroup {
+  status: string;
+  label: string;
+  count: number;
+  value: number;
+  rows: PipelineRow[];
+}
+
+/**
+ * Rows grouped by status, in the tenant's own ladder order. Live statuses with
+ * no leads are kept so the ladder stays legible; a status that is retired but
+ * still holds leads is kept too, at the end — dropping it would hide real
+ * leads, which is exactly the failure the funnel is supposed to prevent.
+ */
+export function groupByStatus(
+  rows: PipelineRow[],
+  statuses: { value: string; label: string; seq: number; is_active: boolean }[],
+): PipelineGroup[] {
+  const order = new Map(statuses.map((s, i) => [s.value, i]));
+  const labels = new Map(statuses.map((s) => [s.value, s.label]));
+
+  const groups = new Map<string, PipelineGroup>();
+  for (const s of statuses) {
+    if (s.is_active) {
+      groups.set(s.value, { status: s.value, label: s.label, count: 0, value: 0, rows: [] });
+    }
+  }
+  for (const r of rows) {
+    const g =
+      groups.get(r.status) ??
+      ({
+        status: r.status,
+        label: labels.get(r.status) ?? r.status,
+        count: 0,
+        value: 0,
+        rows: [],
+      } satisfies PipelineGroup);
+    g.rows.push(r);
+    g.count++;
+    g.value += Number(r.value) || 0;
+    groups.set(r.status, g);
+  }
+
+  return [...groups.values()].sort(
+    (a, b) => (order.get(a.status) ?? 999) - (order.get(b.status) ?? 999),
+  );
+}

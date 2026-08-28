@@ -1,13 +1,17 @@
 import "server-only";
 import { withOrg } from "./with-org";
 import { listLeadStatuses } from "./lead-management";
+import { listMembers } from "./team";
+import { listOptions } from "./workspace";
 import {
-  DEFAULT_STAGES,
   followUpBucket,
   type FollowUp,
   type FollowUpBucket,
+  type PipelineRow,
   type PipelineStage,
 } from "@/lib/pipeline-model";
+import type { LeadStatusDef } from "@/lib/lead-management-model";
+import type { WorkspaceOption } from "@/lib/workspace-model";
 
 /**
  * CRM Pipeline data module — OPS-CRM-002/003 + OPS-HR-001.
@@ -32,83 +36,6 @@ export interface BoardColumn {
   count: number;
   value: number;
   leads: BoardLead[];
-}
-
-export async function listStages(): Promise<PipelineStage[]> {
-  const { db } = await withOrg();
-  const { data, error } = await db
-    .table("pipeline_stages")
-    .select("*")
-    .order("seq", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as unknown as PipelineStage[];
-}
-
-/** Seed the tenant's pipeline once, on first board visit. Idempotent. */
-export async function ensureDefaultStages(): Promise<void> {
-  const { db } = await withOrg();
-  const { data, error } = await db.table("pipeline_stages").select("id").limit(1);
-  if (error) throw error;
-  if (data && data.length > 0) return;
-  const { error: insErr } = await db.table("pipeline_stages").insert(
-    DEFAULT_STAGES.map((s, i) => ({
-      name: s.name,
-      seq: i,
-      is_won: s.is_won ?? false,
-      is_lost: s.is_lost ?? false,
-    })),
-  );
-  // Lost a concurrent seed race → the other insert won, which is fine.
-  if (insErr && insErr.code !== "23505") throw insErr;
-}
-
-export async function createStage(input: {
-  name: string;
-  seq?: number;
-}): Promise<{ id: string } | { error: string }> {
-  const { db } = await withOrg();
-  const name = input.name.trim();
-  if (!name) return { error: "Stage name is required." };
-
-  let seq = input.seq;
-  if (seq == null) {
-    // Append at the end of the board.
-    const { data: last } = await db
-      .table("pipeline_stages")
-      .select("seq")
-      .order("seq", { ascending: false })
-      .limit(1);
-    const lastRows = (last ?? []) as unknown as { seq: number }[];
-    seq = lastRows.length > 0 ? Number(lastRows[0].seq) + 1 : 0;
-  }
-
-  const { data, error } = await db
-    .table("pipeline_stages")
-    .insert({ name, seq, is_won: false, is_lost: false });
-  if (error) {
-    return {
-      error:
-        error.code === "23505"
-          ? "A stage with this name already exists."
-          : error.message,
-    };
-  }
-  return { id: (data?.[0] as { id: string }).id };
-}
-
-export async function reorderStage(
-  id: string,
-  seq: number,
-): Promise<{ error?: string }> {
-  const { db } = await withOrg();
-  const { error } = await db.table("pipeline_stages").updateById(id, { seq });
-  return error ? { error: error.message } : {};
-}
-
-export async function deleteStage(id: string): Promise<{ error?: string }> {
-  const { db } = await withOrg();
-  const { error } = await db.table("pipeline_stages").deleteById(id);
-  return error ? { error: error.message } : {};
 }
 
 /**
@@ -217,4 +144,127 @@ export async function completeFollowUp(id: string): Promise<{ error?: string }> 
   const { db } = await withOrg();
   const { error } = await db.table("follow_ups").updateById(id, { done: true });
   return error ? { error: error.message } : {};
+}
+
+/* ── The board that replaced the Kanban (PLAN-V4 §6) ──────────────────────── */
+
+export interface PipelineBoardData {
+  rows: PipelineRow[];
+  statuses: LeadStatusDef[];
+  options: WorkspaceOption[];
+  total: number;
+  value: number;
+}
+
+/**
+ * Everything the funnel-over-a-table needs, in four org-scoped reads.
+ *
+ * `stageSince` is derived from the lead's own activity feed — the most recent
+ * `status_change`, falling back to when the lead was created, because that is
+ * when it entered its first stage. That derivation is the whole point of the
+ * new board: "days in stage" is the number that finds stuck deals, and no
+ * column on a Kanban can show it.
+ */
+export async function getPipelineBoard(): Promise<PipelineBoardData> {
+  const { db } = await withOrg();
+
+  const [statuses, options, members, leadsRes] = await Promise.all([
+    listLeadStatuses(),
+    listOptions(),
+    listMembers(),
+    db
+      .table("leads")
+      .select(
+        "id, name, project_name, budget_band, status, value, sales_owner_id, assigned_to, created_at",
+      )
+      .order("created_at", { ascending: false }),
+  ]);
+  if (leadsRes.error) throw leadsRes.error;
+
+  const leads = (leadsRes.data ?? []) as unknown as {
+    id: string;
+    name: string;
+    project_name: string | null;
+    budget_band: string | null;
+    status: string;
+    value: number | null;
+    sales_owner_id: string | null;
+    assigned_to: string | null;
+    created_at: string;
+  }[];
+  const ids = leads.map((l) => l.id);
+
+  const [activityRes, followUpRes] = await Promise.all([
+    ids.length
+      ? db
+          .table("lead_activities")
+          .select("lead_id, kind, created_at")
+          .in("lead_id", ids)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+    ids.length
+      ? db
+          .table("follow_ups")
+          .select("lead_id, due_at, status, done")
+          .in("lead_id", ids)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const lastStatusChange = new Map<string, string>();
+  const lastActivity = new Map<string, string>();
+  for (const a of (activityRes.data ?? []) as unknown as {
+    lead_id: string;
+    kind: string;
+    created_at: string;
+  }[]) {
+    // Rows arrive newest-first, so the first sighting of each lead wins.
+    if (!lastActivity.has(a.lead_id)) lastActivity.set(a.lead_id, a.created_at);
+    if (a.kind === "status_change" && !lastStatusChange.has(a.lead_id)) {
+      lastStatusChange.set(a.lead_id, a.created_at);
+    }
+  }
+
+  const now = new Date();
+  const nextDue = new Map<string, string>();
+  const overdue = new Map<string, number>();
+  for (const f of (followUpRes.data ?? []) as unknown as {
+    lead_id: string;
+    due_at: string;
+    status: string;
+    done: boolean;
+  }[]) {
+    const open = !f.done && f.status !== "completed" && f.status !== "cancelled";
+    if (!open) continue;
+    const due = new Date(f.due_at);
+    if (due < now) overdue.set(f.lead_id, (overdue.get(f.lead_id) ?? 0) + 1);
+    const current = nextDue.get(f.lead_id);
+    if (!current || f.due_at < current) nextDue.set(f.lead_id, f.due_at);
+  }
+
+  const nameById = new Map(members.map((m) => [m.id, m.name]));
+  const rows: PipelineRow[] = leads.map((l) => {
+    const ownerId = l.sales_owner_id ?? l.assigned_to ?? null;
+    return {
+      id: l.id,
+      name: l.name,
+      project_name: l.project_name,
+      budget_band: l.budget_band,
+      status: l.status,
+      value: l.value,
+      ownerId: ownerId && nameById.has(ownerId) ? ownerId : null,
+      ownerName: ownerId ? (nameById.get(ownerId) ?? null) : null,
+      nextFollowUpAt: nextDue.get(l.id) ?? null,
+      overdueFollowUps: overdue.get(l.id) ?? 0,
+      stageSince: lastStatusChange.get(l.id) ?? l.created_at,
+      lastActivityAt: lastActivity.get(l.id) ?? null,
+    };
+  });
+
+  return {
+    rows,
+    statuses,
+    options,
+    total: rows.length,
+    value: rows.reduce((sum, r) => sum + (Number(r.value) || 0), 0),
+  };
 }

@@ -2,8 +2,10 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getActingContext, listMembers } from "@/lib/data/team";
 import { ensureDefaultOptions, listOptions } from "@/lib/data/workspace";
+import { listLeadStatuses } from "@/lib/data/lead-management";
 import { canConfigureOrg } from "@/lib/workspace-model";
 import { SetupPanel } from "../../dashboard/panels-team";
+import { LeadStatusEditor } from "./lead-statuses";
 
 /**
  * Workspace configuration: the people in this workspace and every dropdown the
@@ -13,10 +15,11 @@ import { SetupPanel } from "../../dashboard/panels-team";
  */
 export default async function WorkspaceSettingsPage() {
   await ensureDefaultOptions();
-  const [options, members, acting] = await Promise.all([
+  const [options, members, acting, statuses] = await Promise.all([
     listOptions(),
     listMembers(),
     getActingContext(),
+    listLeadStatuses(),
   ]);
 
   return (
@@ -40,6 +43,10 @@ export default async function WorkspaceSettingsPage() {
         members={members}
         canConfigure={canConfigureOrg(acting.member.role)}
       />
+
+      {/* The one place lead statuses are edited. /pipeline/stages used to sit
+          here too, writing to a table nothing read (PLAN-V4 §6.1). */}
+      <LeadStatusEditor statuses={statuses} />
     </div>
   );
 }

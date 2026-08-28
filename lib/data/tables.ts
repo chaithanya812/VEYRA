@@ -30,6 +30,9 @@ export const TENANT_TABLES = [
   "numbering_series",
   "permissions",
   "interactions",
+  // DEAD as of PLAN-V4 6.1: the board reads lead_statuses, and the editor that
+  // wrote this table is gone. Kept registered because the rows still exist —
+  // dropping a table is not an additive migration. Do not build on it.
   "pipeline_stages",
   "follow_ups",
   "warehouses",
