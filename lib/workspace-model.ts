@@ -155,6 +155,10 @@ export const OPTION_KINDS = [
   "project_type",
   "contact_role",
   "followup_outcome",
+  // The trade vocabulary (frame `105659`). ONE list, used by vendor contract
+  // categories (§9.3) and labour attendance (§9.6) — a tenant renames a trade
+  // once, not twice.
+  "labour_category",
 ] as const;
 export type OptionKind = (typeof OPTION_KINDS)[number];
 
@@ -170,6 +174,7 @@ export const OPTION_KIND_LABELS: Record<OptionKind, string> = {
   project_type: "Property types",
   contact_role: "Contact roles",
   followup_outcome: "Follow-up outcomes",
+  labour_category: "Trades & labour categories",
 };
 
 export interface WorkspaceOption {
@@ -279,6 +284,17 @@ export const DEFAULT_WORKSPACE_OPTIONS: OptionSeed[] = [
   { kind: "followup_outcome", value: "reschedule", label: "Asked to reschedule", seq: 2, tone: "amber" },
   { kind: "followup_outcome", value: "not_reachable", label: "Not reachable", seq: 3, tone: "neutral" },
   { kind: "followup_outcome", value: "not_interested", label: "Not interested", seq: 4, tone: "neutral" },
+  // Trades (frame `105659`) — shared by vendor contracts and labour.
+  { kind: "labour_category", value: "carpentry_woodwork", label: "Carpentry Woodwork", seq: 0, tone: "neutral" },
+  { kind: "labour_category", value: "false_ceiling_pop_work", label: "False Ceiling POP Work", seq: 1, tone: "neutral" },
+  { kind: "labour_category", value: "civil_masonry_work", label: "Civil Masonry Work", seq: 2, tone: "neutral" },
+  { kind: "labour_category", value: "electrical_work", label: "Electrical Work", seq: 3, tone: "neutral" },
+  { kind: "labour_category", value: "plumbing_work", label: "Plumbing Work", seq: 4, tone: "neutral" },
+  { kind: "labour_category", value: "ms_fabrication_works", label: "MS & Fabrication Works", seq: 5, tone: "neutral" },
+  { kind: "labour_category", value: "marble_tile_works", label: "Marble & Tile Works", seq: 6, tone: "neutral" },
+  { kind: "labour_category", value: "paint_works", label: "Paint Works", seq: 7, tone: "neutral" },
+  { kind: "labour_category", value: "cleaning", label: "Cleaning", seq: 8, tone: "neutral" },
+
   { kind: "followup_outcome", value: "budget_mismatch", label: "Budget mismatch", seq: 5, tone: "neutral" },
 ];
 

@@ -936,6 +936,112 @@ async function main() {
     `got ${(ver.data ?? []).length}`,
   );
 
+  // ── Financial Planning (PLAN-V4 §9.3, migration 0030) ───────────────────
+  // Inflow and outflow are the SAME table with `source` flipped. Asserting it
+  // here so nobody "simplifies" them into two tables later.
+  const { data: inflowC } = await sb.from("contracts").insert({
+    org_id: A.id, project_id: payProj.id, name: "Civil",
+    amount: 2000000, source: "client",
+  }).select("id").single();
+
+  const { data: outflowC } = await sb.from("contracts").insert({
+    org_id: A.id, project_id: payProj.id, name: "Carpentry",
+    amount: 650000, source: "vendor", vendor_id: null,
+  }).select("id").single();
+
+  const aContracts = await sb
+    .from("contracts").select("id, source").eq("org_id", A.id).eq("project_id", payProj.id);
+  // B has contracts of its own from an earlier block; what must be true is
+  // that none of them belong to A's project.
+  const bOnAsProject = await sb
+    .from("contracts").select("id").eq("org_id", B.id).eq("project_id", payProj.id);
+  check(
+    "project contracts are org-scoped and split by source",
+    (aContracts.data ?? []).length === 2
+      && (aContracts.data ?? []).filter((c) => c.source === "client").length === 1
+      && (bOnAsProject.data ?? []).length === 0,
+    `A=${(aContracts.data ?? []).length} B-on-A's-project=${(bOnAsProject.data ?? []).length}`,
+  );
+
+  // A vendor contract with a NULL vendor is the "Unlisted Vendor /
+  // Miscellaneous" row from `105325` — ad-hoc spend needs a home, so a null
+  // here is a legitimate state and must not be constrained away.
+  check(
+    "a vendor contract may have no vendor (the miscellaneous row)",
+    !!outflowC?.id,
+    outflowC?.id ? "accepted" : "rejected",
+  );
+
+  // The payment schedule lives on `milestones` (0015) — NOT a new table. This
+  // is the row Account Receivables (§12.3) will age.
+  await sb.from("milestones").insert([
+    { org_id: A.id, contract_id: inflowC.id, seq: 1, name: "1st", pct: 40, amount: 800000, tentative_due: "2026-03-20", work_done: true,  actual_due: "2026-03-20" },
+    { org_id: A.id, contract_id: inflowC.id, seq: 2, name: "2nd", pct: 60, amount: 1200000, tentative_due: "2026-06-20", work_done: false, actual_due: null },
+  ]);
+  const sched = await sb
+    .from("milestones").select("pct, amount, work_done, actual_due")
+    .eq("org_id", A.id).eq("contract_id", inflowC.id).order("seq");
+  const pctSum = (sched.data ?? []).reduce((a, m) => a + Number(m.pct), 0);
+  check(
+    "a payment schedule foots to 100%",
+    Math.abs(pctSum - 100) < 0.05,
+    `Σ = ${pctSum}%`,
+  );
+
+  // The receivables engine in one assertion: Actual Due exists only where the
+  // work is done. An unticked milestone is not billable and has no due date.
+  const billable = (sched.data ?? []).filter((m) => m.work_done);
+  const unbilled = (sched.data ?? []).filter((m) => !m.work_done);
+  check(
+    "Actual Due exists only where Work Done is ticked",
+    billable.length === 1 && billable[0].actual_due === "2026-03-20"
+      && unbilled.length === 1 && unbilled[0].actual_due === null,
+    `billable=${billable.length} unbilled=${unbilled.length}`,
+  );
+
+  // Categories are ROWS, not a comma-joined string — `105325` shows a vendor
+  // carrying several trades, and a string cannot be filtered on.
+  await sb.from("contract_categories").insert([
+    { org_id: A.id, contract_id: outflowC.id, category: "Carpentry Woodwork" },
+    { org_id: A.id, contract_id: outflowC.id, category: "Civil Masonry Work" },
+  ]);
+  const dupCat = await sb.from("contract_categories").insert({
+    org_id: A.id, contract_id: outflowC.id, category: "Carpentry Woodwork",
+  });
+  const cats = await sb
+    .from("contract_categories").select("category").eq("org_id", A.id).eq("contract_id", outflowC.id);
+  check(
+    "a contract carries many categories, each once",
+    (cats.data ?? []).length === 2 && dupCat.error?.code === "23505",
+    `${(cats.data ?? []).length} categories, dup ${dupCat.error?.code || "accepted"}`,
+  );
+
+  // A contract document is a project_file with a contract_id — one storage
+  // layer, not a second file table with its own versions and rules.
+  const { data: contractDoc } = await sb.from("project_files").insert({
+    org_id: A.id, project_id: payProj.id, contract_id: outflowC.id,
+    name: "Signed vendor agreement.pdf", internal_status: "approved",
+    client_approval: "not_shared", current_version: 1,
+  }).select("id").single();
+  const docs = await sb
+    .from("project_files").select("id").eq("org_id", A.id).eq("contract_id", outflowC.id);
+  check(
+    "a contract document is a project file, not a second file table",
+    (docs.data ?? []).length === 1 && !!contractDoc?.id,
+    `got ${(docs.data ?? []).length}`,
+  );
+
+  // Deleting a contract must not take the file with it — the signed agreement
+  // outlives the contract row it was filed against.
+  await sb.from("contracts").delete().eq("id", outflowC.id);
+  const orphanDoc = await sb
+    .from("project_files").select("contract_id").eq("id", contractDoc.id).single();
+  check(
+    "deleting a contract keeps its documents, detached",
+    orphanDoc.data?.contract_id === null,
+    `contract_id = ${orphanDoc.data?.contract_id}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

@@ -46,10 +46,15 @@ export const SOURCE_LABELS: Record<ContractSource, string> = {
 export interface Contract {
   id: string;
   org_id?: string;
+  /** The real FK (migration 0028). Read this; `project_label` is display fallback. */
+  project_id?: string | null;
   project_label: string | null;
+  /** Vendor contracts only (migration 0030). Null IS the "Unlisted Vendor" row. */
+  vendor_id?: string | null;
   name: string;
   amount: number;
   source: ContractSource;
+  notes?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -72,6 +77,7 @@ export interface Payment {
   id: string;
   contract_id: string | null;
   milestone_id: string | null;
+  project_id?: string | null;
   project_label: string | null;
   direction: PaymentDirection;
   amount: number;
@@ -121,4 +127,261 @@ export function milestoneOverdue(
     String(now.getDate()).padStart(2, "0"),
   ].join("-");
   return tentative_due.slice(0, 10) < today;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Financial Planning (PLAN-V4 §9.3, frames `105238` / `105325`)
+   ══════════════════════════════════════════════════════════════════════════
+   These live HERE, beside `milestonesFoot` and `pnl`, rather than in a module
+   of their own. `contracts` + `milestones` (migration 0015) already are the
+   inflow/outflow model the frame shows, and a second file computing the same
+   money is how two screens start disagreeing about one project — the same
+   mistake the scope-item spine had to repair across six line-item tables.
+
+   ⛔ No model goes near any of this (HARD RULE 2). A payment schedule is money;
+   money is computed or typed, never proposed.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export function num(v: number | string | null | undefined): number {
+  const n = typeof v === "string" ? Number(v) : (v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Money, to the paisa. */
+export function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+export function sourceOf(c: Pick<Contract, "source">): ContractSource {
+  return c.source === "vendor" ? "vendor" : "client";
+}
+
+/* ── The two-way binding (`105238`'s ⟲) ───────────────────────────────────── */
+
+/** Percentage → amount, against the contract value. */
+export function amountFromPct(pct: number, contractAmount: number): number {
+  return round2((clampPct(pct) / 100) * num(contractAmount));
+}
+
+/**
+ * Amount → percentage. A zero-value contract has no percentage to speak of —
+ * returning 0 rather than dividing by zero keeps the row editable while the
+ * user is still typing the contract's value.
+ */
+export function pctFromAmount(amount: number, contractAmount: number): number {
+  const total = num(contractAmount);
+  if (total <= 0) return 0;
+  return round2((num(amount) / total) * 100);
+}
+
+/** A percentage outside 0–100 is a typo, not a schedule. */
+export function clampPct(pct: number): number {
+  const n = num(pct);
+  return Math.min(100, Math.max(0, round2(n)));
+}
+
+export interface ScheduleTotals {
+  pct: number;
+  amount: number;
+  /** The contract value the schedule is measured against. */
+  contractAmount: number;
+  /** Σ amounts − contract value. Non-zero is a rounding remainder to show. */
+  drift: number;
+  /** True only when the schedule bills exactly 100%. */
+  isComplete: boolean;
+  /** What is left to allocate — prefilled into the next milestone. */
+  remainingPct: number;
+  remainingAmount: number;
+}
+
+/**
+ * Totals for a contract's schedule, and whether it is allowed to be saved.
+ *
+ * `isComplete` is the gate `105238` implies with its bold **Total 100%** row.
+ * A hair of rounding slack is allowed on the percentage — three milestones of
+ * 33.33% sum to 99.99 and refusing that would be pedantry, not a safeguard.
+ */
+export function scheduleTotals(
+  rows: Pick<Milestone, "pct" | "amount">[],
+  contractAmount: number | string,
+): ScheduleTotals {
+  const total = num(contractAmount);
+  const pct = round2(rows.reduce((a, r) => a + num(r.pct), 0));
+  const amount = round2(rows.reduce((a, r) => a + num(r.amount), 0));
+
+  return {
+    pct,
+    amount,
+    contractAmount: total,
+    drift: round2(amount - total),
+    isComplete: Math.abs(pct - 100) < 0.05,
+    remainingPct: round2(100 - pct),
+    remainingAmount: round2(total - amount),
+  };
+}
+
+/**
+ * `Actual Due` only exists once the work is done (`105238`, contract 2's row 1
+ * has an unticked Work Done and no Actual Due at all).
+ *
+ * Falls back to the tentative date when nobody recorded a real one — the
+ * milestone is billable either way, and a billable milestone with no due date
+ * would simply vanish from the receivables ageing.
+ */
+export function actualDueOf(
+  m: Pick<Milestone, "work_done" | "actual_due" | "tentative_due">,
+): string | null {
+  if (!m.work_done) return null;
+  return m.actual_due ?? m.tentative_due ?? null;
+}
+
+/** Billable = the work is done. This one predicate drives receivables. */
+export function isBillable(m: Pick<Milestone, "work_done">): boolean {
+  return !!m.work_done;
+}
+
+/* ── Rollups (the per-contract figures in `105238` / `105325`) ────────────── */
+
+export interface ContractRollup {
+  contractAmount: number;
+  /** Σ of milestones whose work is done — what may be invoiced. */
+  billable: number;
+  /** Cash that actually moved against this contract. */
+  settled: number;
+  /** Billable − settled. Negative means more came in than was billed. */
+  due: number;
+  /** Planned but not yet billable — the rest of the schedule. */
+  unbilled: number;
+  milestoneCount: number;
+  billableCount: number;
+}
+
+/**
+ * One contract's money, in the four figures the frame shows.
+ *
+ * For a client contract these read Funds Received · Total Receivables ·
+ * Receivables Due; for a vendor contract, Disbursed · Total Payables · Payable
+ * Dues. They are the same arithmetic seen from opposite ends, which is why
+ * there is one function and not two.
+ */
+export function rollupContract(
+  contract: Pick<Contract, "amount">,
+  milestones: Pick<Milestone, "pct" | "amount" | "work_done">[],
+  payments: Pick<Payment, "amount">[],
+): ContractRollup {
+  const contractAmount = num(contract.amount);
+  const billable = round2(
+    milestones.filter(isBillable).reduce((a, m) => a + num(m.amount), 0),
+  );
+  const planned = round2(milestones.reduce((a, m) => a + num(m.amount), 0));
+  const settled = round2(payments.reduce((a, p) => a + num(p.amount), 0));
+
+  return {
+    contractAmount,
+    billable,
+    settled,
+    due: round2(billable - settled),
+    unbilled: round2(planned - billable),
+    milestoneCount: milestones.length,
+    billableCount: milestones.filter(isBillable).length,
+  };
+}
+
+export interface FinancialPlanSummary {
+  projectValue: number;
+  /** Client side. */
+  funds: number;
+  totalReceivables: number;
+  receivableDues: number;
+  /** Vendor side. */
+  estimatedExpenses: number;
+  disbursed: number;
+  totalPayables: number;
+  payableDues: number;
+  /** The two hero tiles (`105403`). Both derived, never stored. */
+  cashFlow: number;
+  expectedPnl: number;
+}
+
+/**
+ * The header band of `105238` and the hero tiles of `105403`, in one pass.
+ *
+ * **Every figure here is derived.** Storing any of them is how a project's
+ * summary and its ledger start disagreeing — and the ledger is always the one
+ * telling the truth.
+ */
+export function summarisePlan(input: {
+  projectValue: number | string;
+  contracts: Pick<Contract, "id" | "amount" | "source">[];
+  milestonesByContract: Map<string, Pick<Milestone, "amount" | "pct" | "work_done">[]>;
+  paymentsByContract: Map<string, Pick<Payment, "amount">[]>;
+}): FinancialPlanSummary {
+  let funds = 0;
+  let totalReceivables = 0;
+  let estimatedExpenses = 0;
+  let disbursed = 0;
+  let totalPayables = 0;
+
+  for (const c of input.contracts) {
+    const ms = input.milestonesByContract.get(c.id) ?? [];
+    const ps = input.paymentsByContract.get(c.id) ?? [];
+    const r = rollupContract(c, ms, ps);
+
+    if (sourceOf(c) === "client") {
+      funds += r.settled;
+      totalReceivables += r.billable;
+    } else {
+      estimatedExpenses += r.contractAmount;
+      disbursed += r.settled;
+      totalPayables += r.billable;
+    }
+  }
+
+  funds = round2(funds);
+  totalReceivables = round2(totalReceivables);
+  estimatedExpenses = round2(estimatedExpenses);
+  disbursed = round2(disbursed);
+  totalPayables = round2(totalPayables);
+
+  return {
+    projectValue: num(input.projectValue),
+    funds,
+    totalReceivables,
+    receivableDues: round2(totalReceivables - funds),
+    estimatedExpenses,
+    disbursed,
+    totalPayables,
+    payableDues: round2(totalPayables - disbursed),
+    // Cash in hand on this project: what came in, less what went out.
+    cashFlow: round2(funds - disbursed),
+    // What the project is expected to be worth when everyone has been paid.
+    expectedPnl: round2(num(input.projectValue) - estimatedExpenses),
+  };
+}
+
+/**
+ * Spread a contract value across n equal milestones without losing paise.
+ *
+ * The remainder lands on the LAST milestone rather than being scattered, so the
+ * schedule sums to the contract value exactly and the discrepancy sits in one
+ * visible place instead of three invisible ones.
+ */
+export function splitEvenly(
+  contractAmount: number | string,
+  count: number,
+): { pct: number; amount: number }[] {
+  const total = num(contractAmount);
+  const n = Math.max(0, Math.trunc(count));
+  if (n === 0) return [];
+
+  const pct = round2(100 / n);
+  const each = round2(total / n);
+  const rows = Array.from({ length: n }, () => ({ pct, amount: each }));
+
+  rows[n - 1] = {
+    pct: round2(100 - pct * (n - 1)),
+    amount: round2(total - each * (n - 1)),
+  };
+  return rows;
 }

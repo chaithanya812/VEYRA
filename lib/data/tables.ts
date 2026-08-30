@@ -101,6 +101,9 @@ export const TENANT_TABLES = [
   "project_file_versions",
   // The one comment thread, shared by files, site photos and orders.
   "entity_comments",
+  // A vendor contract's trades. Rows, not a comma-joined string — `105325`
+  // shows Category as genuinely multi-valued.
+  "contract_categories",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

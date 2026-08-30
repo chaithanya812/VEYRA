@@ -388,12 +388,16 @@ export function SubmitButton({
   variant = "primary",
   size = "md",
   className,
+  disabled,
 }: {
   children: ReactNode;
   pendingLabel?: string;
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md";
   className?: string;
+  /** Block submission on a rule the form itself knows about — e.g. a payment
+   *  schedule that does not yet total 100%. The server re-checks regardless. */
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
@@ -401,7 +405,7 @@ export function SubmitButton({
       type="submit"
       variant={variant}
       size={size}
-      disabled={pending}
+      disabled={pending || disabled}
       className={className}
     >
       {pending ? (pendingLabel ?? "Working…") : children}

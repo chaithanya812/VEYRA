@@ -9,13 +9,20 @@ import {
   milestonesFoot,
   milestoneOverdue,
   pnl,
+  rollupContract,
+  scheduleTotals,
+  sourceOf,
   sumBy,
+  summarisePlan,
   type Contract,
+  type ContractRollup,
   type ContractSource,
+  type FinancialPlanSummary,
   type Milestone,
   type Payment,
   type PaymentDirection,
 } from "@/lib/finance-model";
+import { listOptions } from "./workspace";
 
 /**
  * Finance data module — contracts, milestone billing and payments. Follows the
@@ -244,4 +251,368 @@ export async function financeSummary(filter?: {
       (c) => Number(c.amount) || 0,
     ),
   };
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Financial Planning, per project (PLAN-V4 §9.3, frames `105238` / `105325`)
+   ══════════════════════════════════════════════════════════════════════════
+   Reads the SAME `contracts` + `milestones` rows the company-wide finance
+   screens read, scoped by the real `project_id` FK from migration 0028. There
+   is no project-private contract table, so the schedule planned here is
+   literally the schedule Account Receivables (§12.3) will age — nothing is
+   re-entered, which is the interconnection the owner asked for.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface ContractWithDetail {
+  contract: Contract;
+  milestones: Milestone[];
+  payments: Payment[];
+  categories: string[];
+  vendorName: string | null;
+  rollup: ContractRollup;
+}
+
+export interface ProjectFinancialPlan {
+  inflow: ContractWithDetail[];
+  outflow: ContractWithDetail[];
+  summary: FinancialPlanSummary;
+  /** Files filed against a contract — the Documents tab. */
+  documents: { id: string; name: string; contract_id: string; created_at: string }[];
+  vendors: { id: string; name: string }[];
+  categories: string[];
+}
+
+export async function getProjectFinancialPlan(
+  projectId: string,
+  projectValue: number,
+): Promise<ProjectFinancialPlan> {
+  const { db } = await withOrg();
+
+  const [contractRes, vendorRes, options] = await Promise.all([
+    db
+      .table("contracts")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true }),
+    db.table("vendors").select("id, name").order("name", { ascending: true }),
+    listOptions("labour_category"),
+  ]);
+  if (contractRes.error) throw contractRes.error;
+
+  const contracts = (contractRes.data ?? []) as unknown as Contract[];
+  const ids = contracts.map((c) => c.id);
+
+  const [msRes, payRes, catRes, docRes] = await Promise.all([
+    ids.length
+      ? db.table("milestones").select("*").in("contract_id", ids).order("seq", { ascending: true })
+      : Promise.resolve({ data: [] }),
+    ids.length
+      ? db.table("payments").select("*").in("contract_id", ids)
+      : Promise.resolve({ data: [] }),
+    ids.length
+      ? db.table("contract_categories").select("contract_id, category").in("contract_id", ids)
+      : Promise.resolve({ data: [] }),
+    ids.length
+      ? db.table("project_files").select("id, name, contract_id, created_at").in("contract_id", ids)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const msBy = new Map<string, Milestone[]>();
+  for (const m of (msRes.data ?? []) as unknown as Milestone[]) {
+    const list = msBy.get(m.contract_id) ?? [];
+    list.push(m);
+    msBy.set(m.contract_id, list);
+  }
+
+  const payBy = new Map<string, Payment[]>();
+  for (const p of (payRes.data ?? []) as unknown as Payment[]) {
+    if (!p.contract_id) continue;
+    const list = payBy.get(p.contract_id) ?? [];
+    list.push(p);
+    payBy.set(p.contract_id, list);
+  }
+
+  const catBy = new Map<string, string[]>();
+  for (const c of (catRes.data ?? []) as unknown as {
+    contract_id: string;
+    category: string;
+  }[]) {
+    const list = catBy.get(c.contract_id) ?? [];
+    list.push(c.category);
+    catBy.set(c.contract_id, list);
+  }
+
+  const vendors = (vendorRes.data ?? []) as unknown as { id: string; name: string }[];
+  const vendorNames = new Map(vendors.map((v) => [v.id, v.name]));
+
+  const detail = (c: Contract): ContractWithDetail => {
+    const milestones = msBy.get(c.id) ?? [];
+    const payments = payBy.get(c.id) ?? [];
+    return {
+      contract: c,
+      milestones,
+      payments,
+      categories: catBy.get(c.id) ?? [],
+      // A null vendor_id IS the "Unlisted Vendor / Miscellaneous" row from
+      // `105325` — a real state that ad-hoc spend needs, not missing data.
+      vendorName: c.vendor_id ? (vendorNames.get(c.vendor_id) ?? "Removed vendor") : null,
+      rollup: rollupContract(c, milestones, payments),
+    };
+  };
+
+  return {
+    inflow: contracts.filter((c) => sourceOf(c) === "client").map(detail),
+    outflow: contracts.filter((c) => sourceOf(c) === "vendor").map(detail),
+    summary: summarisePlan({
+      projectValue,
+      contracts,
+      milestonesByContract: msBy,
+      paymentsByContract: payBy,
+    }),
+    documents: (docRes.data ?? []) as unknown as {
+      id: string;
+      name: string;
+      contract_id: string;
+      created_at: string;
+    }[],
+    vendors,
+    categories: options.map((o) => o.label),
+  };
+}
+
+export async function createProjectContract(input: {
+  projectId: string;
+  source: ContractSource;
+  name: string;
+  amount: number;
+  vendorId?: string | null;
+  categories?: string[];
+  notes?: string | null;
+}): Promise<{ id?: string; error?: string }> {
+  const name = input.name.trim();
+  if (!name) return { error: "A contract needs a name." };
+  if (!Number.isFinite(input.amount) || input.amount < 0) {
+    return { error: "The contract value must be zero or more." };
+  }
+
+  const { db, ctx } = await withOrg();
+  const { data: project } = await db
+    .table("projects")
+    .select("id, name")
+    .eq("id", input.projectId)
+    .maybeSingle();
+  if (!project) return { error: "That project is not in this workspace." };
+
+  const { data, error } = await db.table("contracts").insert({
+    project_id: input.projectId,
+    // Kept in step for the legacy rows and reports that still read the label.
+    project_label: (project as unknown as { name: string }).name,
+    name,
+    amount: input.amount,
+    source: input.source,
+    vendor_id: input.source === "vendor" ? (input.vendorId ?? null) : null,
+    notes: input.notes?.trim() || null,
+    created_by: ctx.userId,
+  });
+  if (error) return { error: error.message };
+
+  const id = (data?.[0] as { id: string }).id;
+  const cats = [...new Set((input.categories ?? []).map((c) => c.trim()).filter(Boolean))];
+  if (cats.length > 0) {
+    await db
+      .table("contract_categories")
+      .insert(cats.map((category) => ({ contract_id: id, category })));
+  }
+  return { id };
+}
+
+export async function updateContractDetails(
+  id: string,
+  patch: {
+    name?: string;
+    amount?: number;
+    vendorId?: string | null;
+    notes?: string | null;
+  },
+): Promise<{ error?: string }> {
+  const { db } = await withOrg();
+  const values: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+  if (patch.name !== undefined) {
+    const n = patch.name.trim();
+    if (!n) return { error: "A contract needs a name." };
+    values.name = n;
+  }
+  if (patch.amount !== undefined) {
+    if (!Number.isFinite(patch.amount) || patch.amount < 0) {
+      return { error: "The contract value must be zero or more." };
+    }
+    values.amount = patch.amount;
+  }
+  if (patch.vendorId !== undefined) values.vendor_id = patch.vendorId || null;
+  if (patch.notes !== undefined) values.notes = patch.notes?.trim() || null;
+
+  const { error } = await db.table("contracts").updateById(id, values);
+  return error ? { error: error.message } : {};
+}
+
+/**
+ * Delete a contract — but never one with cash against it.
+ *
+ * Ledgers are append-only (HARD RULE 4). A contract with payments recorded is
+ * history; the way to undo it is a reversing entry, not a delete that silently
+ * detaches real money from the thing it was paid for.
+ */
+export async function deleteContract(id: string): Promise<{ error?: string }> {
+  const { db } = await withOrg();
+
+  const { data: paid } = await db
+    .table("payments")
+    .select("id")
+    .eq("contract_id", id)
+    .limit(1);
+  if (((paid ?? []) as unknown[]).length > 0) {
+    return {
+      error:
+        "This contract has payments against it. Ledgers are append-only — reverse the payments rather than deleting the contract.",
+    };
+  }
+
+  const { data: ms } = await db.table("milestones").select("id").eq("contract_id", id);
+  for (const m of (ms ?? []) as unknown as { id: string }[]) {
+    await db.table("milestones").deleteById(m.id);
+  }
+  const { error } = await db.table("contracts").deleteById(id);
+  return error ? { error: error.message } : {};
+}
+
+/**
+ * Replace a contract's payment schedule.
+ *
+ * **The 100% rule is enforced HERE, not only in the browser** (`105238`'s bold
+ * Total row). A schedule that bills 90% of a contract loses the last 10% for
+ * good, and nobody notices until the final invoice comes up short.
+ *
+ * A milestone that already carries a payment is never removed — that would
+ * orphan real cash. The write refuses and says so.
+ */
+export async function saveSchedule(
+  contractId: string,
+  rows: {
+    id?: string | null;
+    name: string;
+    pct: number;
+    amount: number;
+    tentative_due?: string | null;
+    work_done?: boolean;
+    actual_due?: string | null;
+  }[],
+): Promise<{ error?: string }> {
+  const { db } = await withOrg();
+  const { data: contract } = await db
+    .table("contracts")
+    .select("id, amount")
+    .eq("id", contractId)
+    .maybeSingle();
+  if (!contract) return { error: "That contract is not in this workspace." };
+
+  const clean = rows.map((r) => ({ ...r, name: r.name.trim() })).filter((r) => r.name);
+  if (clean.length === 0) return { error: "A schedule needs at least one milestone." };
+
+  const totals = scheduleTotals(clean, (contract as unknown as { amount: number }).amount);
+  if (!totals.isComplete) {
+    return {
+      error: `The schedule totals ${totals.pct}%, not 100%. ${
+        totals.remainingPct > 0
+          ? `${totals.remainingPct}% is still unallocated.`
+          : `It is over by ${Math.abs(totals.remainingPct)}%.`
+      }`,
+    };
+  }
+
+  const { data: existingRows } = await db
+    .table("milestones")
+    .select("id")
+    .eq("contract_id", contractId);
+  const existing = new Set(
+    ((existingRows ?? []) as unknown as { id: string }[]).map((m) => m.id),
+  );
+  const kept = new Set(clean.map((r) => r.id).filter(Boolean) as string[]);
+
+  for (const id of existing) {
+    if (kept.has(id)) continue;
+    const { data: paid } = await db
+      .table("payments")
+      .select("id")
+      .eq("milestone_id", id)
+      .limit(1);
+    if (((paid ?? []) as unknown[]).length > 0) {
+      return {
+        error:
+          "A milestone with a payment against it cannot be removed from the schedule.",
+      };
+    }
+    await db.table("milestones").deleteById(id);
+  }
+
+  for (const [i, r] of clean.entries()) {
+    const values = {
+      seq: i + 1,
+      name: r.name,
+      pct: r.pct,
+      amount: r.amount,
+      tentative_due: r.tentative_due || null,
+      work_done: !!r.work_done,
+      // Actual Due materialises only when Work Done is ticked — that is the
+      // whole receivables engine (`105238`).
+      actual_due: r.work_done ? r.actual_due || r.tentative_due || null : null,
+    };
+    if (r.id && existing.has(r.id)) {
+      const { error } = await db.table("milestones").updateById(r.id, values);
+      if (error) return { error: error.message };
+    } else {
+      const { error } = await db
+        .table("milestones")
+        .insert({ contract_id: contractId, ...values });
+      if (error) return { error: error.message };
+    }
+  }
+  return {};
+}
+
+export async function setContractCategories(
+  contractId: string,
+  categories: string[],
+): Promise<{ error?: string }> {
+  const { db } = await withOrg();
+  const { data: contract } = await db
+    .table("contracts")
+    .select("id")
+    .eq("id", contractId)
+    .maybeSingle();
+  if (!contract) return { error: "That contract is not in this workspace." };
+
+  const wanted = new Set(categories.map((c) => c.trim()).filter(Boolean));
+  const { data: current } = await db
+    .table("contract_categories")
+    .select("id, category")
+    .eq("contract_id", contractId);
+  const rows = (current ?? []) as unknown as { id: string; category: string }[];
+
+  for (const row of rows) {
+    if (!wanted.has(row.category)) {
+      await db.table("contract_categories").deleteById(row.id);
+    }
+  }
+
+  const have = new Set(rows.map((r) => r.category));
+  const missing = [...wanted].filter((c) => !have.has(c));
+  if (missing.length > 0) {
+    const { error } = await db
+      .table("contract_categories")
+      .insert(missing.map((category) => ({ contract_id: contractId, category })));
+    if (error) return { error: error.message };
+  }
+  return {};
 }

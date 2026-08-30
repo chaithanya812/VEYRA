@@ -516,6 +516,7 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
     { key: "procurement", label: "Procurement", icon: <ShoppingCart className="size-5" />, href: "/procurement", hint: "Requests, RFQs and orders" },
     { key: "site", label: "Site", icon: <HardHat className="size-5" />, href: "/site", hint: "Logs, photos and attendance" },
     { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: `/projects/${id}/documents`, hint: "Folders and files for this project" },
+    { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, href: `/projects/${id}/finance`, hint: "Inflow and outflow contracts" },
     { key: "finance", label: "Payments", icon: <IndianRupee className="size-5" />, href: "/finance", hint: "Funds in, money out" },
   ];
 
@@ -523,7 +524,6 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
   // should describe the real product shape (and never an "(Old)" tile, which
   // is what `104705` ships).
   const soon: ModuleCard[] = [
-    { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, hint: "Inflow and outflow contracts" },
     { key: "labour", label: "Labour report", icon: <Users className="size-5" />, hint: "Daily attendance by trade" },
     { key: "mb", label: "MB sheet", icon: <Ruler className="size-5" />, hint: "Placeholder — awaiting a spec" },
     { key: "renders", label: "2D → 3D renders", icon: <Boxes className="size-5" />, hint: "Placeholder — awaiting a spec" },
