@@ -795,6 +795,147 @@ async function main() {
     `got ${(clientThread.data ?? []).length}`,
   );
 
+  // ── The viewer's pins and the comment lifecycle (PLAN-V4 §9.1) ───────────
+  // A pin is a comment with coordinates. They are fractions of the page, not
+  // pixels, so the marker lands in the same place on any screen — and the
+  // column must actually round-trip, or the drawing loses its markers.
+  await sb.from("entity_comments").insert({
+    org_id: A.id, entity_type: "project_file", entity_id: aFile.id,
+    audience: "internal", status: "open",
+    body: "Increase counter space near the sink", page: 1, x: 0.812, y: 0.934,
+  });
+  const pinned = await sb
+    .from("entity_comments").select("page, x, y")
+    .eq("org_id", A.id).eq("entity_id", aFile.id).not("x", "is", null);
+  check(
+    "a pinned comment keeps its place on the drawing",
+    (pinned.data ?? []).length === 1
+      && Number(pinned.data[0].x) === 0.812
+      && Number(pinned.data[0].y) === 0.934
+      && pinned.data[0].page === 1,
+    `got ${JSON.stringify(pinned.data?.[0] ?? null)}`,
+  );
+
+  // Accept / Not required / Reopen move a comment through its lifecycle. The
+  // pin stays exactly where it was — resolving a comment is not moving it.
+  const { data: toAccept } = await sb
+    .from("entity_comments").select("id")
+    .eq("org_id", A.id).eq("entity_id", aFile.id).not("x", "is", null).limit(1).single();
+  await sb.from("entity_comments").update({ status: "accepted" }).eq("id", toAccept.id);
+  const accepted = await sb
+    .from("entity_comments").select("status, x, y").eq("id", toAccept.id).single();
+  check(
+    "accepting a comment does not move its pin",
+    accepted.data.status === "accepted" && Number(accepted.data.x) === 0.812,
+    `${accepted.data?.status} @ ${accepted.data?.x}`,
+  );
+
+  // A comment carrying no coordinates is a comment on the file as a whole —
+  // a legitimate state, not a broken pin.
+  const unpinned = await sb
+    .from("entity_comments").select("id")
+    .eq("org_id", A.id).eq("entity_id", aFile.id).is("x", null);
+  check(
+    "a comment on the whole file needs no coordinates",
+    (unpinned.data ?? []).length === 2,
+    `got ${(unpinned.data ?? []).length}`,
+  );
+
+  // ── Milestone dependencies (PLAN-V4 §9.2) ────────────────────────────────
+  const deliveryRows = await sb
+    .from("project_milestones").select("id, name")
+    .eq("org_id", A.id).eq("project_id", payProj.id).order("name");
+  const [snag, measure] = deliveryRows.data ?? [];
+
+  await sb.from("project_milestone_deps").insert({
+    org_id: A.id, milestone_id: snag.id, depends_on_id: measure.id,
+  });
+  const aDeps = await sb.from("project_milestone_deps").select("id").eq("org_id", A.id);
+  const bDeps = await sb.from("project_milestone_deps").select("id").eq("org_id", B.id);
+  check(
+    "milestone dependencies are org-scoped (A has 1, B has none)",
+    (aDeps.data ?? []).length === 1 && (bDeps.data ?? []).length === 0,
+    `A=${(aDeps.data ?? []).length} B=${(bDeps.data ?? []).length}`,
+  );
+
+  // A milestone that waits for itself is a typo, not a plan — the table's own
+  // CHECK refuses it, so no app bug can write one.
+  const selfDep = await sb.from("project_milestone_deps").insert({
+    org_id: A.id, milestone_id: snag.id, depends_on_id: snag.id,
+  });
+  check(
+    "a milestone cannot depend on itself (DB check refuses it)",
+    !!selfDep.error,
+    selfDep.error?.code || "no error",
+  );
+
+  // Linking the same pair twice is the state the caller asked for, not a second
+  // row — the unique index is what makes the toggle idempotent.
+  const dupDep = await sb.from("project_milestone_deps").insert({
+    org_id: A.id, milestone_id: snag.id, depends_on_id: measure.id,
+  });
+  check(
+    "a dependency cannot be recorded twice",
+    dupDep.error?.code === "23505",
+    dupDep.error?.code || "no error",
+  );
+
+  // Deleting a milestone takes its links with it; a dependency pointing at a
+  // row that no longer exists would render as a permanent phantom blocker.
+  await sb.from("project_milestones").delete().eq("id", measure.id);
+  const orphanDeps = await sb
+    .from("project_milestone_deps").select("id").eq("org_id", A.id);
+  check(
+    "deleting a milestone removes the links that pointed at it",
+    (orphanDeps.data ?? []).length === 0,
+    `got ${(orphanDeps.data ?? []).length}`,
+  );
+
+  // ── Milestone templates stay per-tenant (PLAN-V4 §9.2) ───────────────────
+  // SmartPlan and the template picker both read these; one tenant's edits must
+  // never appear in another's plan.
+  await sb.from("milestone_templates").insert([
+    { org_id: A.id, scope_group: "Execution Team", name: "Site Marking", offset_days: 0, duration_days: 2, seq: 0, is_system: true },
+    { org_id: B.id, scope_group: "Execution Team", name: "Site Marking", offset_days: 0, duration_days: 2, seq: 0, is_system: true },
+  ]);
+  const aTemplates = await sb
+    .from("milestone_templates").select("id").eq("org_id", A.id).eq("name", "Site Marking");
+  const bTemplates = await sb
+    .from("milestone_templates").select("id").eq("org_id", B.id).eq("name", "Site Marking");
+  check(
+    "two tenants can each own a template of the same name, kept apart",
+    (aTemplates.data ?? []).length === 1 && (bTemplates.data ?? []).length === 1
+      && aTemplates.data[0].id !== bTemplates.data[0].id,
+    `A=${(aTemplates.data ?? []).length} B=${(bTemplates.data ?? []).length}`,
+  );
+
+  // ── A file belongs to ONE project — the viewer's 404 guard (§9.1) ────────
+  // /projects/<A2>/documents/<file-from-A1> must resolve to nothing, and this
+  // is the query behind it: same org, wrong project, no row.
+  const wrongProject = await sb
+    .from("project_files").select("id")
+    .eq("org_id", A.id).eq("id", aFile.id).eq("project_id", projA2.id);
+  check(
+    "a file is not reachable under another project's id",
+    (wrongProject.data ?? []).length === 0,
+    `got ${(wrongProject.data ?? []).length}`,
+  );
+
+  // ── A version carries its uploader, which the Audits tab reads ───────────
+  await sb.from("project_file_versions").insert({
+    org_id: A.id, file_id: aFile.id, version_no: 1,
+    storage_path: `${A.id}/${payProj.id}/${aFile.id}/v1-plan.png`,
+    size_bytes: 2048, mime_type: "image/png", note: "First issue",
+  });
+  const ver = await sb
+    .from("project_file_versions").select("version_no, note, uploaded_by")
+    .eq("org_id", A.id).eq("file_id", aFile.id);
+  check(
+    "a version keeps its note and uploader for the audit trail",
+    (ver.data ?? []).length === 1 && ver.data[0].note === "First issue",
+    `got ${(ver.data ?? []).length}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

@@ -6,29 +6,35 @@ import {
   getProjectPlan,
   listMilestoneTemplates,
 } from "@/lib/data/project-milestones";
+import { listTasks } from "@/lib/data/workspace";
 import { PageHeader } from "@/components/ui/primitives";
 import { PlanView } from "./plan-view";
 
 /**
- * Project Planning → Milestone (PLAN-V4 §9.2, frames `105010` / `105024`).
+ * Project Planning (PLAN-V4 §9.2, frames `105010` / `105024`).
  *
- * This screen is what makes the Milestones cell, the Summary band and the
- * Progress Report writable rather than read-only — until it existed, a plan
- * could only be created with SQL.
+ * Three tabs, as the frame has them: **Milestone** — the delivery schedule
+ * banded by scope group, with planned against actual and the variance named;
+ * **Gantt chart** — the same rows as bars on a real time axis; **Tasks** — the
+ * jobs underneath, which are the workspace's own `tasks` filtered to this
+ * project rather than a second, private task table.
  *
- * Gantt Chart and Tasks are the other two tabs in `105010`; they are not built
- * yet, and the tab row will grow when they are.
+ * This screen is what makes the Milestones cell on the projects list, the
+ * Summary band and the Progress Report writable rather than read-only.
  */
 export default async function ProjectPlanPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
-  const { id } = await params;
-  const [result, plan, templates] = await Promise.all([
+  const [{ id }, { tab }] = await Promise.all([params, searchParams]);
+  const [result, plan, templates, tasks] = await Promise.all([
     getProject(id),
     getProjectPlan(id),
     listMilestoneTemplates(),
+    listTasks({ projectId: id }),
   ]);
   if (!result) notFound();
 
@@ -48,11 +54,16 @@ export default async function ProjectPlanPage({
 
       <PlanView
         projectId={id}
+        projectName={result.project.name}
         projectStart={result.project.start_date}
+        projectHandover={result.project.handover_date}
         milestones={plan.milestones}
         scopeItems={plan.scopeItems}
         members={plan.members}
         templates={templates}
+        deps={plan.deps}
+        tasks={tasks}
+        initialTab={tab ?? "milestone"}
       />
     </div>
   );

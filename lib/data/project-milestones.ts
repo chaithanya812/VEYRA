@@ -58,11 +58,13 @@ export interface ProjectPlan {
   scopeItems: ScopeItem[];
   members: Member[];
   rollup: MilestoneRollup;
+  /** Milestone id → the ids it waits on. Plain object so it crosses to a client component. */
+  deps: Record<string, string[]>;
 }
 
 export async function getProjectPlan(projectId: string): Promise<ProjectPlan> {
   const { db } = await withOrg();
-  const [milestones, members, scopeRes] = await Promise.all([
+  const [milestones, members, scopeRes, deps] = await Promise.all([
     listProjectMilestones(projectId),
     listMembers(),
     db
@@ -70,6 +72,7 @@ export async function getProjectPlan(projectId: string): Promise<ProjectPlan> {
       .select("*")
       .eq("project_id", projectId)
       .order("sort_order", { ascending: true }),
+    listMilestoneDeps(projectId),
   ]);
 
   return {
@@ -77,6 +80,7 @@ export async function getProjectPlan(projectId: string): Promise<ProjectPlan> {
     scopeItems: (scopeRes.data ?? []) as unknown as ScopeItem[],
     members,
     rollup: rollupMilestones(milestones),
+    deps: Object.fromEntries(deps),
   };
 }
 
@@ -352,4 +356,175 @@ export async function applyMilestoneTemplates(input: {
   const { error } = await db.table("project_milestones").insert(rows);
   if (error) return { created: 0, error: error.message };
   return { created: rows.length };
+}
+
+/* ── Dependencies (PLAN-V4 §9.2 — the linked-milestone chips in `105010`) ─── */
+
+/**
+ * What each milestone waits on, keyed by milestone id.
+ *
+ * Scoped through the project's own milestone ids rather than queried directly:
+ * `project_milestone_deps` carries no `project_id` of its own, so asking for
+ * "this project's dependencies" means asking about this project's milestones.
+ */
+export async function listMilestoneDeps(
+  projectId: string,
+): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const { db } = await withOrg();
+
+  const { data: ms } = await db
+    .table("project_milestones")
+    .select("id")
+    .eq("project_id", projectId);
+  const ids = ((ms ?? []) as unknown as { id: string }[]).map((m) => m.id);
+  if (ids.length === 0) return out;
+
+  const { data, error } = await db
+    .table("project_milestone_deps")
+    .select("milestone_id, depends_on_id")
+    .in("milestone_id", ids);
+  if (error) throw error;
+
+  const known = new Set(ids);
+  for (const d of (data ?? []) as unknown as {
+    milestone_id: string;
+    depends_on_id: string;
+  }[]) {
+    // A dependency pointing outside this project is not something to render.
+    if (!known.has(d.depends_on_id)) continue;
+    const list = out.get(d.milestone_id) ?? [];
+    list.push(d.depends_on_id);
+    out.set(d.milestone_id, list);
+  }
+  return out;
+}
+
+/**
+ * Link or unlink one dependency.
+ *
+ * Two guards, and both matter: a milestone may not depend on itself (the table
+ * checks that too), and a link may not cross projects — "wait for a milestone
+ * on someone else's project" is never a real plan, and it would let one
+ * project's schedule move another's.
+ */
+export async function setMilestoneDependency(input: {
+  milestoneId: string;
+  dependsOnId: string;
+  on: boolean;
+}): Promise<{ error?: string }> {
+  if (input.milestoneId === input.dependsOnId) {
+    return { error: "A milestone cannot wait for itself." };
+  }
+  const { db } = await withOrg();
+
+  const { data } = await db
+    .table("project_milestones")
+    .select("id, project_id")
+    .in("id", [input.milestoneId, input.dependsOnId]);
+  const rows = (data ?? []) as unknown as { id: string; project_id: string }[];
+  if (rows.length !== 2) return { error: "That milestone is not in this workspace." };
+  if (rows[0].project_id !== rows[1].project_id) {
+    return { error: "Milestones can only depend on others in the same project." };
+  }
+
+  if (!input.on) {
+    // The accessor deletes by id only — that is what keeps every delete
+    // org-scoped — so find the link first and remove that row.
+    const { data: link } = await db
+      .table("project_milestone_deps")
+      .select("id")
+      .eq("milestone_id", input.milestoneId)
+      .eq("depends_on_id", input.dependsOnId)
+      .maybeSingle();
+    if (!link) return {}; // already unlinked is the state asked for
+    const { error } = await db
+      .table("project_milestone_deps")
+      .deleteById((link as unknown as { id: string }).id);
+    return error ? { error: error.message } : {};
+  }
+
+  const { error } = await db.table("project_milestone_deps").insert({
+    milestone_id: input.milestoneId,
+    depends_on_id: input.dependsOnId,
+  });
+  // Already linked is the state the caller asked for, not a failure.
+  if (error && error.code !== "23505") return { error: error.message };
+  return {};
+}
+
+/* ── SmartPlan (PLAN-V4 §9.2) ─────────────────────────────────────────────── */
+
+/**
+ * Write an accepted SmartPlan draft.
+ *
+ * The dates arriving here were computed by `datePlan()` from a start date a
+ * person chose — no model produced them, and nothing in this function invents
+ * one either. It is the same shape of write as `applyMilestoneTemplates()`,
+ * which is the point: a SmartPlan and a template land identical rows.
+ *
+ * Rows are inserted one at a time rather than in a batch because the dependency
+ * wiring needs to know which id belongs to which step, and the order PostgREST
+ * returns a bulk insert in is not a promise worth building on.
+ */
+export async function applySmartPlan(input: {
+  projectId: string;
+  scopeItemId?: string | null;
+  steps: {
+    name: string;
+    plannedStart: string;
+    plannedEnd: string;
+    dependsOn: number[];
+  }[];
+}): Promise<{ created: number; error?: string }> {
+  if (input.steps.length === 0) return { created: 0, error: "Nothing to add." };
+
+  const { db, ctx } = await withOrg();
+  const { data: project } = await db
+    .table("projects")
+    .select("id")
+    .eq("id", input.projectId)
+    .maybeSingle();
+  if (!project) return { created: 0, error: "That project is not in this workspace." };
+
+  const { data: existing } = await db
+    .table("project_milestones")
+    .select("id")
+    .eq("project_id", input.projectId);
+  const base = ((existing ?? []) as unknown as { id: string }[]).length;
+
+  const ids: string[] = [];
+  for (const [i, s] of input.steps.entries()) {
+    const { data, error } = await db.table("project_milestones").insert({
+      project_id: input.projectId,
+      scope_item_id: input.scopeItemId ?? null,
+      name: s.name,
+      status: "not_started",
+      progress_pct: 0,
+      planned_start: s.plannedStart,
+      planned_end: s.plannedEnd,
+      actual_start: null,
+      actual_end: null,
+      assignee_id: null,
+      client_visible: false,
+      last_update: null,
+      sort_order: base + i,
+      created_by: ctx.userId,
+    });
+    if (error) return { created: ids.length, error: error.message };
+    ids.push((data?.[0] as { id: string }).id);
+  }
+
+  // Wire the proposal's index-based dependencies to the rows just written.
+  for (const [i, s] of input.steps.entries()) {
+    for (const d of s.dependsOn) {
+      if (d < 0 || d >= ids.length || d === i) continue;
+      await db.table("project_milestone_deps").insert({
+        milestone_id: ids[i],
+        depends_on_id: ids[d],
+      });
+    }
+  }
+
+  return { created: ids.length };
 }

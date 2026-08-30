@@ -5,6 +5,8 @@ import {
   formatBytes,
   groupFilesByFolder,
   internalStatusOf,
+  versionLabel,
+  viewerMode,
   type ProjectFolder,
 } from "./project-files-model";
 
@@ -104,5 +106,33 @@ describe("fileKind", () => {
 
   it("falls back for the unknown", () => {
     expect(fileKind(null)).toBe("other");
+  });
+});
+
+describe("viewerMode", () => {
+  it("renders rasters inline", () => {
+    expect(viewerMode("image/png")).toBe("image");
+    expect(viewerMode("image/webp")).toBe("image");
+  });
+
+  it("renders a PDF inline — the frame's 2D Layout.pdf", () => {
+    expect(viewerMode("application/pdf")).toBe("pdf");
+  });
+
+  it("never renders an uploaded SVG inline", () => {
+    // An SVG is a script. Rendering it would run it against a signed URL.
+    expect(viewerMode("image/svg+xml")).toBe("download");
+  });
+
+  it("offers a download for what a browser cannot show", () => {
+    expect(viewerMode("image/vnd.dwg")).toBe("download");
+    expect(viewerMode("application/zip")).toBe("download");
+    expect(viewerMode(null)).toBe("download");
+  });
+});
+
+describe("versionLabel", () => {
+  it("reads the way the selector reads", () => {
+    expect(versionLabel({ version_no: 3 })).toBe("Ver 3");
   });
 });

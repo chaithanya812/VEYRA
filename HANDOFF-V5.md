@@ -83,12 +83,17 @@ Gates at HEAD, all re-run personally:
 |---|---|
 | `node ./node_modules/typescript/bin/tsc --noEmit` | ✅ 0 |
 | `node ./node_modules/eslint/bin/eslint.js app lib components` | ✅ 0 |
-| `node ./node_modules/vitest/vitest.mjs run` | ✅ 426/426, 34 files |
-| `node ./node_modules/next/dist/bin/next build` | ✅ 59 routes |
-| `node scripts/verify.mjs` | ✅ 94/94 |
+| `node ./node_modules/vitest/vitest.mjs run` | ✅ 464/464, 35 files |
+| `node ./node_modules/next/dist/bin/next build` | ✅ 58 page routes |
+| `node scripts/verify.mjs` | ✅ 104/104 |
 | `node scripts/verify-storage.mjs` | ✅ 8/8 |
 
-Baseline when this run started: 267 tests · 56 routes · 77 verify.
+Baseline when the Phase 0–8 run started: 267 tests · 56 routes · 77 verify.
+Baseline when the Phase 8 completion run started: 426 tests · 57 pages · 94 verify.
+(The earlier "34 files" and "59 routes" were miscounts — vitest reports test
+*files*, of which there were 33, and the build's route list carries entries that
+are not `page.tsx` files. Counting `page.tsx` is unambiguous, so this table now
+does that.)
 
 **Do not rebuild any of the following.**
 
@@ -121,10 +126,33 @@ Baseline when this run started: 267 tests · 56 routes · 77 verify.
   Modules tabs, the composable Progress Report at `/projects/[id]/report`.
   Migration 0032: `project_milestones`, `project_milestone_deps`,
   `milestone_templates`.
-- **Phase 8, partly** — `/projects/[id]/plan` (milestone editor with scope
-  bands and templates) and `/projects/[id]/documents` (migration 0029 —
-  `project_folders`, `project_files`, `project_file_versions`,
-  `entity_comments`, plus the private storage bucket).
+- **Phase 8 — §9.1 and §9.2 are DONE.**
+  - `/projects/[id]/documents` — the browser (migration 0029: `project_folders`,
+    `project_files`, `project_file_versions`, `entity_comments`, plus the
+    private storage bucket).
+  - `/projects/[id]/documents/[fileId]` — **the viewer** (`104841`). Full-pane
+    render, version selector, INTERNAL/CLIENT threads, filter chips, Accept /
+    Not required / Reopen, replies, and **numbered pins placed by clicking the
+    drawing**. Pins are fractions of the page, not pixels. Rails: Comments ·
+    Versions · Audits.
+  - `/projects/[id]/plan` — three tabs, **Milestone · Gantt chart · Tasks**,
+    plus the Dates and Progress cards, `Add scope`, a real dependency editor
+    over `project_milestone_deps`, and **SmartPlan**.
+  - Engines: `lib/gantt-model.ts` (12 tests), `lib/smartplan-model.ts`
+    (14 tests), pins in `lib/comments-model.ts`.
+
+  **Two things to know before touching this.**
+  1. **PDFs do not carry pins.** A raster renders in our own element, so a click
+     gives real coordinates. A PDF renders in the browser's own viewer inside an
+     iframe, where we cannot know the page or the click position — so pins are
+     not drawn over it and the reviewer records a page number instead. Drawing
+     a marker at a plausible-looking wrong spot is worse than none. Rendering
+     PDF pages ourselves needs a new dependency; `PLAN-V4` says ask first.
+  2. **`getProjectFileDetail()` returns BOTH comment threads by default**,
+     because the staff viewer switches between them in the browser. It takes an
+     `audience` option that narrows the read at the database. Anything
+     client-facing MUST pass it — otherwise the internal thread travels to a
+     client's browser filtered only by JavaScript, which is not a filter.
 
 ---
 
@@ -212,22 +240,18 @@ order once the gaps are filled. **Do not renumber.**
 
 ### Phase 8, the rest (`PLAN-V4 §9`)
 
-1. **§9.1 finish** — the file *viewer* (frame `104841`): full-pane render,
-   version selector, INTERNAL/CLIENT threads via `EntityCommentThread` (the
-   component already exists), filter chips, numbered pins on the document.
-   `entity_comments` already carries `version_id`, `page`, `x`, `y`.
-2. **§9.2 finish** — Gantt Chart and Tasks tabs, and **SmartPlan** (AI proposes
-   milestone names + day offsets **only**; dates computed deterministically —
-   `applyMilestoneTemplates()` is the pattern to follow. Log to `ai_requests`).
-3. **§9.3 Financial Planning** — migration 0030. Inflow/outflow contracts, the
+**§9.1 and §9.2 are done** — see §2. Start at §9.3.
+
+1. **§9.3 Financial Planning** — migration 0030. Inflow/outflow contracts, the
    two-way percent↔amount binding, the "total must be 100%" rule, and
    `Actual Due` materialising only when `Work Done` is ticked.
-4. **§9.4 Project Payments** — Listing/Analytics, separate Transaction and
+2. **§9.4 Project Payments** — Listing/Analytics, separate Transaction and
    Recorded dates, reversals as a filter not a delete.
-5. **§9.5 Site Progress Uploads** — reuse the §9.1 storage layer and
-   `client_visible`.
-6. **§9.6 Labour Report** — migration 0031.
-7. **§9.7 Project Procurement** — migration 0036, the per-line stage model.
+3. **§9.5 Site Progress Uploads** — reuse the §9.1 storage layer and
+   `client_visible`. The comment thread and the pin model are already built and
+   generic: a site photo is `entity_type = 'site_photo'` on the same table.
+4. **§9.6 Labour Report** — migration 0031.
+5. **§9.7 Project Procurement** — migration 0036, the per-line stage model.
    Much of this exists already (`rfq`, `purchase_orders`, `po_lines`); re-point
    it at `project_id` and `scope_items` rather than rebuilding.
 

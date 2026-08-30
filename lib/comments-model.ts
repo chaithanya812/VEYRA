@@ -136,3 +136,57 @@ export function extractMentions(body: string): string[] {
   const found = body.match(/@[\w.-]+/g) ?? [];
   return [...new Set(found.map((m) => m.slice(1).toLowerCase()))];
 }
+
+/* ── Pins on the document (frame `104841`) ───────────────────────────────── */
+
+/**
+ * A numbered marker anchored to a point on the drawing. `104841` puts a green
+ * `2` on the KITCHEN and the same `2` beside "Increase counter space near sink
+ * area" in the rail — the number is the join between the two, which is why
+ * `buildThreads` assigns pin numbers *before* filtering. Hiding "Accepted" must
+ * not renumber the pins still on the plan.
+ *
+ * Coordinates are fractions of the rendered page (0–1), not pixels: a drawing
+ * opened on a laptop and on a phone puts the pin in the same place on the
+ * drawing, which pixels could never do.
+ */
+export interface CommentPin {
+  id: string;
+  number: number;
+  page: number;
+  x: number;
+  y: number;
+  status: CommentStatus;
+}
+
+/** Keep a coordinate inside the page. A pin at 1.4 is a bug, not a location. */
+export function clampPin(x: number, y: number): { x: number; y: number } {
+  const fix = (n: number) => {
+    if (!Number.isFinite(n)) return 0.5;
+    return Math.min(1, Math.max(0, Math.round(n * 1000) / 1000));
+  };
+  return { x: fix(x), y: fix(y) };
+}
+
+/**
+ * The pins to draw, from threads already built and filtered.
+ *
+ * A comment without coordinates is a comment on the file as a whole — it keeps
+ * its number in the list and simply has no marker. Dropping it from the rail
+ * instead, or inventing a position for it, would both be worse.
+ */
+export function pinsFor(
+  threads: CommentThread[],
+  page: number | null = null,
+): CommentPin[] {
+  const out: CommentPin[] = [];
+  for (const t of threads) {
+    const { x, y } = t.comment;
+    if (x == null || y == null) continue;
+    const p = t.comment.page ?? 1;
+    if (page != null && p !== page) continue;
+    const at = clampPin(Number(x), Number(y));
+    out.push({ id: t.comment.id, number: t.pinNumber, page: p, ...at, status: t.comment.status });
+  }
+  return out;
+}

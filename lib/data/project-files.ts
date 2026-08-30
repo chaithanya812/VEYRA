@@ -11,7 +11,7 @@ import {
   storagePath,
   uploadObject,
 } from "./storage";
-import type { EntityComment } from "@/lib/comments-model";
+import { clampPin, type CommentStatus, type EntityComment } from "@/lib/comments-model";
 import type {
   ProjectFile,
   ProjectFileVersion,
@@ -435,18 +435,29 @@ export async function fileVersionUrls(
 
 /* ── Comments (the shared thread, PLAN-V4 §3) ─────────────────────────────── */
 
+/**
+ * One object's comments.
+ *
+ * `audience` narrows the read at the database rather than in the caller. Left
+ * off, both threads come back — right for a staff screen that switches between
+ * them. Any client-facing surface must pass it, so the internal thread is never
+ * sent to a browser that should not have it.
+ */
 export async function listEntityComments(
   entityType: string,
   entityId: string,
+  audience?: "internal" | "client",
 ): Promise<EntityComment[]> {
   const { db } = await withOrg();
+  let q = db
+    .table("entity_comments")
+    .select("*")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId);
+  if (audience) q = q.eq("audience", audience);
+
   const [{ data, error }, members] = await Promise.all([
-    db
-      .table("entity_comments")
-      .select("*")
-      .eq("entity_type", entityType)
-      .eq("entity_id", entityId)
-      .order("created_at", { ascending: true }),
+    q.order("created_at", { ascending: true }),
     listMembers(),
   ]);
   if (error) throw error;
@@ -479,9 +490,17 @@ export async function addEntityComment(input: {
   audience: "internal" | "client";
   versionId?: string | null;
   parentId?: string | null;
+  /** Where the pin sits on the document — fractions of the page, not pixels. */
+  page?: number | null;
+  x?: number | null;
+  y?: number | null;
 }): Promise<{ id?: string; error?: string }> {
   const body = input.body.trim();
   if (!body) return { error: "Write something first." };
+
+  // A pin needs both coordinates or neither: half an anchor is not a location.
+  const pinned = input.x != null && input.y != null;
+  const at = pinned ? clampPin(Number(input.x), Number(input.y)) : null;
 
   const { db, ctx } = await withOrg();
   const { data, error } = await db.table("entity_comments").insert({
@@ -492,9 +511,133 @@ export async function addEntityComment(input: {
     status: "open",
     version_id: input.versionId ?? null,
     parent_id: input.parentId ?? null,
+    page: at ? (input.page ?? 1) : null,
+    x: at ? at.x : null,
+    y: at ? at.y : null,
     author_id: ctx.memberId,
     created_by: ctx.userId,
   });
   if (error) return { error: error.message };
   return { id: (data?.[0] as { id: string }).id };
+}
+
+/**
+ * Move a comment through its lifecycle — the `Accepted` / `Not Required` chips
+ * and the `Reopen` link in `104841`.
+ *
+ * A reply is never given a status of its own: the thread's state is the root
+ * comment's state, so "accepted" means the whole conversation is settled rather
+ * than one message inside it.
+ */
+export async function setCommentStatus(
+  id: string,
+  status: CommentStatus,
+): Promise<{ error?: string }> {
+  if (!(["open", "accepted", "not_required"] as const).includes(status)) {
+    return { error: "That is not a comment status." };
+  }
+  const { db } = await withOrg();
+  const { data: existing } = await db
+    .table("entity_comments")
+    .select("id, parent_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing) return { error: "That comment is not in this workspace." };
+  if ((existing as unknown as { parent_id: string | null }).parent_id) {
+    return { error: "Set the status on the comment, not on a reply." };
+  }
+
+  const { error } = await db.table("entity_comments").updateById(id, { status });
+  return error ? { error: error.message } : {};
+}
+
+/* ── One file, everything the viewer needs (frame `104841`) ───────────────── */
+
+export interface ProjectFileDetail {
+  file: ProjectFile;
+  folder: ProjectFolder | null;
+  versions: ProjectFileVersion[];
+  /** Signed, short-lived URLs keyed by version id. Minted after withOrg(). */
+  urls: Record<string, string>;
+  comments: EntityComment[];
+  members: Member[];
+  uploaderNames: Record<string, string>;
+}
+
+/**
+ * The viewer's read.
+ *
+ * **The project check.** The caller gives us a project id from the URL and a
+ * file id, and we refuse the pair if they disagree. Without it,
+ * `/projects/<A>/documents/<file-from-B>` would render B's drawing under A's
+ * breadcrumb — the exact leak this module is built to prevent.
+ *
+ * **The audience parameter, and why it exists before anything needs it.**
+ * Omitted, this returns BOTH threads, because the staff viewer switches between
+ * INTERNAL and CLIENT in the browser and both are staff-visible by design. That
+ * means every comment is serialised into the page. On a staff-only route that
+ * is correct and makes the switch instant.
+ *
+ * It stops being correct the moment anything client-facing reuses this
+ * function — the internal thread would travel to a client's browser, filtered
+ * only by JavaScript, which is not a filter at all. VEYRA ships no client route
+ * today (PLAN-V4 §0), so this is a trap rather than a bug. Passing
+ * `audience: "client"` narrows the read at the database, so such a caller
+ * cannot receive the internal thread even by accident.
+ */
+export async function getProjectFileDetail(
+  projectId: string,
+  fileId: string,
+  opts?: { audience?: "internal" | "client" },
+): Promise<ProjectFileDetail | null> {
+  const { db } = await withOrg();
+
+  const { data: fileRow } = await db
+    .table("project_files")
+    .select("*")
+    .eq("id", fileId)
+    .maybeSingle();
+  if (!fileRow) return null;
+
+  const file = fileRow as unknown as ProjectFile;
+  if (file.project_id !== projectId) return null;
+
+  const [versionsRes, comments, members, folderRes] = await Promise.all([
+    db
+      .table("project_file_versions")
+      .select("*")
+      .eq("file_id", fileId)
+      .order("version_no", { ascending: false }),
+    listEntityComments("project_file", fileId, opts?.audience),
+    listMembers(),
+    file.folder_id
+      ? db.table("project_folders").select("*").eq("id", file.folder_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const versions = (versionsRes.data ?? []) as unknown as ProjectFileVersion[];
+  const signed = await signedUrls(versions.map((v) => v.storage_path));
+
+  const urls: Record<string, string> = {};
+  for (const v of versions) {
+    const url = signed.get(v.storage_path);
+    if (url) urls[v.id] = url;
+  }
+
+  const nameByUser = new Map(members.map((m) => [m.user_id ?? m.id, m.name]));
+  const uploaderNames: Record<string, string> = {};
+  for (const v of versions) {
+    const who = (v as unknown as { uploaded_by: string | null }).uploaded_by;
+    if (who) uploaderNames[v.id] = nameByUser.get(who) ?? "Someone";
+  }
+
+  return {
+    file,
+    folder: (folderRes.data as unknown as ProjectFolder | null) ?? null,
+    versions,
+    urls,
+    comments,
+    members,
+    uploaderNames,
+  };
 }

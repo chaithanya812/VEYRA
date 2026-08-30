@@ -5,8 +5,12 @@ import {
   applyMilestoneTemplates,
   createMilestone,
   deleteMilestone,
+  setMilestoneDependency,
   updateMilestone,
 } from "@/lib/data/project-milestones";
+import { createScopeItem } from "@/lib/data/scope-items";
+import { createTask, deleteTask, setTaskStatus } from "@/lib/data/workspace";
+import { TASK_STATUSES, type TaskStatus } from "@/lib/workspace-model";
 
 /**
  * Project Planning actions (PLAN-V4 §9.2).
@@ -96,4 +100,98 @@ export async function applyTemplatesAction(
     scopeItemId: str(formData.get("scope_item_id")) || null,
   });
   return r.error ? { error: r.error } : refresh(projectId);
+}
+
+/* ── Scope groups (`Add Scope` in `105010`) ───────────────────────────────── */
+
+/**
+ * A scope band is a `scope_items` row — the same spine every other module hangs
+ * off (PLAN-V4 §7). Creating one here rather than inventing a "milestone group"
+ * is the whole reason the spine exists: the band a milestone sits under is the
+ * same row a quoted line, a material request and a PO resolve to.
+ */
+export async function addScopeAction(
+  _prev: PlanState,
+  formData: FormData,
+): Promise<PlanState> {
+  const projectId = str(formData.get("project_id"));
+  if (!projectId) return { error: "Missing project." };
+
+  const r = await createScopeItem({
+    name: str(formData.get("name")),
+    projectId,
+    sortOrder: Number(formData.get("sort_order")) || 0,
+  });
+  return r.error ? { error: r.error } : refresh(projectId);
+}
+
+/* ── Dependencies ─────────────────────────────────────────────────────────── */
+
+export async function toggleDependencyAction(
+  _prev: PlanState,
+  formData: FormData,
+): Promise<PlanState> {
+  const projectId = str(formData.get("project_id"));
+  const milestoneId = str(formData.get("milestone_id"));
+  const dependsOnId = str(formData.get("depends_on_id"));
+  if (!projectId || !milestoneId || !dependsOnId) return { error: "Missing milestone." };
+
+  const r = await setMilestoneDependency({
+    milestoneId,
+    dependsOnId,
+    on: formData.get("on") === "true",
+  });
+  return r.error ? { error: r.error } : refresh(projectId);
+}
+
+/* ── Tasks (the third tab of `105010`) ────────────────────────────────────── */
+
+/**
+ * Tasks are the EXISTING `tasks` table filtered by project, not a new one.
+ * `tasks.project_id` has been there since migration 0023 and the dashboard
+ * already counts these rows — a second task table would mean the project tab
+ * and "My work today" could disagree about the same job.
+ */
+export async function addProjectTaskAction(
+  _prev: PlanState,
+  formData: FormData,
+): Promise<PlanState> {
+  const projectId = str(formData.get("project_id"));
+  if (!projectId) return { error: "Missing project." };
+
+  const due = str(formData.get("due_at"));
+  const r = await createTask({
+    title: str(formData.get("title")),
+    description: str(formData.get("description")) || null,
+    priority: str(formData.get("priority")) || "medium",
+    // A date input gives a day; tasks are stamped, so pin it to end of day.
+    due_at: due ? `${due}T18:00:00.000Z` : null,
+    assignee_id: str(formData.get("assignee_id")) || null,
+    project_id: projectId,
+  });
+  return r.error ? { error: r.error } : refresh(projectId);
+}
+
+export async function setProjectTaskStatusAction(
+  _prev: PlanState,
+  formData: FormData,
+): Promise<PlanState> {
+  const projectId = str(formData.get("project_id"));
+  const id = str(formData.get("id"));
+  const status = str(formData.get("status"));
+  if (!projectId || !id) return { error: "Missing task." };
+  if (!(TASK_STATUSES as readonly string[]).includes(status)) {
+    return { error: "That is not a task status." };
+  }
+
+  const r = await setTaskStatus(id, status as TaskStatus);
+  return r.error ? { error: r.error } : refresh(projectId);
+}
+
+export async function deleteProjectTaskAction(formData: FormData): Promise<void> {
+  const projectId = str(formData.get("project_id"));
+  const id = str(formData.get("id"));
+  if (!projectId || !id) return;
+  await deleteTask(id);
+  refresh(projectId);
 }

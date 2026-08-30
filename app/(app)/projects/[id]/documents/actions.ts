@@ -7,9 +7,11 @@ import {
   deleteFolder,
   deleteProjectFile,
   renameFolder,
+  setCommentStatus,
   updateFile,
   uploadProjectFile,
 } from "@/lib/data/project-files";
+import type { CommentStatus } from "@/lib/comments-model";
 
 /**
  * Designs & Documents actions (PLAN-V4 §9.1).
@@ -22,9 +24,12 @@ import {
 
 export type DocState = { error?: string; ok?: boolean } | undefined;
 
-function refresh(projectId: string): DocState {
+function refresh(projectId: string, fileId?: string): DocState {
   revalidatePath(`/projects/${projectId}/documents`);
   revalidatePath(`/projects/${projectId}`);
+  // The viewer reads the same rows as the list; leaving it stale is how a
+  // comment appears in one place and not the other.
+  if (fileId) revalidatePath(`/projects/${projectId}/documents/${fileId}`);
   return { ok: true };
 }
 
@@ -85,7 +90,7 @@ export async function uploadFileAction(
     fileId: str(formData.get("file_id")) || null,
     note: str(formData.get("note")) || null,
   });
-  return r.error ? { error: r.error } : refresh(projectId);
+  return r.error ? { error: r.error } : refresh(projectId, r.fileId);
 }
 
 export async function updateFileAction(
@@ -107,7 +112,7 @@ export async function updateFileAction(
       : undefined,
     folder_id: formData.has("folder_id") ? str(formData.get("folder_id")) || null : undefined,
   });
-  return r.error ? { error: r.error } : refresh(projectId);
+  return r.error ? { error: r.error } : refresh(projectId, id);
 }
 
 export async function deleteFileAction(formData: FormData): Promise<void> {
@@ -116,6 +121,14 @@ export async function deleteFileAction(formData: FormData): Promise<void> {
   if (!projectId || !id) return;
   await deleteProjectFile(id);
   refresh(projectId);
+}
+
+/** Optional numeric field: absent or blank stays null rather than becoming 0. */
+function optNum(v: FormDataEntryValue | null): number | null {
+  const s = str(v);
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
 }
 
 export async function addFileCommentAction(
@@ -132,6 +145,29 @@ export async function addFileCommentAction(
     body: str(formData.get("body")),
     audience: str(formData.get("audience")) === "client" ? "client" : "internal",
     versionId: str(formData.get("version_id")) || null,
+    parentId: str(formData.get("parent_id")) || null,
+    page: optNum(formData.get("page")),
+    x: optNum(formData.get("x")),
+    y: optNum(formData.get("y")),
   });
-  return r.error ? { error: r.error } : refresh(projectId);
+  return r.error ? { error: r.error } : refresh(projectId, fileId);
+}
+
+/** Accept · Not required · Reopen — the three links on a comment in `104841`. */
+export async function setCommentStatusAction(
+  _prev: DocState,
+  formData: FormData,
+): Promise<DocState> {
+  const projectId = str(formData.get("project_id"));
+  const fileId = str(formData.get("file_id"));
+  const id = str(formData.get("comment_id"));
+  if (!projectId || !id) return { error: "Missing comment." };
+
+  const status = str(formData.get("status"));
+  if (!(["open", "accepted", "not_required"] as const).includes(status as CommentStatus)) {
+    return { error: "That is not a comment status." };
+  }
+
+  const r = await setCommentStatus(id, status as CommentStatus);
+  return r.error ? { error: r.error } : refresh(projectId, fileId || undefined);
 }

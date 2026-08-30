@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   FileArchive,
   FileSpreadsheet,
@@ -41,7 +42,6 @@ import {
 } from "@/lib/project-files-model";
 import type { FileWithMeta, ProjectFileBrowser } from "@/lib/data/project-files";
 import {
-  addFileCommentAction,
   createFolderAction,
   deleteFileAction,
   deleteFolderAction,
@@ -213,9 +213,12 @@ function FileRow({
         <span className="flex items-center gap-2">
           <KindIcon mime={file.latest?.mime_type ?? null} />
           <span className="min-w-0">
-            <span className="block truncate font-medium text-[var(--color-ink)]">
+            <Link
+              href={`/projects/${projectId}/documents/${file.id}`}
+              className="block truncate font-medium text-[var(--color-ink)] hover:underline"
+            >
               {file.name}
-            </span>
+            </Link>
             <span className="block text-[11px] tabular text-[var(--color-ink-secondary)]">
               {formatBytes(file.latest?.size_bytes)}
               {file.description ? ` · ${file.description}` : ""}
@@ -230,7 +233,7 @@ function FileRow({
       </td>
 
       <td className="px-4 py-3">
-        <FileCommentsDialog projectId={projectId} file={file} />
+        <CommentsLink projectId={projectId} file={file} />
       </td>
 
       <td className="px-4 py-3">
@@ -572,89 +575,30 @@ function MoveDialog({
 }
 
 /**
- * The two threads on one file (`104841`). INTERNAL and CLIENT are separate
- * conversations, and the switch is not cosmetic: a client must never see the
- * internal one.
+ * The way into the viewer (`104841`), carrying what the list needs to show:
+ * how much conversation a file has, and how much of it is still unanswered.
+ * The pending count is the useful half — twelve settled comments need nobody's
+ * attention, one open one does.
  */
-function FileCommentsDialog({
+function CommentsLink({
   projectId,
   file,
 }: {
   projectId: string;
   file: FileWithMeta;
 }) {
-  const [open, setOpen] = useState(false);
-  const [audience, setAudience] = useState<"internal" | "client">("internal");
-  const [state, add] = useActionState(addFileCommentAction, initial);
-
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-sunken)] px-2 py-0.5 text-[12px] text-[var(--color-ink-secondary)] transition-colors hover:text-[var(--color-ink)]"
-        >
-          <MessageSquare className="size-3" />
-          <span className="tabular">{file.commentCount}</span>
-          {file.pendingCount > 0 && (
-            <span className="tabular text-[var(--color-amber)]">
-              · {file.pendingCount} pending
-            </span>
-          )}
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{file.name}</DialogTitle>
-          <DialogDescription>
-            Two threads on one file. The client never sees the internal one.
-          </DialogDescription>
-        </DialogHeader>
-
-        <form action={add} className="flex flex-col gap-3">
-          <input type="hidden" name="project_id" value={projectId} />
-          <input type="hidden" name="file_id" value={file.id} />
-          <input type="hidden" name="audience" value={audience} />
-          <FormError error={state?.error} />
-
-          <div className="inline-flex w-fit rounded-full border border-[var(--color-border)] bg-[var(--color-surface-sunken)] p-1">
-            {(["internal", "client"] as const).map((a) => (
-              <button
-                key={a}
-                type="button"
-                onClick={() => setAudience(a)}
-                aria-pressed={audience === a}
-                className={
-                  audience === a
-                    ? "rounded-full bg-[var(--color-surface)] px-3 py-1 text-[12px] font-medium text-[var(--color-ink)] shadow-sm"
-                    : "rounded-full px-3 py-1 text-[12px] text-[var(--color-ink-secondary)]"
-                }
-              >
-                {a === "internal" ? "Internal" : "Client"}
-              </button>
-            ))}
-          </div>
-
-          <Field label="Comment" htmlFor={`c_${file.id}`}>
-            <Textarea
-              id={`c_${file.id}`}
-              name="body"
-              rows={3}
-              placeholder="Change the current sofa to an L-shaped corner sofa"
-            />
-          </Field>
-
-          <div>
-            <SubmitButton pendingLabel="Posting…">Post comment</SubmitButton>
-          </div>
-        </form>
-
-        <p className="border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-ink-secondary)]">
-          {file.commentCount} {file.commentCount === 1 ? "comment" : "comments"} on
-          this file. The full threaded viewer with pins on the drawing is the next
-          piece of §9.1.
-        </p>
-      </DialogContent>
-    </Dialog>
+    <Link
+      href={`/projects/${projectId}/documents/${file.id}`}
+      className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface-sunken)] px-2 py-0.5 text-[12px] text-[var(--color-ink-secondary)] transition-colors hover:text-[var(--color-ink)]"
+    >
+      <MessageSquare className="size-3" />
+      <span className="tabular">{file.commentCount}</span>
+      {file.pendingCount > 0 && (
+        <span className="tabular text-[var(--color-amber)]">
+          · {file.pendingCount} pending
+        </span>
+      )}
+    </Link>
   );
 }

@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildThreads,
+  clampPin,
   commentCounts,
   extractMentions,
+  pinsFor,
   type EntityComment,
 } from "./comments-model";
 
@@ -97,5 +99,51 @@ describe("extractMentions", () => {
 
   it("finds nothing in a plain message", () => {
     expect(extractMentions("no mentions here")).toEqual([]);
+  });
+});
+
+describe("clampPin", () => {
+  it("keeps a coordinate on the page", () => {
+    expect(clampPin(1.4, -0.2)).toEqual({ x: 1, y: 0 });
+  });
+
+  it("rounds to three places — a pin does not need micron precision", () => {
+    expect(clampPin(0.123456, 0.987654)).toEqual({ x: 0.123, y: 0.988 });
+  });
+
+  it("falls back to the middle rather than NaN", () => {
+    expect(clampPin(Number.NaN, Number.NaN)).toEqual({ x: 0.5, y: 0.5 });
+  });
+});
+
+describe("pinsFor", () => {
+  const PINNED: EntityComment[] = [
+    c({ id: "p1", page: 1, x: 0.2, y: 0.3 }),
+    c({ id: "p2", page: 1, x: 0.8, y: 0.9, body: "Increase counter space near sink area" }),
+    c({ id: "p3", page: 2, x: 0.5, y: 0.5, body: "Second sheet" }),
+    c({ id: "p4", body: "A note on the file as a whole" }), // no coordinates
+  ];
+
+  it("only draws comments that carry coordinates", () => {
+    const pins = pinsFor(buildThreads(PINNED, { audience: "internal" }));
+    expect(pins.map((p) => p.id)).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("filters to one page", () => {
+    const pins = pinsFor(buildThreads(PINNED, { audience: "internal" }), 1);
+    expect(pins.map((p) => p.id)).toEqual(["p1", "p2"]);
+  });
+
+  it("carries the thread's pin number, so the badge matches the rail", () => {
+    const threads = buildThreads(PINNED, { audience: "internal" });
+    const pins = pinsFor(threads);
+    expect(pins.find((p) => p.id === "p2")?.number).toBe(2);
+  });
+
+  it("keeps the number stable when a filter hides an earlier pin", () => {
+    // Hiding pin 1 must not promote pin 2 to 1 — the badge on the drawing
+    // would then point at the wrong comment.
+    const threads = buildThreads(PINNED, { audience: "internal", query: "counter" });
+    expect(pinsFor(threads)[0].number).toBe(2);
   });
 });

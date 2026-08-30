@@ -37,6 +37,7 @@ export interface ProjectFileVersion {
   size_bytes: number | string | null;
   mime_type: string | null;
   note: string | null;
+  uploaded_by: string | null;
   created_at: string;
 }
 
@@ -151,4 +152,33 @@ export function groupFilesByFolder<T extends { folder_id: string | null }>(
   const loose = byFolder.get(null);
   if (loose?.length) groups.push({ folder: null, files: loose });
   return groups;
+}
+
+/* ── The viewer (frame `104841`) ──────────────────────────────────────────── */
+
+export type ViewerMode = "image" | "pdf" | "download";
+
+/**
+ * How the viewer should render a version.
+ *
+ * Only two things render in the pane honestly — a raster image and a PDF. A
+ * DWG, a spreadsheet or a zip cannot, and pretending otherwise produces the
+ * broken-image box that makes a product feel unfinished. Those get a designed
+ * download state instead (DESIGN-DIRECTION §6), which is what a person needs
+ * from them anyway.
+ *
+ * SVG is deliberately NOT rendered inline: an uploaded SVG is a script the
+ * browser would execute against a signed URL. It downloads like a CAD file.
+ */
+export function viewerMode(mime: string | null | undefined): ViewerMode {
+  const m = (mime ?? "").toLowerCase();
+  if (m === "image/svg+xml") return "download";
+  if (fileKind(m) === "image") return "image";
+  if (m.includes("pdf")) return "pdf";
+  return "download";
+}
+
+/** `Ver 3` — the label on the version selector and on a comment's scope chip. */
+export function versionLabel(v: Pick<ProjectFileVersion, "version_no">): string {
+  return `Ver ${v.version_no}`;
 }
