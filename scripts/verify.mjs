@@ -729,6 +729,72 @@ async function main() {
     `${deliveryCols.error?.message ?? "ok"} / ${paymentCols.error?.message ?? "ok"}`,
   );
 
+  // ── Documents: folders belong to ONE project (0029) ───────────────────────
+  // The owner's rule, asserted at the database: "project 1 and project 2 can't
+  // share the same folders."
+  const { data: projA2 } = await sb
+    .from("projects").insert({ org_id: A.id, name: "A Second Project" }).select("id").single();
+
+  await sb.from("project_folders").insert([
+    { org_id: A.id, project_id: payProj.id, name: "2D" },
+    { org_id: A.id, project_id: projA2.id, name: "2D" },
+  ]);
+  const foldersP1 = await sb.from("project_folders").select("id, name").eq("project_id", payProj.id);
+  const foldersP2 = await sb.from("project_folders").select("id, name").eq("project_id", projA2.id);
+  check(
+    "two projects in one org can each own a folder called 2D",
+    (foldersP1.data ?? []).length === 1 && (foldersP2.data ?? []).length === 1
+      && foldersP1.data[0].id !== foldersP2.data[0].id,
+    `p1=${(foldersP1.data ?? []).length} p2=${(foldersP2.data ?? []).length}`,
+  );
+
+  const dupFolder = await sb
+    .from("project_folders").insert({ org_id: A.id, project_id: payProj.id, name: "2D" });
+  check(
+    "a folder name is unique WITHIN a project (dup rejected)",
+    !!dupFolder.error,
+    dupFolder.error?.code || "no error",
+  );
+
+  // A file filed into project 1's folder must never be listed under project 2.
+  await sb.from("project_files").insert({
+    org_id: A.id, project_id: payProj.id, folder_id: foldersP1.data[0].id,
+    name: "Ground floor plan", internal_status: "draft", client_approval: "not_shared",
+    current_version: 1,
+  });
+  const filesP2 = await sb.from("project_files").select("id").eq("project_id", projA2.id);
+  check(
+    "one project's files are invisible to another project",
+    (filesP2.data ?? []).length === 0,
+    `got ${(filesP2.data ?? []).length}`,
+  );
+
+  // And a folder is not visible across tenants either.
+  await sb.from("project_folders").insert({ org_id: B.id, project_id: null, name: "B folder" });
+  const bFolders = await sb.from("project_folders").select("id").eq("org_id", B.id);
+  check(
+    "a folder cannot exist without a project (null project_id rejected)",
+    (bFolders.data ?? []).length === 0,
+    `got ${(bFolders.data ?? []).length}`,
+  );
+
+  // The shared comment thread: internal and client are separate conversations.
+  const { data: aFile } = await sb
+    .from("project_files").select("id").eq("project_id", payProj.id).limit(1).single();
+  await sb.from("entity_comments").insert([
+    { org_id: A.id, entity_type: "project_file", entity_id: aFile.id, audience: "internal", body: "Margin looks thin", status: "open" },
+    { org_id: A.id, entity_type: "project_file", entity_id: aFile.id, audience: "client", body: "Please add a TV unit", status: "open" },
+  ]);
+  const clientThread = await sb
+    .from("entity_comments").select("body")
+    .eq("org_id", A.id).eq("entity_id", aFile.id).eq("audience", "client");
+  check(
+    "the client thread never contains the internal one",
+    (clientThread.data ?? []).length === 1
+      && clientThread.data[0].body === "Please add a TV unit",
+    `got ${(clientThread.data ?? []).length}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

@@ -96,9 +96,11 @@ export const NAV: NavEntry[] = [
         icon: BarChart3,
         soon: true,
       },
-      // Named in the competitor's nav but never shown in any frame — the owner
-      // has to say what belongs in it (PLAN-V4 §14.2).
+      // Kept visible on the owner's instruction, deliberately inert: neither
+      // has a spec yet, and the rail should show the real product shape rather
+      // than pretend these do not exist (PLAN-V4 §14.2/§14.3).
       { label: "MB Sheets", href: "/projects/mb-sheets", icon: Ruler, soon: true },
+      { label: "2D → 3D Renders", href: "/projects/renders", icon: Boxes, soon: true },
       { label: "Site", href: "/site", icon: HardHat },
       { label: "Production", href: "/production", icon: Factory },
       { label: "Design", href: "/design", icon: Image },

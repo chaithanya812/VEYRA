@@ -217,7 +217,7 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
           <PanelHead
             icon={<FileText className="size-4" />}
             title={`Design documents (${data.documents.length})`}
-            href="/design"
+            href={`/projects/${data.project.id}/documents`}
           />
           {data.documents.length === 0 ? (
             <Blank>No documents yet.</Blank>
@@ -515,7 +515,7 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
     { key: "planning", label: "Project planning", icon: <ListChecks className="size-5" />, href: `/projects/${id}/plan`, hint: "Milestones grouped by scope" },
     { key: "procurement", label: "Procurement", icon: <ShoppingCart className="size-5" />, href: "/procurement", hint: "Requests, RFQs and orders" },
     { key: "site", label: "Site", icon: <HardHat className="size-5" />, href: "/site", hint: "Logs, photos and attendance" },
-    { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: "/design", hint: "Drawings and approvals" },
+    { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: `/projects/${id}/documents`, hint: "Folders and files for this project" },
     { key: "finance", label: "Payments", icon: <IndianRupee className="size-5" />, href: "/finance", hint: "Funds in, money out" },
   ];
 
@@ -525,7 +525,8 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
   const soon: ModuleCard[] = [
     { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, hint: "Inflow and outflow contracts" },
     { key: "labour", label: "Labour report", icon: <Users className="size-5" />, hint: "Daily attendance by trade" },
-    { key: "mb", label: "MB sheet", icon: <Ruler className="size-5" />, hint: "Awaiting a spec" },
+    { key: "mb", label: "MB sheet", icon: <Ruler className="size-5" />, hint: "Placeholder — awaiting a spec" },
+    { key: "renders", label: "2D → 3D renders", icon: <Boxes className="size-5" />, hint: "Placeholder — awaiting a spec" },
   ];
 
   return (

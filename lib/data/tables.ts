@@ -94,6 +94,13 @@ export const TENANT_TABLES = [
   "project_milestones",
   "project_milestone_deps",
   "milestone_templates",
+  // Designs & documents. A folder and a file each belong to exactly ONE
+  // project — see 0029's header; projects never share a folder.
+  "project_folders",
+  "project_files",
+  "project_file_versions",
+  // The one comment thread, shared by files, site photos and orders.
+  "entity_comments",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
