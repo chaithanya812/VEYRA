@@ -17,6 +17,7 @@ import {
   Ruler,
   ShoppingCart,
   Users,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/primitives";
@@ -517,7 +518,8 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
     { key: "site", label: "Site", icon: <HardHat className="size-5" />, href: "/site", hint: "Logs, photos and attendance" },
     { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: `/projects/${id}/documents`, hint: "Folders and files for this project" },
     { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, href: `/projects/${id}/finance`, hint: "Inflow and outflow contracts" },
-    { key: "finance", label: "Payments", icon: <IndianRupee className="size-5" />, href: "/finance", hint: "Funds in, money out" },
+    { key: "payments", label: "Project payments", icon: <Wallet className="size-5" />, href: `/projects/${id}/payments`, hint: "Expenses, funds and analytics" },
+    { key: "finance", label: "Company finance", icon: <IndianRupee className="size-5" />, href: "/finance", hint: "Across every project" },
   ];
 
   // Specified in PLAN-V4 §9 and not built yet. Shown, not hidden — the shell

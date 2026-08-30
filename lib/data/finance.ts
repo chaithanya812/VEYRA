@@ -23,6 +23,13 @@ import {
   type PaymentDirection,
 } from "@/lib/finance-model";
 import { listOptions } from "./workspace";
+import { listMembers } from "./team";
+import {
+  directionFor,
+  reversalOf,
+  type LedgerEntry,
+  type LedgerSide,
+} from "@/lib/payments-ledger-model";
 
 /**
  * Finance data module — contracts, milestone billing and payments. Follows the
@@ -615,4 +622,211 @@ export async function setContractCategories(
     if (error) return { error: error.message };
   }
   return {};
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Project Payments — the ledger (PLAN-V4 §9.4, frames `105403` / `105429` /
+   `105444`)
+   ══════════════════════════════════════════════════════════════════════════
+   Same `payments` table as everywhere else, scoped by `project_id`. Expenses
+   are outflow, funds are inflow — one table, one direction column, no
+   project-private copy.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export interface ProjectLedger {
+  expenses: LedgerEntry[];
+  funds: LedgerEntry[];
+  contracts: { id: string; name: string; source: string }[];
+  vendors: { id: string; name: string }[];
+  members: { id: string; name: string }[];
+  categories: string[];
+  summary: FinancialPlanSummary;
+}
+
+export async function getProjectLedger(
+  projectId: string,
+  projectValue: number,
+): Promise<ProjectLedger> {
+  const { db } = await withOrg();
+
+  const [payRes, contractRes, vendorRes, members, options] = await Promise.all([
+    db
+      .table("payments")
+      .select("*")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false }),
+    db
+      .table("contracts")
+      .select("id, name, source, amount")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true }),
+    db.table("vendors").select("id, name").order("name", { ascending: true }),
+    listMembers(),
+    listOptions("labour_category"),
+  ]);
+  if (payRes.error) throw payRes.error;
+
+  const all = (payRes.data ?? []) as unknown as LedgerEntry[];
+  const contracts = (contractRes.data ?? []) as unknown as {
+    id: string;
+    name: string;
+    source: string;
+    amount: number;
+  }[];
+
+  // The header band is the same summary the Financial Planning screen shows —
+  // one computation, so the two screens cannot disagree about one project.
+  const msRes = contracts.length
+    ? await db.table("milestones").select("*").in("contract_id", contracts.map((c) => c.id))
+    : { data: [] };
+
+  const msBy = new Map<string, Milestone[]>();
+  for (const m of (msRes.data ?? []) as unknown as Milestone[]) {
+    const list = msBy.get(m.contract_id) ?? [];
+    list.push(m);
+    msBy.set(m.contract_id, list);
+  }
+  const payBy = new Map<string, Payment[]>();
+  for (const p of all) {
+    if (!p.contract_id) continue;
+    const list = payBy.get(p.contract_id) ?? [];
+    list.push(p);
+    payBy.set(p.contract_id, list);
+  }
+
+  return {
+    expenses: all.filter((p) => p.direction === "outflow"),
+    funds: all.filter((p) => p.direction === "inflow"),
+    contracts: contracts.map((c) => ({ id: c.id, name: c.name, source: c.source })),
+    vendors: (vendorRes.data ?? []) as unknown as { id: string; name: string }[],
+    members: members.map((m) => ({ id: m.id, name: m.name })),
+    categories: options.map((o) => o.label),
+    summary: summarisePlan({
+      projectValue,
+      contracts: contracts as unknown as Contract[],
+      milestonesByContract: msBy,
+      paymentsByContract: payBy,
+    }),
+  };
+}
+
+/**
+ * Record an expense or a fund.
+ *
+ * **The asymmetry is deliberate and preserved** (`105444` vs `105429`): a fund
+ * MUST be against a client contract, an expense need not be against anything.
+ * Money coming in is always against something the client agreed to pay; money
+ * going out is sometimes just money going out. Forcing a contract on an expense
+ * would push people to invent one.
+ */
+export async function addLedgerEntry(input: {
+  projectId: string;
+  side: LedgerSide;
+  amount: number;
+  paidOn?: string | null;
+  contractId?: string | null;
+  milestoneId?: string | null;
+  vendorId?: string | null;
+  memberId?: string | null;
+  mode?: string | null;
+  expenseType?: string | null;
+  category?: string | null;
+  reference?: string | null;
+  note?: string | null;
+  stockInRequested?: boolean;
+}): Promise<{ id?: string; error?: string }> {
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    return { error: "Enter an amount greater than zero." };
+  }
+  if (input.side === "funds" && !input.contractId) {
+    return {
+      error:
+        "A fund has to be collected against a client contract — that is what makes it a receipt rather than an unexplained credit.",
+    };
+  }
+
+  const { db, ctx } = await withOrg();
+  const { data: project } = await db
+    .table("projects")
+    .select("id, name")
+    .eq("id", input.projectId)
+    .maybeSingle();
+  if (!project) return { error: "That project is not in this workspace." };
+
+  if (input.contractId) {
+    const { data: contract } = await db
+      .table("contracts")
+      .select("id, project_id")
+      .eq("id", input.contractId)
+      .maybeSingle();
+    if (!contract) return { error: "That contract is not in this workspace." };
+    // Money on this project may only sit against this project's contracts.
+    if ((contract as unknown as { project_id: string | null }).project_id !== input.projectId) {
+      return { error: "That contract belongs to a different project." };
+    }
+  }
+
+  const { data, error } = await db.table("payments").insert({
+    project_id: input.projectId,
+    project_label: (project as unknown as { name: string }).name,
+    contract_id: input.contractId ?? null,
+    milestone_id: input.milestoneId ?? null,
+    direction: directionFor(input.side),
+    amount: input.amount,
+    // The transaction date is what a person types; `created_at` records when
+    // the row was written and is never typed.
+    paid_on: input.paidOn || null,
+    mode: input.mode || null,
+    vendor_id: input.vendorId ?? null,
+    member_id: input.memberId ?? ctx.memberId,
+    expense_type: input.expenseType || null,
+    category: input.category || null,
+    reference: input.reference?.trim() || null,
+    note: input.note?.trim() || null,
+    stock_in_requested: !!input.stockInRequested,
+    created_by: ctx.userId,
+  });
+  if (error) return { error: error.message };
+  return { id: (data?.[0] as { id: string }).id };
+}
+
+/**
+ * Reverse an entry.
+ *
+ * ⛔ THERE IS NO DELETE HERE, AND THERE MUST NEVER BE ONE (HARD RULE 4). The
+ * money moved; the correction is a new row with the opposite sign pointing back
+ * at the original. `105403` shows exactly this — reversed transactions sit
+ * behind a checkbox, not behind a bin icon.
+ */
+export async function reverseLedgerEntry(
+  id: string,
+): Promise<{ error?: string }> {
+  const { db, ctx } = await withOrg();
+  const { data: row } = await db.table("payments").select("*").eq("id", id).maybeSingle();
+  if (!row) return { error: "That entry is not in this workspace." };
+
+  const entry = row as unknown as LedgerEntry;
+  if (entry.reversal_of) {
+    return { error: "That row is itself a reversal — reversing it would be a loop." };
+  }
+
+  const { data: already } = await db
+    .table("payments")
+    .select("id")
+    .eq("reversal_of", id)
+    .limit(1);
+  if (((already ?? []) as unknown[]).length > 0) {
+    return { error: "That entry has already been reversed." };
+  }
+
+  const { error } = await db.table("payments").insert({
+    ...reversalOf(entry),
+    project_label: entry.project_label ?? null,
+    mode: entry.mode ?? null,
+    member_id: entry.member_id ?? ctx.memberId,
+    paid_on: new Date().toISOString().slice(0, 10),
+    created_by: ctx.userId,
+  });
+  return error ? { error: error.message } : {};
 }

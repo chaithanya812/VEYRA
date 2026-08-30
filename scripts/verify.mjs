@@ -1042,6 +1042,74 @@ async function main() {
     `contract_id = ${orphanDoc.data?.contract_id}`,
   );
 
+  // ── The payment ledger is APPEND-ONLY (PLAN-V4 §9.4, migration 0037) ────
+  // A correction is a new row with the opposite sign pointing back at the one
+  // it cancels. Both stay. This is the assertion that stops someone "tidying"
+  // the ledger with a delete later.
+  const { data: spend } = await sb.from("payments").insert({
+    org_id: A.id, project_id: payProj.id, direction: "outflow",
+    amount: 50000, paid_on: "2026-08-22", mode: "cash",
+    expense_type: "material", category: "Paint Works", reference: "BILL-9",
+  }).select("id").single();
+
+  await sb.from("payments").insert({
+    org_id: A.id, project_id: payProj.id, direction: "outflow",
+    amount: -50000, paid_on: "2026-08-25", mode: "cash",
+    expense_type: "material", category: "Paint Works",
+    reversal_of: spend.id, note: "Reversal of BILL-9",
+  });
+
+  const ledger = await sb
+    .from("payments").select("id, amount, reversal_of")
+    .eq("org_id", A.id).eq("project_id", payProj.id).eq("direction", "outflow");
+  const rows = ledger.data ?? [];
+  const net = rows.reduce((a, r) => a + Number(r.amount), 0);
+  check(
+    "a reversal is a row, and the pair nets to zero",
+    rows.length === 2 && net === 0,
+    `${rows.length} rows, net ${net}`,
+  );
+
+  check(
+    "the original entry is still there after being reversed",
+    rows.some((r) => r.id === spend.id),
+    "present",
+  );
+
+  // Transaction date and recorded date are genuinely different columns:
+  // `paid_on` is typed, `created_at` is stamped and cannot be.
+  const dates = await sb
+    .from("payments").select("paid_on, created_at").eq("id", spend.id).single();
+  check(
+    "transaction date is typed while recorded date is stamped",
+    dates.data.paid_on === "2026-08-22"
+      && dates.data.created_at.slice(0, 10) !== "2026-08-22",
+    `paid_on ${dates.data.paid_on}, recorded ${dates.data.created_at.slice(0, 10)}`,
+  );
+
+  // A receipt is a project file carrying a payment id — one file model.
+  await sb.from("project_files").insert({
+    org_id: A.id, project_id: payProj.id, payment_id: spend.id,
+    name: "BILL-9.pdf", internal_status: "draft",
+    client_approval: "not_shared", current_version: 1,
+  });
+  const receipts = await sb
+    .from("project_files").select("id").eq("org_id", A.id).eq("payment_id", spend.id);
+  check(
+    "a receipt is a project file, not a second attachment table",
+    (receipts.data ?? []).length === 1,
+    `got ${(receipts.data ?? []).length}`,
+  );
+
+  // Ledger rows are org-scoped like everything else.
+  const bLedger = await sb
+    .from("payments").select("id").eq("org_id", B.id).eq("project_id", payProj.id);
+  check(
+    "one tenant's ledger is invisible to another",
+    (bLedger.data ?? []).length === 0,
+    `got ${(bLedger.data ?? []).length}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
