@@ -83,9 +83,9 @@ Gates at HEAD, all re-run personally:
 |---|---|
 | `node ./node_modules/typescript/bin/tsc --noEmit` | ✅ 0 |
 | `node ./node_modules/eslint/bin/eslint.js app lib components` | ✅ 0 |
-| `node ./node_modules/vitest/vitest.mjs run` | ✅ 464/464, 35 files |
-| `node ./node_modules/next/dist/bin/next build` | ✅ 58 page routes |
-| `node scripts/verify.mjs` | ✅ 104/104 |
+| `node ./node_modules/vitest/vitest.mjs run` | ✅ 501/501, 37 files |
+| `node ./node_modules/next/dist/bin/next build` | ✅ 60 page routes |
+| `node scripts/verify.mjs` | ✅ 116/116 |
 | `node scripts/verify-storage.mjs` | ✅ 8/8 |
 
 Baseline when the Phase 0–8 run started: 267 tests · 56 routes · 77 verify.
@@ -126,7 +126,7 @@ does that.)
   Modules tabs, the composable Progress Report at `/projects/[id]/report`.
   Migration 0032: `project_milestones`, `project_milestone_deps`,
   `milestone_templates`.
-- **Phase 8 — §9.1 and §9.2 are DONE.**
+- **Phase 8 — §9.1, §9.2, §9.3 and §9.4 are DONE.**
   - `/projects/[id]/documents` — the browser (migration 0029: `project_folders`,
     `project_files`, `project_file_versions`, `entity_comments`, plus the
     private storage bucket).
@@ -141,7 +141,13 @@ does that.)
   - Engines: `lib/gantt-model.ts` (12 tests), `lib/smartplan-model.ts`
     (14 tests), pins in `lib/comments-model.ts`.
 
-  **Two things to know before touching this.**
+  - `/projects/[id]/finance` — **Financial Planning** (§9.3). Inflow ·
+    Outflow · Documents, the two-way percent↔amount binding, the
+    100%-or-refuse rule, and Actual Due materialising only on Work Done.
+  - `/projects/[id]/payments` — **Project Payments** (§9.4). Expenses · Funds,
+    each with Listing and Analytics, and reversals as a filter.
+
+  **Four things to know before touching this.**
   1. **PDFs do not carry pins.** A raster renders in our own element, so a click
      gives real coordinates. A PDF renders in the browser's own viewer inside an
      iframe, where we cannot know the page or the click position — so pins are
@@ -153,6 +159,18 @@ does that.)
      `audience` option that narrows the read at the database. Anything
      client-facing MUST pass it — otherwise the internal thread travels to a
      client's browser filtered only by JavaScript, which is not a filter.
+  3. **There is no project-private money model, and there must never be one.**
+     `contracts` + `milestones` (0015) ARE §9.3's inflow/outflow model —
+     `source` = client|vendor, and pct/amount/tentative_due/work_done/actual_due
+     is `105238` column for column. Migration 0030 therefore EXTENDS them
+     (vendor_id, contract_categories, project_files.contract_id) instead of
+     building the `project_contracts` / `contract_milestones` /
+     `contract_documents` the ledger reserved. Account Receivables (§12.3) reads
+     the same `milestones` rows. Read 0030's header before touching this.
+  4. **The payment ledger is append-only and has no delete path.** A correction
+     is a new `payments` row with the opposite sign whose `reversal_of` points
+     at the entry it cancels. With the "View reversed transactions" checkbox
+     off, BOTH halves hide, and the total excludes the pair in either mode.
 
 ---
 
@@ -214,7 +232,7 @@ do the same**:
 
 ## 5. Migration ledger
 
-Applied: **0001–0029, 0032.**
+Applied: **0001–0030, 0032, 0037.**
 
 | # | Contents | § | Status |
 |---|---|---|---|
@@ -222,17 +240,20 @@ Applied: **0001–0029, 0032.**
 | 0027 | `scope_items` + `scope_item_id` on six line tables + backfill | 7.2 | ✅ applied |
 | 0028 | real `project_id` FKs on twelve `project_label` tables + backfill | 7.3 | ✅ applied |
 | 0029 | `project_folders`, `project_files`, `project_file_versions`, `entity_comments` | 9.1 | ✅ applied |
-| **0030** | `project_contracts`, `contract_milestones`, `contract_documents` | 9.3 | free |
+| **0030** | **REDEFINED** — `contracts.vendor_id`, `contract_categories`, `project_files.contract_id`. It is *not* what §15 reserved; read its header for why building `project_contracts` would have been a third parallel money model | 9.3 | ✅ applied |
 | **0031** | `labour_entries`, `labour_entry_categories`, `labour_entry_vendors` | 9.6 | free |
 | 0032 | `project_milestones`, `project_milestone_deps`, `milestone_templates` | 9.2 | ✅ applied |
 | **0033** | warehouse `kind` + `project_id`; GRN auto-numbering | 10.2 | free |
 | **0034** | `wfh_requests`, `holidays` | 11.1 | free |
 | **0035** | `audit_events`; permission enforcement columns | 11.3–11.4 | free |
 | **0036** | material-request **per-line stage** model | 9.7 | free |
+| 0037 | payment ledger columns (`vendor_id`, `member_id`, `expense_type`, `category`, `reversal_of`, `stock_in_requested`) + `project_files.payment_id` | 9.4 | ✅ applied |
 
-0032 was applied out of numeric order because Phase 7 needed it. That is fine —
-the runner applies by filename, so a fresh database still gets 0029→0036 in
-order once the gaps are filled. **Do not renumber.**
+0032 was applied out of numeric order because Phase 7 needed it, and 0037
+because §9.4 was never given a reserved slot — 0031/0033–0036 each belong to a
+different module, so taking one would have been squatting. That is all fine: the
+runner applies by filename, so a fresh database still gets them in order once
+the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
 ---
 
@@ -240,9 +261,11 @@ order once the gaps are filled. **Do not renumber.**
 
 ### Phase 8, the rest (`PLAN-V4 §9`)
 
-**§9.1 and §9.2 are done** — see §2. Start at §9.3.
+**§9.1–§9.4 are done** — see §2. Start at §9.5.
 
-1. **§9.3 Financial Planning** — migration 0030. Inflow/outflow contracts, the
+~~1. §9.3 Financial Planning~~ · ~~2. §9.4 Project Payments~~ — both landed.
+
+1. **~~§9.3 Financial Planning~~ (done)** — migration 0030. Inflow/outflow contracts, the
    two-way percent↔amount binding, the "total must be 100%" rule, and
    `Actual Due` materialising only when `Work Done` is ticked.
 2. **§9.4 Project Payments** — Listing/Analytics, separate Transaction and
