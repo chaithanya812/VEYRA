@@ -47,7 +47,8 @@ what is obviously missing.
    every number. Log every call to `ai_requests`.
 3. **Migrations are additive and idempotent**, with
    `org_id uuid not null references public.orgs(id) on delete cascade`.
-   **Next free numbers: 0030, 0031, 0033–0036.** See §5.
+   **Next free numbers: 0031, 0033–0036, then 0038+.** 0030, 0032 and 0037
+   are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
 4. **Ledgers are append-only.** A reversal is a new row plus a filter, never a
    delete.
 5. **Projects never share anything.** A folder, a file, a milestone and a scope
