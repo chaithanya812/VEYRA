@@ -325,8 +325,23 @@ and push on through Phase 12**. So:
   = false`), **Quotation 2.0**, **accounting export** — all still parked. Do not
   build them, do not design them unprompted, and do not delete the parked
   panels or the "soon" cards.
-- **Do not deploy.** Nothing since `c163310` is live and it stays that way until
-  the owner says otherwise. Local commits are fine; pushing is not.
+- **Deployed on 1 Sept 2026, at the owner's explicit instruction.** `6afb484`
+  (Phase 8 through §9.5) is pushed to `origin/quotations-v2-plus-fleet` and live
+  in Vercel production at **https://veyra-five-beta.vercel.app**, reading the
+  same Supabase project the local app does. `main` is untouched — production is
+  running this branch's code, not main's.
+  **Rule 9 has not changed:** that was one authorisation, for that state. Do
+  not push or deploy again without asking.
+  Two things known about production and not yet fixed:
+  1. **The Vercel project has only the six Supabase env vars.** No `GEMINI_*` /
+     `AI_*` keys, so every AI surface (SmartPlan, the BOQ parse) will fail in
+     production until the owner adds them. That was already true of the previous
+     deploy.
+  2. **Vercel caps a serverless request body at 4.5 MB.** `next.config.ts` sets
+     `serverActions.bodySizeLimit` to 26mb and the app accepts 25 MB uploads, so
+     a document or site photo over ~4.5 MB will upload locally and fail in
+     production. Needs either a client-direct-to-storage upload or a lower,
+     honest cap.
 
 ---
 
