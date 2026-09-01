@@ -340,6 +340,52 @@ async function ensureSite(orgId, userId) {
   ]);
 }
 
+/* ── Site progress: a dated photo record with a real visibility split ──────── */
+/**
+ * PLAN-V4 §9.5. The grid groups by the day the work was photographed and the
+ * three tabs filter on `client_visible`, so a demo with two photos on one date,
+ * all internal, shows neither. This gives the screen three dates and a genuine
+ * split — including one photo uploaded days after it was taken, which is the
+ * case the date columns exist for.
+ */
+async function ensureSiteProgress(orgId, userId) {
+  const { data: project } = await sb
+    .from("projects").select("id").eq("org_id", orgId)
+    .eq("name", "Malviya Nagar 3BHK").limit(1).maybeSingle();
+  if (!project) return;
+
+  const { data: existing } = await sb
+    .from("site_photos").select("id, caption, client_visible, created_at")
+    .eq("org_id", orgId).eq("project_id", project.id);
+  const rows = existing ?? [];
+
+  // ensureSite()'s two photos are internal and undated by whoever they were.
+  // One of them is a perfectly reasonable thing to show a client, so the demo
+  // has a visibility split rather than an empty "Client visible" tab. The site
+  // date is the day it landed — a photo cannot have been taken after it was
+  // uploaded, and demo data that says otherwise teaches the wrong thing.
+  for (const row of rows) {
+    if (row.caption === "Wardrobe carcass in place" && row.client_visible === false) {
+      await sb.from("site_photos").update({
+        client_visible: true,
+        taken_on: String(row.created_at ?? "").slice(0, 10) || null,
+        uploaded_by: userId,
+      }).eq("id", row.id);
+    }
+  }
+
+  if (rows.length >= 5) return;
+
+  await sb.from("site_photos").insert([
+    { org_id: orgId, project_id: project.id, caption: "False ceiling framing — living", url: "https://placehold.co/800x600?text=Ceiling+framing", taken_on: daysFromNow(-9),  client_visible: true,  uploaded_by: userId },
+    { org_id: orgId, project_id: project.id, caption: "Electrical conduits laid",       url: "https://placehold.co/800x600?text=Conduits",       taken_on: daysFromNow(-9),  client_visible: true,  uploaded_by: userId },
+    // Taken on site nine days ago, uploaded only now — the reason `taken_on`
+    // and `created_at` are separate columns.
+    { org_id: orgId, project_id: project.id, caption: "Snag: chipped tile near sink",   url: "https://placehold.co/800x600?text=Snag",          taken_on: daysFromNow(-9),  client_visible: false, uploaded_by: userId },
+    { org_id: orgId, project_id: project.id, caption: "Bedroom 2 — putty second coat",  url: "https://placehold.co/800x600?text=Putty",         taken_on: daysFromNow(-21), client_visible: true,  uploaded_by: userId },
+  ]);
+}
+
 /* ── Config: numbering series + approval rules & a pending request ──────────── */
 async function ensureConfig(orgId, userId) {
   if ((await count("numbering_series", orgId)) === 0) {
@@ -374,6 +420,7 @@ async function main() {
   await ensureFinance(orgId, userId);
   await ensureDesign(orgId, userId);
   await ensureSite(orgId, userId);
+  await ensureSiteProgress(orgId, userId);
   await ensureConfig(orgId, userId);
 
   console.log(`✓ Demo tenant ${fresh ? "created" : "topped up"} with a full cross-module slice.`);

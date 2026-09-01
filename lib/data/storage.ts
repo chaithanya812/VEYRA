@@ -56,6 +56,18 @@ export const ALLOWED_MIME = [
   "application/zip",
 ] as const;
 
+/**
+ * Site progress uploads (PLAN-V4 §9.5) accept photographs and nothing else.
+ * The grid renders every card as an image, so a PDF filed here would show as a
+ * broken tile — narrowing the allowlist is what keeps the screen honest.
+ */
+export const ALLOWED_IMAGE_MIME = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
+
 let bucketReady = false;
 
 /**
@@ -102,6 +114,31 @@ export function storagePath(input: {
     input.projectId,
     input.fileId,
     `v${input.versionNo}-${safeFileName(input.fileName)}`,
+  ].join("/");
+}
+
+/**
+ * A site progress photo's key (PLAN-V4 §9.5).
+ *
+ *     <org_id>/<project_id>/<photo_id>/photo-<filename>
+ *
+ * The same prefix as a document on purpose: one project's bytes live in one
+ * place, so `projectStorageUsage` counts photos without being taught about
+ * them, and one project's photos cannot be listed from another's prefix. A
+ * photo has no versions, so there is no `v<n>` — the id segment is what keeps
+ * two photos of the same wall from colliding.
+ */
+export function sitePhotoPath(input: {
+  orgId: string;
+  projectId: string;
+  photoId: string;
+  fileName: string;
+}): string {
+  return [
+    input.orgId,
+    input.projectId,
+    input.photoId,
+    `photo-${safeFileName(input.fileName)}`,
   ].join("/");
 }
 

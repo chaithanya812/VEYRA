@@ -43,6 +43,8 @@ export default async function ProgressReportPage({
           },
           milestones: data.milestones,
           photoCount: data.sitePhotos.length,
+          clientVisiblePhotoCount: data.sitePhotos.filter((p) => p.client_visible)
+            .length,
           orgName: viewer?.orgName ?? "VEYRA",
         }}
       />

@@ -8,7 +8,9 @@ import {
   DEFAULT_REPORT_OPTIONS,
   generateProgressReport,
   reportMilestones,
+  reportPhotoCount,
   totalProjectDays,
+  withheldPhotoCount,
   type ReportData,
   type ReportOptions,
 } from "@/lib/progress-report";
@@ -42,6 +44,10 @@ export function ReportBuilder({ data }: { data: ReportData }) {
     setOptions((o) => ({ ...o, [key]: value }));
 
   const hiddenCount = data.milestones.length - shown.length;
+  // The same two functions the PDF uses, so the preview cannot promise the
+  // client a different number of photos from the one it sends.
+  const photos = reportPhotoCount(data, options.sitePictures);
+  const withheldPhotos = withheldPhotoCount(data, options.sitePictures);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -158,8 +164,19 @@ export function ReportBuilder({ data }: { data: ReportData }) {
 
         {options.sitePictures !== "none" && (
           <p className="mt-6 text-[13px] text-[var(--color-ink-secondary)]">
-            {data.photoCount} site {data.photoCount === 1 ? "photo" : "photos"} on
-            record.
+            <span className="tabular">{photos}</span> site{" "}
+            {photos === 1 ? "photo" : "photos"}{" "}
+            {options.sitePictures === "client_visible"
+              ? "shared with you"
+              : "on record"}
+            .
+            {withheldPhotos > 0 && (
+              <span className="tabular">
+                {" "}
+                {withheldPhotos} internal{" "}
+                {withheldPhotos === 1 ? "photo" : "photos"} withheld.
+              </span>
+            )}
           </p>
         )}
       </Card>

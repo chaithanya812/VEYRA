@@ -195,7 +195,15 @@ export interface ProjectWorkspaceData {
   rollup: MilestoneRollup;
   members: Member[];
   financials: ProjectFinancials;
-  sitePhotos: { id: string; url: string | null; caption: string | null; created_at: string }[];
+  /** `client_visible` travels with the row: the Progress Report counts on it. */
+  sitePhotos: {
+    id: string;
+    url: string | null;
+    caption: string | null;
+    client_visible: boolean;
+    taken_on: string | null;
+    created_at: string;
+  }[];
   documents: { id: string; name: string; created_at: string }[];
   orders: {
     id: string;
@@ -250,7 +258,7 @@ export async function getProjectWorkspace(
     listMembers(),
     db.table("payments").select("direction, amount").eq("project_id", id),
     db.table("contracts").select("amount, source").eq("project_id", id),
-    db.table("site_photos").select("id, url, caption, created_at").eq("project_id", id).order("created_at", { ascending: false }),
+    db.table("site_photos").select("id, url, caption, client_visible, taken_on, created_at").eq("project_id", id).order("created_at", { ascending: false }),
     db.table("assets").select("id, name, created_at").eq("project_id", id).order("created_at", { ascending: false }),
     db.table("purchase_orders").select("*").eq("project_id", id).order("created_at", { ascending: false }),
     db.table("material_requests").select("id, title, stage, expected_delivery").eq("project_id", id).order("created_at", { ascending: false }),

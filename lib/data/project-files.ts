@@ -463,7 +463,17 @@ export async function listEntityComments(
   if (error) throw error;
 
   const nameById = new Map(members.map((m) => [m.id, m.name]));
-  return ((data ?? []) as unknown as Record<string, unknown>[]).map((c) => ({
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((c) =>
+    toComment(c, nameById),
+  );
+}
+
+/** One row → one comment. The single place the stored shape is interpreted. */
+function toComment(
+  c: Record<string, unknown>,
+  nameById: Map<string, string>,
+): EntityComment {
+  return {
     id: String(c.id),
     body: String(c.body ?? ""),
     authorName: c.author_id ? (nameById.get(String(c.author_id)) ?? "Someone") : "Someone",
@@ -480,7 +490,48 @@ export async function listEntityComments(
     page: (c.page as number | null) ?? null,
     x: (c.x as number | null) ?? null,
     y: (c.y as number | null) ?? null,
-  }));
+  };
+}
+
+/**
+ * Every comment on a SET of objects, keyed by entity id — one read instead of
+ * one per row. The site progress grid needs this: a page of forty photos each
+ * carrying a thread is forty round-trips otherwise.
+ *
+ * `audience` narrows at the database exactly as in `listEntityComments`, and
+ * for the same reason: a client-facing caller must not be handed the internal
+ * thread and asked to filter it in the browser.
+ */
+export async function listEntityCommentsBatch(
+  entityType: string,
+  entityIds: string[],
+  audience?: "internal" | "client",
+): Promise<Map<string, EntityComment[]>> {
+  const out = new Map<string, EntityComment[]>();
+  if (entityIds.length === 0) return out;
+
+  const { db } = await withOrg();
+  let q = db
+    .table("entity_comments")
+    .select("*")
+    .eq("entity_type", entityType)
+    .in("entity_id", entityIds);
+  if (audience) q = q.eq("audience", audience);
+
+  const [{ data, error }, members] = await Promise.all([
+    q.order("created_at", { ascending: true }),
+    listMembers(),
+  ]);
+  if (error) throw error;
+
+  const nameById = new Map(members.map((m) => [m.id, m.name]));
+  for (const row of (data ?? []) as unknown as Record<string, unknown>[]) {
+    const key = String(row.entity_id);
+    const list = out.get(key) ?? [];
+    list.push(toComment(row, nameById));
+    out.set(key, list);
+  }
+  return out;
 }
 
 export async function addEntityComment(input: {

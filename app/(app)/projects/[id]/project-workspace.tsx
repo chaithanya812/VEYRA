@@ -515,7 +515,7 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
     { key: "report", label: "Progress report", icon: <FileText className="size-5" />, href: `/projects/${id}/report`, hint: "What reaches the client" },
     { key: "planning", label: "Project planning", icon: <ListChecks className="size-5" />, href: `/projects/${id}/plan`, hint: "Milestones grouped by scope" },
     { key: "procurement", label: "Procurement", icon: <ShoppingCart className="size-5" />, href: "/procurement", hint: "Requests, RFQs and orders" },
-    { key: "site", label: "Site", icon: <HardHat className="size-5" />, href: "/site", hint: "Logs, photos and attendance" },
+    { key: "site", label: "Site progress", icon: <HardHat className="size-5" />, href: `/projects/${id}/site`, hint: "Dated photos, and what the client sees" },
     { key: "design", label: "Designs & documents", icon: <FileText className="size-5" />, href: `/projects/${id}/documents`, hint: "Folders and files for this project" },
     { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, href: `/projects/${id}/finance`, hint: "Inflow and outflow contracts" },
     { key: "payments", label: "Project payments", icon: <Wallet className="size-5" />, href: `/projects/${id}/payments`, hint: "Expenses, funds and analytics" },

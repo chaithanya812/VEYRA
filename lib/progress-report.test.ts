@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { reportMilestones, totalProjectDays } from "./progress-report";
+import {
+  reportMilestones,
+  reportPhotoCount,
+  totalProjectDays,
+  withheldPhotoCount,
+} from "./progress-report";
 import type { ProjectMilestone } from "./milestones-model";
 
 function ms(over: Partial<ProjectMilestone> & { id: string }): ProjectMilestone {
@@ -65,5 +70,32 @@ describe("totalProjectDays", () => {
 
   it("never goes negative on reversed dates", () => {
     expect(totalProjectDays("2026-08-31", "2026-08-01")).toBe(0);
+  });
+});
+
+describe("site photo counts", () => {
+  const counts = { photoCount: 12, clientVisiblePhotoCount: 4 };
+
+  it("counts what the client is allowed to see, not what exists", () => {
+    expect(reportPhotoCount(counts, "all")).toBe(12);
+    expect(reportPhotoCount(counts, "client_visible")).toBe(4);
+    expect(reportPhotoCount(counts, "none")).toBe(0);
+  });
+
+  it("says how many were held back, so the gap is never silent", () => {
+    expect(withheldPhotoCount(counts, "client_visible")).toBe(8);
+    // Nothing is withheld when everything is being sent.
+    expect(withheldPhotoCount(counts, "all")).toBe(0);
+    expect(withheldPhotoCount(counts, "none")).toBe(0);
+  });
+
+  it("reports none rather than all when nothing is marked visible", () => {
+    const internalOnly = { photoCount: 9, clientVisiblePhotoCount: 0 };
+    expect(reportPhotoCount(internalOnly, "client_visible")).toBe(0);
+    expect(withheldPhotoCount(internalOnly, "client_visible")).toBe(9);
+  });
+
+  it("never reports a negative withholding if the counts disagree", () => {
+    expect(withheldPhotoCount({ photoCount: 2, clientVisiblePhotoCount: 5 }, "client_visible")).toBe(0);
   });
 });

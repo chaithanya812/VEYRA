@@ -841,6 +841,105 @@ async function main() {
     `got ${(unpinned.data ?? []).length}`,
   );
 
+  // ── Site progress photos (PLAN-V4 §9.5, migration 0038) ─────────────────
+  // Same rule as documents: a photo belongs to exactly ONE project. And the
+  // flag that decides whether a client ever sees it is stored per row, because
+  // the Progress Report is the only thing that reaches them.
+  const { data: sitePics } = await sb.from("site_photos").insert([
+    { org_id: A.id, project_id: payProj.id, caption: "Ceiling framing", taken_on: "2026-03-24", client_visible: true,  storage_path: `${A.id}/${payProj.id}/p1/photo-a.jpg`, mime_type: "image/jpeg", size_bytes: 10 },
+    { org_id: A.id, project_id: payProj.id, caption: "Snag: cracked tile", taken_on: "2026-03-24", client_visible: false, storage_path: `${A.id}/${payProj.id}/p2/photo-b.jpg`, mime_type: "image/jpeg", size_bytes: 10 },
+    { org_id: A.id, project_id: projA2.id, caption: "Other project",     taken_on: "2026-03-24", client_visible: false, storage_path: `${A.id}/${projA2.id}/p3/photo-c.jpg`, mime_type: "image/jpeg", size_bytes: 10 },
+  ]).select("id, caption");
+
+  const picsP1 = await sb.from("site_photos").select("id").eq("org_id", A.id).eq("project_id", payProj.id);
+  const picsP2 = await sb.from("site_photos").select("id").eq("org_id", A.id).eq("project_id", projA2.id);
+  check(
+    "one project's site photos are invisible to another project",
+    (picsP1.data ?? []).length === 2 && (picsP2.data ?? []).length === 1,
+    `p1=${(picsP1.data ?? []).length} p2=${(picsP2.data ?? []).length}`,
+  );
+
+  const bPics = await sb.from("site_photos").select("id").eq("org_id", B.id);
+  check(
+    "one tenant's site photos are invisible to another tenant",
+    (bPics.data ?? []).length === 0,
+    `got ${(bPics.data ?? []).length}`,
+  );
+
+  // What a client-facing report would carry — and only that.
+  const shared = await sb
+    .from("site_photos").select("caption")
+    .eq("org_id", A.id).eq("project_id", payProj.id).eq("client_visible", true);
+  check(
+    "only client-visible photos come back for a client-facing report",
+    (shared.data ?? []).length === 1 && shared.data[0].caption === "Ceiling framing",
+    `got ${(shared.data ?? []).length}`,
+  );
+
+  // Nothing is shared by accident: the column defaults to false, so a photo
+  // uploaded without a decision stays internal.
+  const { data: bare } = await sb
+    .from("site_photos")
+    .insert({ org_id: A.id, project_id: payProj.id, caption: "No decision made" })
+    .select("client_visible, taken_on")
+    .single();
+  check(
+    "a photo is internal until somebody says otherwise",
+    bare.client_visible === false,
+    `client_visible=${bare.client_visible}`,
+  );
+
+  // The day the work was photographed and the day the file landed are two
+  // different facts. Only the first can be typed.
+  const dated = await sb
+    .from("site_photos").select("taken_on, created_at")
+    .eq("org_id", A.id).eq("project_id", payProj.id).eq("caption", "Ceiling framing").single();
+  check(
+    "site date is typed while upload date is stamped",
+    dated.data.taken_on === "2026-03-24"
+      && dated.data.created_at.slice(0, 10) !== "2026-03-24",
+    `taken_on ${dated.data.taken_on}, uploaded ${dated.data.created_at.slice(0, 10)}`,
+  );
+
+  // A stored object with no project would have nowhere to live: the storage key
+  // embeds the project id. 0038 refuses it at the database.
+  const orphanPhoto = await sb.from("site_photos").insert({
+    org_id: A.id, project_id: null, caption: "Nowhere",
+    storage_path: `${A.id}/nowhere/photo.jpg`,
+  });
+  check(
+    "a stored photo cannot exist without a project (check constraint)",
+    !!orphanPhoto.error,
+    orphanPhoto.error?.code || "no error",
+  );
+
+  // The thread is the SHARED one. A photo's comments and a drawing's comments
+  // live in one table, told apart by entity_type — never mixed by accident.
+  const photoId = (sitePics ?? [])[0].id;
+  await sb.from("entity_comments").insert([
+    { org_id: A.id, entity_type: "site_photo", entity_id: photoId, audience: "client", body: "Is this the agreed profile?", status: "open" },
+    { org_id: A.id, entity_type: "site_photo", entity_id: photoId, audience: "internal", body: "Ask the carpenter to redo", status: "open" },
+  ]);
+  const photoClient = await sb
+    .from("entity_comments").select("body")
+    .eq("org_id", A.id).eq("entity_type", "site_photo").eq("entity_id", photoId)
+    .eq("audience", "client");
+  check(
+    "a site photo carries the same two-audience thread as a drawing",
+    (photoClient.data ?? []).length === 1
+      && photoClient.data[0].body === "Is this the agreed profile?",
+    `got ${(photoClient.data ?? []).length}`,
+  );
+
+  const fileThread = await sb
+    .from("entity_comments").select("id")
+    .eq("org_id", A.id).eq("entity_type", "project_file").eq("entity_id", photoId);
+  check(
+    "entity_type keeps a photo's thread out of a file's",
+    (fileThread.data ?? []).length === 0,
+    `got ${(fileThread.data ?? []).length}`,
+  );
+
   // ── Milestone dependencies (PLAN-V4 §9.2) ────────────────────────────────
   const deliveryRows = await sb
     .from("project_milestones").select("id, name")

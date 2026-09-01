@@ -54,7 +54,10 @@ export interface ReportProject {
 export interface ReportData {
   project: ReportProject;
   milestones: ProjectMilestone[];
+  /** Every site photo on record. */
   photoCount: number;
+  /** The subset marked `client_visible` (PLAN-V4 §9.5). */
+  clientVisiblePhotoCount: number;
   orgName: string;
 }
 
@@ -66,6 +69,33 @@ export function reportMilestones(
   if (mode === "none") return [];
   if (mode === "client_visible") return milestones.filter((m) => m.client_visible);
   return milestones;
+}
+
+/**
+ * How many site photos this report would carry.
+ *
+ * The `client_visible` flag exists precisely here: "All site progress" is a
+ * count of what the firm has, "Client visible only" is a count of what the
+ * client is allowed to see, and those are different numbers on any real
+ * project. Reading the same field for both would quietly ship the internal
+ * snag photos with the progress report.
+ */
+export function reportPhotoCount(
+  data: Pick<ReportData, "photoCount" | "clientVisiblePhotoCount">,
+  mode: ReportOptions["sitePictures"],
+): number {
+  if (mode === "none") return 0;
+  if (mode === "client_visible") return data.clientVisiblePhotoCount;
+  return data.photoCount;
+}
+
+/** Photos held back by the current choice — shown so the gap is never silent. */
+export function withheldPhotoCount(
+  data: Pick<ReportData, "photoCount" | "clientVisiblePhotoCount">,
+  mode: ReportOptions["sitePictures"],
+): number {
+  if (mode !== "client_visible") return 0;
+  return Math.max(0, data.photoCount - data.clientVisiblePhotoCount);
 }
 
 /** Whole days from start to handover, inclusive of both ends. */
@@ -170,11 +200,14 @@ export function generateProgressReport(
   }
 
   if (options.sitePictures !== "none") {
+    const photos = reportPhotoCount(data, options.sitePictures);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(110);
     doc.text(
-      `${data.photoCount} site ${data.photoCount === 1 ? "photo" : "photos"} on record.`,
+      `${photos} site ${photos === 1 ? "photo" : "photos"} ${
+        options.sitePictures === "client_visible" ? "shared with you" : "on record"
+      }.`,
       marginX,
       y,
     );

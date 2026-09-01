@@ -47,8 +47,8 @@ what is obviously missing.
    every number. Log every call to `ai_requests`.
 3. **Migrations are additive and idempotent**, with
    `org_id uuid not null references public.orgs(id) on delete cascade`.
-   **Next free numbers: 0031, 0033–0036, then 0038+.** 0030, 0032 and 0037
-   are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
+   **Next free numbers: 0031, 0033–0036, then 0039+.** 0030, 0032, 0037 and
+   0038 are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
 4. **Ledgers are append-only.** A reversal is a new row plus a filter, never a
    delete.
 5. **Projects never share anything.** A folder, a file, a milestone and a scope
@@ -78,10 +78,10 @@ reaches the client.
 
 ## 2. Where the build is
 
-**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.4.**
-The next unbuilt thing is **§9.5 Site Progress Uploads** — go to §6.
+**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.5.**
+The next unbuilt thing is **§9.6 Labour Report** — go to §6.
 
-Gates at HEAD (`d16f73b`), all re-run personally in PowerShell with
+Gates at HEAD, all re-run personally in PowerShell with
 `$LASTEXITCODE` checked. Every number below was verified at this commit, not
 carried over from a previous handoff:
 
@@ -89,13 +89,14 @@ carried over from a previous handoff:
 |---|---|
 | `node ./node_modules/typescript/bin/tsc --noEmit` | ✅ 0 |
 | `node ./node_modules/eslint/bin/eslint.js app lib components` | ✅ 0 |
-| `node ./node_modules/vitest/vitest.mjs run` | ✅ 501/501, 37 files |
-| `node ./node_modules/next/dist/bin/next build` | ✅ 60 page routes |
-| `node scripts/verify.mjs` | ✅ 116/116 |
-| `node scripts/verify-storage.mjs` | ✅ 8/8 |
+| `node ./node_modules/vitest/vitest.mjs run` | ✅ 520/520, 38 files |
+| `node ./node_modules/next/dist/bin/next build` | ✅ 61 page routes |
+| `node scripts/verify.mjs` | ✅ 124/124 |
+| `node scripts/verify-storage.mjs` | ✅ 11/11 |
 
 Baseline when the Phase 0–8 run started: 267 tests · 56 routes · 77 verify.
 Baseline when the Phase 8 completion run started: 426 tests · 57 pages · 94 verify.
+Baseline when §9.5 started: 501 tests · 60 pages · 116 verify · 8 storage.
 (The earlier "34 files" and "59 routes" were miscounts — vitest reports test
 *files*, of which there were 33, and the build's route list carries entries that
 are not `page.tsx` files. Counting `page.tsx` is unambiguous, so this table now
@@ -132,7 +133,7 @@ does that.)
   Modules tabs, the composable Progress Report at `/projects/[id]/report`.
   Migration 0032: `project_milestones`, `project_milestone_deps`,
   `milestone_templates`.
-- **Phase 8 — §9.1, §9.2, §9.3 and §9.4 are DONE.**
+- **Phase 8 — §9.1 through §9.5 are DONE.**
   - `/projects/[id]/documents` — the browser (migration 0029: `project_folders`,
     `project_files`, `project_file_versions`, `entity_comments`, plus the
     private storage bucket).
@@ -152,6 +153,18 @@ does that.)
     100%-or-refuse rule, and Actual Due materialising only on Work Done.
   - `/projects/[id]/payments` — **Project Payments** (§9.4). Expenses · Funds,
     each with Listing and Analytics, and reversals as a filter.
+  - `/projects/[id]/site` — **Site Progress Uploads** (§9.5). Date-grouped
+    grid, the three tabs with counts, per-photo `Client chat`, hover
+    expand/delete, a per-card VISIBLE/HIDDEN switch and a bulk bar. Migration
+    0038 extends `site_photos`; the bytes go into the SAME private bucket under
+    `<org>/<project>/<photo>/photo-<name>`. Engine: `lib/site-photos-model.ts`
+    (15 tests). **Two things to know.** (1) The frame groups by *upload* date;
+    we group by `taken_on`, the day the work was photographed, because a Friday
+    photo uploaded on Monday belongs under Friday — the card still shows when
+    it landed when the two differ. (2) `client_visible` now actually reaches
+    the Progress Report: `reportPhotoCount` / `withheldPhotoCount` mean "All
+    site progress" and "Client visible only" are two different numbers, and the
+    preview and the PDF read the same two functions.
 
   **Four things to know before touching this.**
   1. **PDFs do not carry pins.** A raster renders in our own element, so a click
@@ -238,7 +251,7 @@ do the same**:
 
 ## 5. Migration ledger
 
-Applied: **0001–0030, 0032, 0037.**
+Applied: **0001–0030, 0032, 0037, 0038.**
 
 | # | Contents | § | Status |
 |---|---|---|---|
@@ -254,9 +267,10 @@ Applied: **0001–0030, 0032, 0037.**
 | **0035** | `audit_events`; permission enforcement columns | 11.3–11.4 | free |
 | **0036** | material-request **per-line stage** model | 9.7 | free |
 | 0037 | payment ledger columns (`vendor_id`, `member_id`, `expense_type`, `category`, `reversal_of`, `stock_in_requested`) + `project_files.payment_id` | 9.4 | ✅ applied |
+| **0038** | site progress columns on `site_photos` (`storage_path`, `mime_type`, `size_bytes`, `client_visible`, `taken_on`, `uploaded_by`) + the "a stored photo names its project" check | 9.5 | ✅ applied |
 
-0032 was applied out of numeric order because Phase 7 needed it, and 0037
-because §9.4 was never given a reserved slot — 0031/0033–0036 each belong to a
+0032 was applied out of numeric order because Phase 7 needed it, and 0037/0038
+because §9.4 and §9.5 were never given reserved slots — 0031/0033–0036 each belong to a
 different module, so taking one would have been squatting. That is all fine: the
 runner applies by filename, so a fresh database still gets them in order once
 the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
@@ -267,22 +281,15 @@ the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
 ### Phase 8, the rest (`PLAN-V4 §9`) — **start here**
 
-**§9.1, §9.2, §9.3 and §9.4 are done** (see §2). The next unbuilt thing is §9.5.
+**§9.1 through §9.5 are done** (see §2). The next unbuilt thing is §9.6.
 
-1. **§9.5 Site Progress Uploads** — frame `105527`. Date-grouped photo grid,
-   tabs `All · Client Visible · Client Not Visible`, per-photo `Client Chat`.
-   **This one is cheap now:** the storage layer, the version model and the
-   comment thread are all built and generic. A site photo is
-   `entity_type = 'site_photo'` on the same `entity_comments` table, and
-   `site_photos` already exists (0019) with a real `project_id` (0028). Expect
-   to write a screen, not a subsystem.
-2. **§9.6 Labour Report** — frames `105620`–`105716`. **Migration 0031**
+1. **§9.6 Labour Report** — frames `105620`–`105716`. **Migration 0031**
    (`labour_entries`, `labour_entry_categories`, `labour_entry_vendors`).
    The trade vocabulary is ALREADY seeded: `workspace_options` kind
    `labour_category`, nine trades from `105659`. Do not seed a second list.
    Counts are integers; totals always derived (34+25+12 = 71 must reconcile).
    Analytics needs a `Chart | Table` toggle on every card.
-3. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
+2. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
    the per-line stage model — the most important schema change in the phase.
    `Stage` is multi-valued per request; move status to the LINE ITEM and derive
    the request's breakdown by aggregation. Much already exists (`rfqs`,
@@ -337,6 +344,9 @@ extending this codebase and forking it.
 | `components/ui/comment-thread.tsx` | files, site photos, orders | **API changed this session**: it now takes `threads` already built by the caller, plus controlled `status`/`query`, and optional `onReply` / `onSetStatus` / `onSelect`. The caller builds the list once so the pins on a document and the cards in the rail can never disagree. |
 | `lib/comments-model.ts` → `pinsFor` / `clampPin` | anything anchored to an image | Coordinates are fractions of the page, never pixels. |
 | `workspace_options` kind `labour_category` | trades, anywhere | Nine trades from `105659`, seeded. Used by vendor contract categories AND labour. One list. |
+| `lib/data/project-files.ts` → `listEntityCommentsBatch` | any grid whose rows each carry a thread | Every comment on a SET of objects in ONE read, keyed by entity id. Forty photos each with a thread is forty round-trips without it. Takes the same `audience` narrowing. |
+| `lib/data/storage.ts` → `sitePhotoPath` + `ALLOWED_IMAGE_MIME` | any image-only upload | Same `<org>/<project>/<id>/…` prefix as documents, so `projectStorageUsage` counts it without being taught about it. |
+| `lib/site-photos-model.ts` | anything date-grouped | `groupPhotosByDate` (newest day first, undated last, nothing dropped), `tabCounts`, `selectionSummary` for a bulk bar that states its blast radius, and `formatPhotoDate` — which formats from the STRING, never through a `Date`, because `2026-03-24` parsed and re-read locally becomes the 23rd. |
 
 ---
 
@@ -464,3 +474,32 @@ opened.
   Next streaming a `notFound()` — check the BODY, not the status code.
 - **A stale dev server from another session will answer on 3010.** If fetches
   behave oddly, confirm whose server it is before debugging your own code.
+
+### Added by the §9.5 session
+
+- **A server action CAN be exercised over HTTP even from inside a Radix
+  dialog** — which §8 said was impossible. Fetch the page, pull the action id
+  out of the client chunk (`createServerReference("<id>", …, "<exportName>")`
+  in one of `/_next/static/chunks/*`), then POST to the route with header
+  `Next-Action: <id>` and a body React can decode:
+
+      _1_<field> = <value>   (every FormData entry, files included — the
+                              prefix is literally underscore-refId-underscore)
+      0          = ["$undefined","$K1"]   (the args; `$K1` IS that FormData)
+
+  For a plain `(formData) => void` action the args are `["$K1"]`. **Use the
+  DEV ids, not the ones in `.next/server/server-reference-manifest.json`** —
+  the build's ids are different and the dev server answers
+  "Server action not found". This is how the upload, the MIME rejection, the
+  cross-project refusals and the bulk-visibility partial were all proven
+  against a real database and a real bucket.
+- **A cross-project write must be tested by trying it.** Creating a second
+  project, aiming project A's delete form at project B's photo and watching the
+  row survive is worth more than reading `assertPhotoBelongsToProject` twice.
+- **`site_photos` had two kinds of row before this and still does**: 0019's
+  pasted URL and 0038's stored object. `signedUrl` falls back to `url`, so both
+  render. Do not "clean up" the URL column — it is a real, supported way to
+  record a photo, and dropping a column is not an additive migration.
+- **Demo data must be possible.** The first cut of the §9.5 seed gave a photo a
+  site date a week AFTER its upload date. Nobody photographs a wall next
+  Tuesday; seed data that says otherwise teaches the schema wrong.

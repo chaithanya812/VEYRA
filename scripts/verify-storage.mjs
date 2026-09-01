@@ -125,6 +125,53 @@ async function main() {
     !!clash.error,
     clash.error?.message ?? "no error",
   );
+
+  // 6. Site progress photos (PLAN-V4 §9.5) share this bucket and this prefix
+  //    deliberately: one project's bytes live in one place, so storage usage
+  //    counts them without being taught about them and no photo can be fetched
+  //    from another project's prefix.
+  const photoA = randomUUID();
+  const photoB = randomUUID();
+  const photoPath = (project, id, name) => `${org}/${project}/${id}/photo-${name}`;
+
+  const pa = photoPath(projectA, photoA, "site.jpg");
+  const upPhoto = await sb.storage.from(BUCKET).upload(pa, png, {
+    contentType: "image/jpeg",
+    upsert: false,
+  });
+  written.push(pa);
+  check(
+    "a site photo lands under its own project's prefix",
+    !upPhoto.error,
+    upPhoto.error?.message ?? pa,
+  );
+
+  const pb = photoPath(projectB, photoB, "site.jpg");
+  await sb.storage.from(BUCKET).upload(pb, png, { contentType: "image/jpeg" });
+  written.push(pb);
+
+  const photosInA = await sb.storage.from(BUCKET).list(`${org}/${projectA}`, { limit: 100 });
+  const inA = (photosInA.data ?? []).map((o) => o.name);
+  check(
+    "another project's site photo is not reachable from this project's prefix",
+    inA.includes(photoA) && !inA.includes(photoB),
+    `A holds [${inA}]`,
+  );
+
+  // A photo is one object, not a version chain: the id segment is what keeps
+  // two photos of the same wall apart.
+  const sameName = await sb.storage
+    .from(BUCKET)
+    .upload(photoPath(projectA, randomUUID(), "site.jpg"), png, {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
+  if (sameName.data?.path) written.push(sameName.data.path);
+  check(
+    "two photos with the same filename do not collide",
+    !sameName.error,
+    sameName.error?.message ?? "ok",
+  );
 }
 
 main()
