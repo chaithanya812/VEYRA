@@ -75,9 +75,14 @@ reaches the client.
 
 ---
 
-## 2. Where the build is — Phases 0 to 8
+## 2. Where the build is
 
-Gates at HEAD, all re-run personally:
+**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.4.**
+The next unbuilt thing is **§9.5 Site Progress Uploads** — go to §6.
+
+Gates at HEAD (`d16f73b`), all re-run personally in PowerShell with
+`$LASTEXITCODE` checked. Every number below was verified at this commit, not
+carried over from a previous handoff:
 
 | Gate | Result |
 |---|---|
@@ -259,40 +264,78 @@ the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
 ## 6. What to build next, in order
 
-### Phase 8, the rest (`PLAN-V4 §9`)
+### Phase 8, the rest (`PLAN-V4 §9`) — **start here**
 
-**§9.1–§9.4 are done** — see §2. Start at §9.5.
+**§9.1, §9.2, §9.3 and §9.4 are done** (see §2). The next unbuilt thing is §9.5.
 
-~~1. §9.3 Financial Planning~~ · ~~2. §9.4 Project Payments~~ — both landed.
+1. **§9.5 Site Progress Uploads** — frame `105527`. Date-grouped photo grid,
+   tabs `All · Client Visible · Client Not Visible`, per-photo `Client Chat`.
+   **This one is cheap now:** the storage layer, the version model and the
+   comment thread are all built and generic. A site photo is
+   `entity_type = 'site_photo'` on the same `entity_comments` table, and
+   `site_photos` already exists (0019) with a real `project_id` (0028). Expect
+   to write a screen, not a subsystem.
+2. **§9.6 Labour Report** — frames `105620`–`105716`. **Migration 0031**
+   (`labour_entries`, `labour_entry_categories`, `labour_entry_vendors`).
+   The trade vocabulary is ALREADY seeded: `workspace_options` kind
+   `labour_category`, nine trades from `105659`. Do not seed a second list.
+   Counts are integers; totals always derived (34+25+12 = 71 must reconcile).
+   Analytics needs a `Chart | Table` toggle on every card.
+3. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
+   the per-line stage model — the most important schema change in the phase.
+   `Stage` is multi-valued per request; move status to the LINE ITEM and derive
+   the request's breakdown by aggregation. Much already exists (`rfqs`,
+   `purchase_orders`, `po_lines`, migrations 0012–0013) — **re-point it at
+   `project_id` and `scope_items`, do not rebuild it.**
 
-1. **~~§9.3 Financial Planning~~ (done)** — migration 0030. Inflow/outflow contracts, the
-   two-way percent↔amount binding, the "total must be 100%" rule, and
-   `Actual Due` materialising only when `Work Done` is ticked.
-2. **§9.4 Project Payments** — Listing/Analytics, separate Transaction and
-   Recorded dates, reversals as a filter not a delete.
-3. **§9.5 Site Progress Uploads** — reuse the §9.1 storage layer and
-   `client_visible`. The comment thread and the pin model are already built and
-   generic: a site photo is `entity_type = 'site_photo'` on the same table.
-4. **§9.6 Labour Report** — migration 0031.
-5. **§9.7 Project Procurement** — migration 0036, the per-line stage model.
-   Much of this exists already (`rfq`, `purchase_orders`, `po_lines`); re-point
-   it at `project_id` and `scope_items` rather than rebuilding.
+Then Phases 9–12 (`PLAN-V4 §10–§13`), in order:
 
-Then Phases 9–12 (`PLAN-V4 §10–§13`).
+- **Phase 9** — company-wide Procurement (§10.1, a scope switch over the same
+  data layer, NOT a second implementation) · Inventory (§10.2, migration 0033)
+  · Vendors detail + Vendor Projects (§10.3).
+- **Phase 10** — HR Attendance (§11.1, migration 0034) · Users (§11.2) ·
+  **permission enforcement (§11.3)** · audit log + metering (§11.4, 0035).
+  **§11.3 is the biggest single item left in the whole plan** and it is not a
+  screen: `lib/permissions-model.ts` defines `(module, action, scope)` and the
+  settings matrix writes rows, and **nothing reads them** — re-confirmed by
+  grep at this commit. A `can(ctx, "procurement.po.approve")` helper has to be
+  called in *every* server action, with route guards that render a designed
+  permission-limited state. A permission nothing enforces is worse than none.
+- **Phase 11** — Payments Dashboard (§12.1) · Petty Finance (§12.2, extend
+  `expense_claims`, do not duplicate) · Account Receivables (§12.3).
+  **§12.3 is nearly free now**: it reads the `milestones` rows §9.3 already
+  writes. Nothing is re-entered.
+- **Phase 12** — reports wiring, saved views / column chooser / CSV / empty
+  states, the accessibility floor, and the full red-discipline audit.
 
-### Ask the owner before building
+### The owner's current instruction on the parked items
 
-- **MB Sheets** and **2D → 3D renders** — the owner said *"just keep them but
-  don't add any functionality"*. They appear in the rail and the Modules grid
-  marked "soon". **Leave them inert until there is a spec.**
-- **Manager dashboard** — parked behind `TEAM_VIEW_ENABLED = false` in
-  `workspace-shell.tsx`. Do not design it unprompted; do not delete the parked
-  panels.
-- **Quotation 2.0** — is the project-scoped quotation view new, or a filter over
-  the existing studio?
-- **Accounting export** ("Push to Zoho" equivalent) — wanted?
-- **Deploy** — nothing since `c163310` is live. Needs the owner's go plus the
-  `AI_*` env vars in Vercel.
+Asked on this session whether to keep waiting, the owner said to **leave them
+and push on through Phase 12**. So:
+
+- **MB Sheets**, **2D → 3D renders**, **manager dashboard** (`TEAM_VIEW_ENABLED
+  = false`), **Quotation 2.0**, **accounting export** — all still parked. Do not
+  build them, do not design them unprompted, and do not delete the parked
+  panels or the "soon" cards.
+- **Do not deploy.** Nothing since `c163310` is live and it stays that way until
+  the owner says otherwise. Local commits are fine; pushing is not.
+
+---
+
+## 6a. What this session added that you should REUSE, not rewrite
+
+Reaching for one of these instead of writing your own is the difference between
+extending this codebase and forking it.
+
+| Reuse this | For | Notes |
+|---|---|---|
+| `lib/gantt-model.ts` | any time-axis chart | Pure geometry: bars as percentages of a derived window, month ticks, today marker. 12 tests. |
+| `lib/smartplan-model.ts` + `lib/ai/smartplan.ts` | **every future AI surface** | The worked example of HARD RULE 2 — model returns structure, `datePlan()` computes dates from a human-chosen date, the parser DROPS any step carrying a rate/cost/qty, and nothing is written until a person accepts an editable draft. Copy this shape. |
+| `lib/payments-ledger-model.ts` | any append-only ledger | `buildLedger` hides BOTH halves of a reversed pair and excludes them from the total in either mode. |
+| `lib/finance-model.ts` | **all project money** | Two-way percent↔amount binding, `scheduleTotals` (the 100% rule), `actualDueOf`, `rollupContract`, `summarisePlan`, `splitEvenly`. One module computes this project's money — do not start a second. |
+| `components/ui/comment-thread.tsx` | files, site photos, orders | **API changed this session**: it now takes `threads` already built by the caller, plus controlled `status`/`query`, and optional `onReply` / `onSetStatus` / `onSelect`. The caller builds the list once so the pins on a document and the cards in the rail can never disagree. |
+| `lib/comments-model.ts` → `pinsFor` / `clampPin` | anything anchored to an image | Coordinates are fractions of the page, never pixels. |
+| `workspace_options` kind `labour_category` | trades, anywhere | Nine trades from `105659`, seeded. Used by vendor contract categories AND labour. One list. |
 
 ---
 
@@ -388,3 +431,35 @@ opened.
   the funnel appeared to have twice the stages it has. The model now flags any
   status that is not a row in `lead_statuses` rather than rendering it as a
   stage.
+
+### Added by the Phase 8 §9.1–§9.4 session
+
+- **`withOrg()` has no generic `.delete()`** — only `deleteById(id)`. That is
+  deliberate: it is what keeps every delete org-scoped. To remove a row matched
+  on other columns, `select` its id first, then `deleteById`. Writing
+  `db.table(x).delete().eq(...)` does not compile.
+- **A new table is three edits, not one.** The migration, `lib/data/tables.ts`,
+  and an org-isolation assertion in `scripts/verify.mjs`. Miss the second and
+  TypeScript rejects `db.table("your_table")` with a wall of union types that
+  looks like a different problem entirely.
+- **A new `workspace_options` kind is two edits**: `OPTION_KINDS` *and*
+  `OPTION_KIND_LABELS` in `lib/workspace-model.ts`, plus seeds in
+  `DEFAULT_WORKSPACE_OPTIONS`.
+- **Client components resolve their tab from the SERVER, not from an effect.**
+  `/plan`, `/finance` and `/payments` all take an `initialTab` prop read from
+  `searchParams`. Doing it in `useEffect` means a deep link server-renders the
+  wrong tab and swaps after hydration — which also makes it unverifiable by
+  fetching HTML, since the server never emits the tab you linked to.
+- **The shared `Donut` sizes segments by `count`, not by an arbitrary value.**
+  For money, use `BarList` (it takes `value` + `display`), which also keeps the
+  rupee figure visible — a donut hides the amount, and the amount is the point.
+- **Bash heredocs choke on some of this content.** Several `cat <<'EOF'` writes
+  of long TSX failed with "unexpected EOF". Write the file with the Write tool
+  and append with a small Python script instead; that path is reliable.
+- **Verifying UI still works the way §8 describes**, and it is worth doing:
+  fetch the route and strip tags. Two real defects were caught that way this
+  session (a deep-linked tab rendering the wrong panel, and confirming a
+  cross-project file URL leaks nothing). Note that a 200 with only the shell is
+  Next streaming a `notFound()` — check the BODY, not the status code.
+- **A stale dev server from another session will answer on 3010.** If fetches
+  behave oddly, confirm whose server it is before debugging your own code.
