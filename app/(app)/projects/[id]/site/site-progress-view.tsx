@@ -575,7 +575,7 @@ function ChatDialog({
           )}
         </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-hidden sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{photo.caption ?? "Site photo"}</DialogTitle>
           <DialogDescription>
@@ -593,7 +593,9 @@ function ChatDialog({
             photo={photo}
             className="max-h-[50vh] w-full rounded-[var(--radius-card)] object-contain"
           />
-          <div className="h-[50vh] min-h-0">
+          {/* A floor as well as a ceiling: the thread's composer lives at the
+              bottom of this box, and a short viewport must not clip it away. */}
+          <div className="h-[50vh] min-h-[22rem]">
             <EntityCommentThread
               threads={threads}
               audience={audience}
