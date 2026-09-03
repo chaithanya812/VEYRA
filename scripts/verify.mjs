@@ -940,6 +940,139 @@ async function main() {
     `got ${(fileThread.data ?? []).length}`,
   );
 
+  // ── Labour (PLAN-V4 §9.6, migration 0031) ────────────────────────────────
+  // The headline assertion: the schema CANNOT store a total, so the report's
+  // 34 + 25 + 12 = 71 can never drift from its own parts.
+  const totalCol = await sb.from("labour_entries").select("total").limit(1);
+  check(
+    "labour_entries has no `total` column — the total is always derived",
+    !!totalCol.error,
+    totalCol.error?.code || "a total column exists",
+  );
+
+  const { data: labourDays } = await sb.from("labour_entries").insert([
+    { org_id: A.id, project_id: payProj.id, entry_date: "2026-03-24", skilled: 20, unskilled: 15, coordinator: 7, client_visible: true,  remark: "Peak week" },
+    { org_id: A.id, project_id: payProj.id, entry_date: "2026-03-25", skilled: 10, unskilled: 6,  coordinator: 3, client_visible: false, remark: null },
+    { org_id: A.id, project_id: payProj.id, entry_date: "2026-03-26", skilled: 4,  unskilled: 4,  coordinator: 2, client_visible: false, remark: null },
+    { org_id: A.id, project_id: projA2.id,  entry_date: "2026-03-24", skilled: 99, unskilled: 99, coordinator: 99, client_visible: false, remark: null },
+  ]).select("id, project_id, skilled, unskilled, coordinator");
+
+  const onProject = (labourDays ?? []).filter((r) => r.project_id === payProj.id);
+  const sum = onProject.reduce(
+    (acc, r) => ({
+      s: acc.s + r.skilled, u: acc.u + r.unskilled, c: acc.c + r.coordinator,
+    }),
+    { s: 0, u: 0, c: 0 },
+  );
+  check(
+    "the frame's arithmetic holds at the database: 34 + 25 + 12 = 71",
+    sum.s === 34 && sum.u === 25 && sum.c === 12 && sum.s + sum.u + sum.c === 71,
+    `${sum.s} + ${sum.u} + ${sum.c} = ${sum.s + sum.u + sum.c}`,
+  );
+
+  const otherProjectLabour = await sb
+    .from("labour_entries").select("id").eq("org_id", A.id).eq("project_id", projA2.id);
+  check(
+    "one project's labour is invisible to another project",
+    (otherProjectLabour.data ?? []).length === 1 && onProject.length === 3,
+    `p1=${onProject.length} p2=${(otherProjectLabour.data ?? []).length}`,
+  );
+
+  const bLabour = await sb.from("labour_entries").select("id").eq("org_id", B.id);
+  check(
+    "one tenant's labour is invisible to another tenant",
+    (bLabour.data ?? []).length === 0,
+    `got ${(bLabour.data ?? []).length}`,
+  );
+
+  // A headcount cannot be negative. The check constraint says so, not the form.
+  const negative = await sb.from("labour_entries").insert({
+    org_id: A.id, project_id: payProj.id, entry_date: "2026-03-27", skilled: -3,
+  });
+  check(
+    "a negative headcount is refused at the database",
+    !!negative.error,
+    negative.error?.code || "no error",
+  );
+
+  // Trades and vendors are ROWS, each at most once per day — `105716` groups by
+  // them and you cannot group by a substring.
+  const dayId = onProject[0].id;
+  await sb.from("labour_entry_categories").insert([
+    { org_id: A.id, entry_id: dayId, category: "carpentry_woodwork" },
+    { org_id: A.id, entry_id: dayId, category: "false_ceiling_pop_work" },
+  ]);
+  const dupTrade = await sb
+    .from("labour_entry_categories")
+    .insert({ org_id: A.id, entry_id: dayId, category: "carpentry_woodwork" });
+  const trades = await sb
+    .from("labour_entry_categories").select("category").eq("entry_id", dayId);
+  check(
+    "a day carries many trades, each exactly once",
+    (trades.data ?? []).length === 2 && !!dupTrade.error,
+    `${(trades.data ?? []).length} trades, dup ${dupTrade.error?.code || "accepted"}`,
+  );
+
+  // `No Vendor` is the ABSENCE of vendor rows, not a magic vendor row — a
+  // tenant who later creates a vendor called "No Vendor" must not absorb a
+  // year of unattributed labour.
+  const noVendorDay = await sb
+    .from("labour_entry_vendors").select("id").eq("entry_id", onProject[1].id);
+  check(
+    "No Vendor is modelled as no rows, not as a placeholder vendor",
+    (noVendorDay.data ?? []).length === 0,
+    `got ${(noVendorDay.data ?? []).length}`,
+  );
+
+  // Only what a person marked visible would reach a client.
+  const visibleDays = await sb
+    .from("labour_entries").select("remark")
+    .eq("org_id", A.id).eq("project_id", payProj.id).eq("client_visible", true);
+  check(
+    "only client-visible labour days come back for a client-facing report",
+    (visibleDays.data ?? []).length === 1 && visibleDays.data[0].remark === "Peak week",
+    `got ${(visibleDays.data ?? []).length}`,
+  );
+
+  // The trade vocabulary is the SHARED one. A second list would let a tenant
+  // rename a trade in one module and not the other.
+  const sharedTrades = await sb
+    .from("workspace_options").select("value")
+    .eq("org_id", A.id).eq("kind", "labour_category");
+  check(
+    "labour reads the shared trade vocabulary, not a private enum",
+    !sharedTrades.error,
+    sharedTrades.error?.message ?? `${(sharedTrades.data ?? []).length} options`,
+  );
+
+  // An attachment is a project file that knows what it is evidence for.
+  await sb.from("project_files").insert({
+    org_id: A.id, project_id: payProj.id, labour_entry_id: dayId,
+    name: "muster-roll.jpg", internal_status: "draft",
+    client_approval: "not_shared", current_version: 1,
+  });
+  const musterRoll = await sb
+    .from("project_files").select("id").eq("org_id", A.id).eq("labour_entry_id", dayId);
+  check(
+    "a muster roll is a project file, not a fourth attachment table",
+    (musterRoll.data ?? []).length === 1,
+    `got ${(musterRoll.data ?? []).length}`,
+  );
+
+  // Deleting a day takes its trades with it and LEAVES the attachment: the
+  // photograph of the muster roll outlives the headcount row.
+  await sb.from("labour_entries").delete().eq("id", dayId);
+  const orphanTrades = await sb
+    .from("labour_entry_categories").select("id").eq("entry_id", dayId);
+  const survivingFile = await sb
+    .from("project_files").select("labour_entry_id").eq("name", "muster-roll.jpg").single();
+  check(
+    "deleting a day removes its trades but keeps the attachment, detached",
+    (orphanTrades.data ?? []).length === 0
+      && survivingFile.data?.labour_entry_id === null,
+    `${(orphanTrades.data ?? []).length} trades, file link ${survivingFile.data?.labour_entry_id}`,
+  );
+
   // ── Milestone dependencies (PLAN-V4 §9.2) ────────────────────────────────
   const deliveryRows = await sb
     .from("project_milestones").select("id, name")

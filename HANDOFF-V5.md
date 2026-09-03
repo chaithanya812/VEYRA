@@ -47,7 +47,7 @@ what is obviously missing.
    every number. Log every call to `ai_requests`.
 3. **Migrations are additive and idempotent**, with
    `org_id uuid not null references public.orgs(id) on delete cascade`.
-   **Next free numbers: 0031, 0033–0036, then 0039+.** 0030, 0032, 0037 and
+   **Next free numbers: 0033–0036, then 0039+.** 0030, 0031, 0032, 0037 and
    0038 are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
 4. **Ledgers are append-only.** A reversal is a new row plus a filter, never a
    delete.
@@ -78,8 +78,8 @@ reaches the client.
 
 ## 2. Where the build is
 
-**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.5.**
-The next unbuilt thing is **§9.6 Labour Report** — go to §6.
+**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.6.**
+The next unbuilt thing is **§9.7 Project Procurement** — go to §6.
 
 Gates at HEAD, all re-run personally in PowerShell with
 `$LASTEXITCODE` checked. Every number below was verified at this commit, not
@@ -89,14 +89,15 @@ carried over from a previous handoff:
 |---|---|
 | `node ./node_modules/typescript/bin/tsc --noEmit` | ✅ 0 |
 | `node ./node_modules/eslint/bin/eslint.js app lib components` | ✅ 0 |
-| `node ./node_modules/vitest/vitest.mjs run` | ✅ 520/520, 38 files |
-| `node ./node_modules/next/dist/bin/next build` | ✅ 61 page routes |
-| `node scripts/verify.mjs` | ✅ 124/124 |
+| `node ./node_modules/vitest/vitest.mjs run` | ✅ 544/544, 39 files |
+| `node ./node_modules/next/dist/bin/next build` | ✅ 62 page routes |
+| `node scripts/verify.mjs` | ✅ 135/135 |
 | `node scripts/verify-storage.mjs` | ✅ 11/11 |
 
 Baseline when the Phase 0–8 run started: 267 tests · 56 routes · 77 verify.
 Baseline when the Phase 8 completion run started: 426 tests · 57 pages · 94 verify.
 Baseline when §9.5 started: 501 tests · 60 pages · 116 verify · 8 storage.
+Baseline when §9.6 started: 520 tests · 61 pages · 124 verify · 11 storage.
 (The earlier "34 files" and "59 routes" were miscounts — vitest reports test
 *files*, of which there were 33, and the build's route list carries entries that
 are not `page.tsx` files. Counting `page.tsx` is unambiguous, so this table now
@@ -133,7 +134,7 @@ does that.)
   Modules tabs, the composable Progress Report at `/projects/[id]/report`.
   Migration 0032: `project_milestones`, `project_milestone_deps`,
   `milestone_templates`.
-- **Phase 8 — §9.1 through §9.5 are DONE.**
+- **Phase 8 — §9.1 through §9.6 are DONE.**
   - `/projects/[id]/documents` — the browser (migration 0029: `project_folders`,
     `project_files`, `project_file_versions`, `entity_comments`, plus the
     private storage bucket).
@@ -165,6 +166,21 @@ does that.)
     the Progress Report: `reportPhotoCount` / `withheldPhotoCount` mean "All
     site progress" and "Client visible only" are two different numbers, and the
     preview and the PDF read the same two functions.
+  - `/projects/[id]/labour` — **Labour Report** (§9.6). Overview · Analytics,
+    the header strip, the searchable multi-selects and the stepper dialog from
+    `105638`, four `Chart | Table` breakdowns, a per-row VISIBLE/HIDDEN switch
+    and an attachment that is a project file. Migration 0031; engine
+    `lib/labour-model.ts` (24 tests).
+    **Three things to know.** (1) **There is no `total` column and there must
+    never be one** — `verify.mjs` asserts that `select total` FAILS. So
+    34 + 25 + 12 = 71 is true by construction, not by discipline. (2) **The
+    by-trade and by-vendor slices can sum past the headcount**, because a day
+    tagged with two trades belongs to both. `LabourBreakdown` carries
+    `sliceTotal`, `reportTotal` and `overlaps`, and the card states the gap
+    under the donut rather than presenting an inflated total silently.
+    (3) **`No Vendor` is the absence of vendor rows**, never a placeholder
+    vendor — a tenant who later creates a vendor with that name must not absorb
+    a year of unattributed labour.
 
   **Four things to know before touching this.**
   1. **PDFs do not carry pins.** A raster renders in our own element, so a click
@@ -251,7 +267,7 @@ do the same**:
 
 ## 5. Migration ledger
 
-Applied: **0001–0030, 0032, 0037, 0038.**
+Applied: **0001–0032, 0037, 0038.**
 
 | # | Contents | § | Status |
 |---|---|---|---|
@@ -260,7 +276,7 @@ Applied: **0001–0030, 0032, 0037, 0038.**
 | 0028 | real `project_id` FKs on twelve `project_label` tables + backfill | 7.3 | ✅ applied |
 | 0029 | `project_folders`, `project_files`, `project_file_versions`, `entity_comments` | 9.1 | ✅ applied |
 | **0030** | **REDEFINED** — `contracts.vendor_id`, `contract_categories`, `project_files.contract_id`. It is *not* what §15 reserved; read its header for why building `project_contracts` would have been a third parallel money model | 9.3 | ✅ applied |
-| **0031** | `labour_entries`, `labour_entry_categories`, `labour_entry_vendors` | 9.6 | free |
+| **0031** | `labour_entries`, `labour_entry_categories`, `labour_entry_vendors`, `project_files.labour_entry_id` — and deliberately NO `total` column | 9.6 | ✅ applied |
 | 0032 | `project_milestones`, `project_milestone_deps`, `milestone_templates` | 9.2 | ✅ applied |
 | **0033** | warehouse `kind` + `project_id`; GRN auto-numbering | 10.2 | free |
 | **0034** | `wfh_requests`, `holidays` | 11.1 | free |
@@ -270,8 +286,9 @@ Applied: **0001–0030, 0032, 0037, 0038.**
 | **0038** | site progress columns on `site_photos` (`storage_path`, `mime_type`, `size_bytes`, `client_visible`, `taken_on`, `uploaded_by`) + the "a stored photo names its project" check | 9.5 | ✅ applied |
 
 0032 was applied out of numeric order because Phase 7 needed it, and 0037/0038
-because §9.4 and §9.5 were never given reserved slots — 0031/0033–0036 each belong to a
-different module, so taking one would have been squatting. That is all fine: the
+because §9.4 and §9.5 were never given reserved slots — 0033–0036 each belong to a
+different module, so taking one would have been squatting. (0031 was reserved
+for labour and §9.6 duly used it.) That is all fine: the
 runner applies by filename, so a fresh database still gets them in order once
 the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
@@ -281,15 +298,10 @@ the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
 ### Phase 8, the rest (`PLAN-V4 §9`) — **start here**
 
-**§9.1 through §9.5 are done** (see §2). The next unbuilt thing is §9.6.
+**§9.1 through §9.6 are done** (see §2). The next unbuilt thing is §9.7, and
+it is the last item in Phase 8.
 
-1. **§9.6 Labour Report** — frames `105620`–`105716`. **Migration 0031**
-   (`labour_entries`, `labour_entry_categories`, `labour_entry_vendors`).
-   The trade vocabulary is ALREADY seeded: `workspace_options` kind
-   `labour_category`, nine trades from `105659`. Do not seed a second list.
-   Counts are integers; totals always derived (34+25+12 = 71 must reconcile).
-   Analytics needs a `Chart | Table` toggle on every card.
-2. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
+1. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
    the per-line stage model — the most important schema change in the phase.
    `Stage` is multi-valued per request; move status to the LINE ITEM and derive
    the request's breakdown by aggregation. Much already exists (`rfqs`,
@@ -361,6 +373,9 @@ extending this codebase and forking it.
 | `workspace_options` kind `labour_category` | trades, anywhere | Nine trades from `105659`, seeded. Used by vendor contract categories AND labour. One list. |
 | `lib/data/project-files.ts` → `listEntityCommentsBatch` | any grid whose rows each carry a thread | Every comment on a SET of objects in ONE read, keyed by entity id. Forty photos each with a thread is forty round-trips without it. Takes the same `audience` narrowing. |
 | `lib/data/storage.ts` → `sitePhotoPath` + `ALLOWED_IMAGE_MIME` | any image-only upload | Same `<org>/<project>/<id>/…` prefix as documents, so `projectStorageUsage` counts it without being taught about it. |
+| `lib/labour-model.ts` | any headcount, and any breakdown that can double-count | `totalOf` / `summarise` are the ONLY places labour is added. `LabourBreakdown` is the shape to copy whenever one row can belong to several slices: it reports `sliceTotal` AND `reportTotal` AND `overlaps`, so the screen can state the double-count instead of hiding it. §9.7's per-line stages will need exactly this. |
+| `uploadProjectFile({ link })` | any module that needs an attachment | Typed `{ contract_id \| payment_id \| labour_entry_id }`. **Do not add a fifth attachment table** — point at `project_files` and add a column. |
+| `MultiSelect` in `app/(app)/projects/[id]/labour/labour-view.tsx` | any searchable checkbox dropdown | `105659` / `105706`. Lift it into `components/ui/` the moment a second module needs it — §9.7's vendor pickers probably will. |
 | `lib/site-photos-model.ts` | anything date-grouped | `groupPhotosByDate` (newest day first, undated last, nothing dropped), `tabCounts`, `selectionSummary` for a bulk bar that states its blast radius, and `formatPhotoDate` — which formats from the STRING, never through a `Date`, because `2026-03-24` parsed and re-read locally becomes the 23rd. |
 
 ---
@@ -518,3 +533,25 @@ opened.
 - **Demo data must be possible.** The first cut of the §9.5 seed gave a photo a
   site date a week AFTER its upload date. Nobody photographs a wall next
   Tuesday; seed data that says otherwise teaches the schema wrong.
+
+### Added by the §9.6 session
+
+- **The strongest way to protect an invariant is to make it unrepresentable.**
+  §9.6's "totals always derived" is not a code review rule — there is no `total`
+  column, and `verify.mjs` asserts that selecting one FAILS. A convention needs
+  a reviewer; a missing column needs nobody.
+- **When one row can belong to several slices, say so in the return type.**
+  `byCategory` / `byVendor` hand back `sliceTotal`, `reportTotal` and
+  `overlaps` together, so a caller physically cannot render the slice sum as if
+  it were the headcount. §9.7's per-line stages have the same shape — an item
+  in `Ordered (4) · Pending (8)` is one request counted twice — so copy this
+  rather than re-deriving it.
+- **`formData.has(key)` is how a form says "clear this".** The labour dialog
+  emits an empty `categories` field before the real ones, so "no trades
+  selected" reaches the server as present-but-empty and clears them, while an
+  action that never mentions the field leaves them alone. Without the empty
+  sentinel, unticking every checkbox silently does nothing.
+- **A rejected attachment must not throw away the attendance.** `addLabourEntry`
+  saves the headcount, then attempts the file, and reports a partial success if
+  the file fails. Deciding that a 30 MB photo means nobody worked that day is
+  the kind of "correctness" that loses real data.

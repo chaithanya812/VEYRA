@@ -104,6 +104,12 @@ export const TENANT_TABLES = [
   // A vendor contract's trades. Rows, not a comma-joined string — `105325`
   // shows Category as genuinely multi-valued.
   "contract_categories",
+  // Labour attendance (0031). The counts live on the entry; the trades and the
+  // vendors are rows, because `105716` groups by both and you cannot group by
+  // a substring. There is no `total` column anywhere here — see 0031's header.
+  "labour_entries",
+  "labour_entry_categories",
+  "labour_entry_vendors",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

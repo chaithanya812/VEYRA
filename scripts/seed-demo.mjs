@@ -386,6 +386,82 @@ async function ensureSiteProgress(orgId, userId) {
   ]);
 }
 
+/* ── Labour: a headcount that reconciles, and a real vendor/trade spread ───── */
+/**
+ * PLAN-V4 §9.6. The analytics are four breakdowns, so a demo with one flat day
+ * shows four identical single-slice donuts. This seeds a fortnight with a
+ * genuine spread: several trades, a mix of vendors and `No Vendor`, one day
+ * tagged with two trades (so the "slices total more than the headcount" note
+ * has something to explain), and one day shared with the client.
+ *
+ * The counts are the seed; NOTHING here stores a total.
+ */
+async function ensureLabour(orgId, userId) {
+  const { data: project } = await sb
+    .from("projects").select("id").eq("org_id", orgId)
+    .eq("name", "Malviya Nagar 3BHK").limit(1).maybeSingle();
+  if (!project) return;
+
+  const existing = await count2("labour_entries", orgId, project.id);
+  if (existing > 0) return;
+
+  const { data: vendors } = await sb
+    .from("vendors").select("id, name").eq("org_id", orgId).order("name");
+  const byName = new Map((vendors ?? []).map((v) => [v.name, v.id]));
+  const ply = byName.get("Century Ply Distributors") ?? null;
+  const spark = byName.get("Sharma Electricals") ?? null;
+
+  const { data: contract } = await sb
+    .from("contracts").select("id").eq("org_id", orgId).eq("project_id", project.id)
+    .limit(1).maybeSingle();
+
+  // [days ago, skilled, unskilled, coordinator, trades[], vendors[], contract?, visible, remark]
+  const plan = [
+    [-13, 6, 4, 1, ["carpentry_woodwork"], [ply], true, "Carcass work started"],
+    [-12, 5, 3, 1, ["carpentry_woodwork"], [ply], false, null],
+    [-10, 4, 2, 1, ["false_ceiling_pop_work"], [], false, "No vendor — own crew"],
+    [-9, 3, 2, 1, ["electrical_work"], [spark], false, null],
+    // Two trades on one day: the reason the analytics carry an overlap note.
+    [-7, 5, 4, 2, ["carpentry_woodwork", "paint_works"], [ply], false, null],
+    [-5, 2, 3, 1, ["plumbing_work"], [], false, "Half day — water cut"],
+    [-3, 4, 5, 2, ["marble_tile_works"], [ply, spark], true, "Client walkthrough"],
+    [-1, 3, 2, 1, ["cleaning"], [], false, null],
+  ];
+
+  for (const [ago, skilled, unskilled, coordinator, trades, vends, visible, remark] of plan) {
+    const { data: entry, error } = await sb
+      .from("labour_entries")
+      .insert({
+        org_id: orgId, project_id: project.id, entry_date: daysFromNow(ago),
+        contract_id: contract?.id ?? null,
+        skilled, unskilled, coordinator,
+        remark, client_visible: visible, created_by: userId,
+      })
+      .select("id").single();
+    if (error) continue;
+
+    if (trades.length) {
+      await sb.from("labour_entry_categories").insert(
+        trades.map((category) => ({ org_id: orgId, entry_id: entry.id, category })),
+      );
+    }
+    const real = vends.filter(Boolean);
+    if (real.length) {
+      await sb.from("labour_entry_vendors").insert(
+        real.map((vendor_id) => ({ org_id: orgId, entry_id: entry.id, vendor_id })),
+      );
+    }
+  }
+}
+
+/** Row count for one table scoped to an org AND a project. */
+async function count2(table, orgId, projectId) {
+  const { count: n } = await sb
+    .from(table).select("id", { count: "exact", head: true })
+    .eq("org_id", orgId).eq("project_id", projectId);
+  return n ?? 0;
+}
+
 /* ── Config: numbering series + approval rules & a pending request ──────────── */
 async function ensureConfig(orgId, userId) {
   if ((await count("numbering_series", orgId)) === 0) {
@@ -421,6 +497,7 @@ async function main() {
   await ensureDesign(orgId, userId);
   await ensureSite(orgId, userId);
   await ensureSiteProgress(orgId, userId);
+  await ensureLabour(orgId, userId);
   await ensureConfig(orgId, userId);
 
   console.log(`✓ Demo tenant ${fresh ? "created" : "topped up"} with a full cross-module slice.`);

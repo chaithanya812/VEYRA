@@ -233,6 +233,21 @@ export interface UploadInput {
   /** Set to add a version to an existing file instead of creating one. */
   fileId?: string | null;
   note?: string | null;
+  /**
+   * What this file is evidence FOR — a contract's document (0030), a payment's
+   * receipt (0037), a labour day's attachment (0031). Typed rather than a loose
+   * bag so a caller cannot invent a column, and optional because most files are
+   * evidence for nothing but themselves.
+   *
+   * This is the reason there is one file model in this codebase and not four:
+   * every module that needs an attachment points at `project_files` instead of
+   * growing its own table.
+   */
+  link?: {
+    contract_id?: string | null;
+    payment_id?: string | null;
+    labour_entry_id?: string | null;
+  };
 }
 
 /**
@@ -298,6 +313,11 @@ export async function uploadProjectFile(
       client_approval: "not_shared",
       current_version: 1,
       created_by: ctx.userId,
+      ...(input.link?.contract_id ? { contract_id: input.link.contract_id } : {}),
+      ...(input.link?.payment_id ? { payment_id: input.link.payment_id } : {}),
+      ...(input.link?.labour_entry_id
+        ? { labour_entry_id: input.link.labour_entry_id }
+        : {}),
     });
     if (error) return { error: error.message };
     fileId = (data?.[0] as { id: string }).id;
