@@ -1,3 +1,7 @@
+> **SUPERSEDED by `HANDOFF-V7.md`. Do not read this file.** V7 is the single handoff:
+> Parts 0-2 for the orchestrator, Parts 3-5 are per-phase briefs for sub-agents. V6 is kept only
+> because Phases 0-8 were built against it.
+
 # HANDOFF V6 — VEYRA
 
 **This is the current, authoritative handoff. It supersedes `HANDOFF-V5.md` and
@@ -159,16 +163,17 @@ one, change the other.** Versions are rows, never overwrites.
 
 ## 4. Migration ledger
 
-Applied: **0001–0032, 0036, 0037, 0038.**
+Applied: **0001–0033, 0036–0039.**
 
-**Next free numbers: 0033, 0034, 0035, then 0039+.** All three are reserved for
+**Next free numbers: 0034, 0035, then 0040+.** Both are reserved for
 work you are about to do:
 
 | # | Contents | Phase |
 |---|---|---|
-| **0033** | warehouse `kind` (`company\|project`) + `project_id`; GRN auto-numbering | 9 (§10.2) |
+| ~~0033~~ | warehouse `kind` + `parent_id` bins; stock documents (`grns.direction`, `stock_movements.grn_id`); `payments.stock_in_grn_id` | 9 (§10.2) — ✅ applied |
 | **0034** | `wfh_requests`, `holidays` | 10 (§11.1) |
 | **0035** | `audit_events`; permission enforcement columns | 10 (§11.3–§11.4) |
+| ~~0039~~ | vendor `working_model` / `status` / `country`; `vendor_categories` | 9 (§10.3) — ✅ applied |
 
 Numbers were applied out of order (0036–0038 before 0033–0035) because those
 phases came first and squatting on a reserved number would have been worse. The
