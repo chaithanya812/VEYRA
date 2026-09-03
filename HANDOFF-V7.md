@@ -153,13 +153,12 @@ as rows, and a Vendor Projects screen that is a pure read over rows that already
 
 ## 4. Migration ledger
 
-**Applied: `0001–0033`, `0036–0039`.**
+**Applied: `0001–0034`, `0036–0039`.**
 
-**Next free numbers: `0034`, `0035`, then `0040+`.** The first two are reserved:
+**Next free number: `0035`, then `0040+`.** `0035` is reserved:
 
 | # | Contents | Phase |
 |---|---|---|
-| **0034** | `wfh_requests`, `holidays` | 10 |
 | **0035** | `audit_events`; permission enforcement columns | 10 |
 
 Numbers were applied out of order (0036–0039 before 0034–0035) because those phases came first and
@@ -344,6 +343,15 @@ Do not settle these silently.
 4. **Goods Value is the ledger's own arithmetic**, not FIFO and not weighted average. Choosing a
    valuation method is a finance decision.
 
+5. **`leave_type = 'wfh'` collides with the new `wfh_requests` table.** 0023 seeded a `wfh` leave
+   type; 0034 gives WFH its own table, because a WFH day is not leave — the person worked, and it
+   must not be deducted from an entitlement. Rows already stored against the old slug still exist
+   (Karthik has one). `lib/hr-model.ts::leaveKindOf` currently routes such a row to the WFH tile and
+   never to paid leave, so it cannot eat a balance. That is a safe interim, **not a decision**: the
+   owner still has to say whether the legacy rows get migrated into `wfh_requests`, left readable
+   where they are, or retired. Until then the two tiles count from two tables and the same word
+   means two things — the §11 collision rule applies, so name it on the screen.
+
 ---
 
 ## 11. Mistakes already made — every unit brief cites this section
@@ -360,7 +368,13 @@ Do not settle these silently.
 
 **Writes**
 - A PostgREST bulk insert sends an explicit NULL for a key that one row in the batch omits,
-  defeating the column default and tripping `not null`. **Batch rows need uniform keys.**
+  defeating the column default and tripping `not null`. **Batch rows need uniform keys.** This bit
+  again in Phase 10 Unit 1 and cost a round trip: one non-uniform `holidays` batch surfaced as three
+  unrelated-looking assertion failures, because the unchecked `.error` let the empty table look like
+  a schema problem. It only bites on `not null` + `default`. Twelve other non-uniform batches are
+  known and latent — `verify.mjs:55, 103, 166, 312, 409, 521, 651, 676` and
+  `seed-demo.mjs:315, 321, 337, 568` — each omitting a NULLABLE column, which is why they pass.
+  Adding a `not null default` to any column they touch turns all of them red at once.
 - Backfills that match on a name plus a sort order mislink. Carry the origin id to make it exact and
   re-runnable. **Do not invent history to fill a new column** — an RFQ awarded before the award
   reason existed shows "No reason recorded", and pre-0033 stock movements show as unlinked.

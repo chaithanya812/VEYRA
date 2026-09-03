@@ -322,4 +322,58 @@ if (leadIds.length > 0) {
   console.log(`follow_ups: +${fus.length} · interactions(call): +${calls.length}`);
 }
 
+/* ── Work from home (0034) ───────────────────────────────────────────────── */
+/**
+ * PLAN-V4 §11, frame `110318`. WFH is a SIBLING of leave, not a kind of it —
+ * the tiles count `Granted / In process` for it on its own axis, and a WFH day
+ * must never be deducted from a leave entitlement because the person worked.
+ *
+ * Two states, because a queue with nothing in it and a history with nothing in
+ * it each render as the same empty box: one approved and behind us, one still
+ * pending in front of us.
+ *
+ * ⚠ Note what is already here and is NOT duplicated: the open work session
+ * that frame `110318`'s `1 check-in · 0 check-out · 0 Hrs 0 Min · —` row needs
+ * is Rahul's, seeded in the Attendance block above. And Karthik's
+ * `leave_type = 'wfh'` LEAVE request above is the 0023/0034 vocabulary
+ * collision in the flesh — lib/hr-model.ts `leaveKindOf` counts it toward the
+ * WFH tile rather than paid leave, and it is left here on purpose so that path
+ * has a real row to run over.
+ */
+if ((await countIn("wfh_requests", orgId)) === 0) {
+  // ⚠ UNIFORM KEY SETS (Part 1 §11): the pending row spells out
+  // `decided_by`/`decided_at` as null rather than omitting them. Both are
+  // nullable today so an explicit NULL is harmless — but a batch that omits a
+  // key on some rows defeats the column DEFAULT, and the day one of these
+  // grows a default this would start failing for a reason nobody would find.
+  const rows = [
+    { member_id: sneha.id, from_date: dayISO(-12), to_date: dayISO(-11), days: 2, reason: "Society water shutdown", status: "approved", decided_by: manager.id, decided_at: at(-13, 10) },
+    { member_id: rahul.id, from_date: dayISO(3), to_date: dayISO(3), days: 1, reason: "Drawing revisions — heads-down day", status: "pending", decided_by: null, decided_at: null },
+  ];
+  await insMany("wfh_requests", rows.map((r) => ({ org_id: orgId, ...r })));
+  console.log(`wfh_requests: +${rows.length}`);
+}
+
+/* ── Holidays (0034) ─────────────────────────────────────────────────────── */
+/**
+ * Real dates carrying their real names. A demo calendar with Diwali on an
+ * invented day teaches the schema wrong the same way a photo taken after it was
+ * uploaded did. Govardhan Puja the morning after Diwali is the case
+ * `(org_id, holiday_date, lower(name))` uniqueness exists for — adjacent
+ * observances, each with its own row — and it is `is_optional`, so the
+ * Holidays tab has one restricted holiday to distinguish from an office
+ * closure.
+ */
+if ((await countIn("holidays", orgId)) === 0) {
+  const rows = [
+    { holiday_date: "2026-10-02", name: "Gandhi Jayanti", is_optional: false },
+    { holiday_date: "2026-11-08", name: "Diwali", is_optional: false },
+    { holiday_date: "2026-11-09", name: "Govardhan Puja", is_optional: true },
+    { holiday_date: "2026-12-25", name: "Christmas", is_optional: false },
+    { holiday_date: "2027-01-26", name: "Republic Day", is_optional: false },
+  ];
+  await insMany("holidays", rows.map((r) => ({ org_id: orgId, ...r })));
+  console.log(`holidays: +${rows.length}`);
+}
+
 console.log("\nDone. Open http://localhost:3010/dashboard and use the View-as picker.");

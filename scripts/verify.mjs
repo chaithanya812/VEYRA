@@ -1738,6 +1738,135 @@ async function main() {
   );
   }
 
+  {
+  // ── HR: WFH requests and the tenant's own holiday calendar (0034) ─────────
+  // ⚠ UNIFORM KEY SETS. PostgREST sends an explicit NULL for a key that one row
+  // in a batch omits, defeating the column default (Part 1 §11). Every row here
+  // carries every key, and the insert's `.error` is CHECKED — an unchecked error
+  // turns one failed batch into three misleading downstream assertions.
+  const wfhSeed = await sb.from("wfh_requests").insert([
+    { org_id: A.id, member_id: memA.id, from_date: "2026-06-22", to_date: "2026-06-23", days: 2, reason: "Society water shutdown", status: "approved" },
+    { org_id: A.id, member_id: memA.id, from_date: "2026-07-01", to_date: "2026-07-01", days: 1, reason: null, status: "pending" },
+  ]);
+  const wfhSeedB = await sb.from("wfh_requests").insert({
+    org_id: B.id, member_id: memB.id, from_date: "2026-06-22", to_date: "2026-06-22", days: 1,
+  });
+  const aWfh = await sb.from("wfh_requests").select("days, status").eq("org_id", A.id);
+  const bWfh = await sb.from("wfh_requests").select("id").eq("org_id", B.id);
+  check(
+    "WFH requests are org-scoped (A has 2, B has 1, no leakage)",
+    !wfhSeed.error && !wfhSeedB.error &&
+      (aWfh.data ?? []).length === 2 && (bWfh.data ?? []).length === 1,
+    `seed=${wfhSeed.error?.message ?? "ok"} A=${(aWfh.data ?? []).length} B=${(bWfh.data ?? []).length}`,
+  );
+
+  // A WFH day is NOT leave — the person worked. The two live in separate
+  // tables precisely so a WFH day can never be deducted from an entitlement,
+  // and `wfh_requests` has no `leave_type` because WFH has no sub-kinds.
+  const wfhAsLeaveType = await sb.from("wfh_requests").select("leave_type").eq("org_id", A.id);
+  const aLeaveAfterWfh = await sb.from("leave_requests").select("id").eq("org_id", A.id);
+  check(
+    "a WFH day is not leave: no leave_type column, and leave is untouched",
+    !!wfhAsLeaveType.error && (aLeaveAfterWfh.data ?? []).length === 1,
+    `${wfhAsLeaveType.error?.code ?? "leave_type accepted"} / leave rows ${(aLeaveAfterWfh.data ?? []).length}`,
+  );
+
+  // The same closed status vocabulary leave uses, and a typo'd date range is
+  // a typo, not a short request.
+  const badWfhStatus = await sb.from("wfh_requests").insert({
+    org_id: A.id, member_id: memA.id, from_date: "2026-08-01", to_date: "2026-08-01", status: "granted",
+  });
+  const backwardsWfh = await sb.from("wfh_requests").insert({
+    org_id: A.id, member_id: memA.id, from_date: "2026-08-05", to_date: "2026-08-01",
+  });
+  check(
+    "WFH status is a closed vocabulary and its dates must be ordered",
+    !!badWfhStatus.error && !!backwardsWfh.error,
+    `${badWfhStatus.error?.code ?? "status accepted"} / ${backwardsWfh.error?.code ?? "range accepted"}`,
+  );
+
+  // Holidays are TENANT-OWNED: a Hyderabad firm and a Gurugram firm do not
+  // share a calendar, so the same date is free in both.
+  // Every row carries `is_optional`. Omitting it on two rows of three made
+  // PostgREST send an explicit NULL for them, `not null` rejected the batch,
+  // and A ended up with ZERO holidays — which then read as three separate
+  // failures downstream. One bug, three misleading symptoms.
+  const holidaySeed = await sb.from("holidays").insert([
+    { org_id: A.id, holiday_date: "2026-03-24", name: "Ugadi", is_optional: false },
+    { org_id: A.id, holiday_date: "2026-11-08", name: "Diwali", is_optional: false },
+    { org_id: A.id, holiday_date: "2026-03-25", name: "Holi (restricted)", is_optional: true },
+  ]);
+  // Single-row and deliberately WITHOUT `is_optional`, which is how the column
+  // default gets exercised. A default is only reachable when the key is absent
+  // from a lone row — never from a batch that omits it on some rows.
+  const sharedDate = await sb.from("holidays").insert({
+    org_id: B.id, holiday_date: "2026-03-24", name: "Ugadi",
+  });
+  const aHolidays = await sb.from("holidays").select("id").eq("org_id", A.id);
+  const bHolidays = await sb.from("holidays").select("id, is_optional").eq("org_id", B.id);
+  check(
+    "holidays are org-scoped, and two tenants may share a date",
+    !holidaySeed.error && !sharedDate.error &&
+      (aHolidays.data ?? []).length === 3 && (bHolidays.data ?? []).length === 1,
+    `seed=${holidaySeed.error?.message ?? "ok"} A=${(aHolidays.data ?? []).length} B=${(bHolidays.data ?? []).length} shared=${sharedDate.error?.code ?? "ok"}`,
+  );
+  check(
+    "an omitted is_optional falls to the column default, not to NULL",
+    (bHolidays.data ?? []).length === 1 && bHolidays.data[0].is_optional === false,
+    `got ${JSON.stringify(bHolidays.data?.[0]?.is_optional)}`,
+  );
+
+  // Unique on (org, date, lower(name)) — case-insensitively, because "Diwali"
+  // and "diwali" are the same day to whoever is reading the calendar.
+  const dupHoliday = await sb.from("holidays").insert({
+    org_id: A.id, holiday_date: "2026-11-08", name: "diwali",
+  });
+  check(
+    "a holiday name is unique per date per tenant, case-insensitively",
+    !!dupHoliday.error,
+    dupHoliday.error?.code ?? "duplicate accepted",
+  );
+
+  // ...but a DATE may carry more than one name: firms do list two observances
+  // on one day, and the index is deliberately on the name, not the date.
+  const secondObservance = await sb.from("holidays").insert({
+    org_id: A.id, holiday_date: "2026-11-08", name: "Govardhan Puja",
+  });
+  const onDiwali = await sb
+    .from("holidays").select("name").eq("org_id", A.id).eq("holiday_date", "2026-11-08");
+  check(
+    "one date may carry two observances (Diwali + Govardhan Puja)",
+    !secondObservance.error && (onDiwali.data ?? []).length === 2,
+    `${secondObservance.error?.code ?? "ok"} / ${(onDiwali.data ?? []).length} rows`,
+  );
+
+  // The optional/closure distinction survives the round trip — an office
+  // closure and a floating holiday are different facts.
+  const optional = await sb
+    .from("holidays").select("name, is_optional").eq("org_id", A.id).eq("is_optional", true);
+  check(
+    "a restricted holiday stays distinguishable from an office closure",
+    (optional.data ?? []).length === 1 && optional.data[0].name === "Holi (restricted)",
+    `got ${(optional.data ?? []).length}`,
+  );
+
+  // Removing a person takes their WFH history with them — no orphan requests
+  // pointing at a membership that is gone.
+  const { data: tempMember } = await sb.from("org_members").insert({
+    org_id: A.id, user_id: crypto.randomUUID(), role: "member", display_name: "A Temp Staff",
+  }).select("id").single();
+  await sb.from("wfh_requests").insert({
+    org_id: A.id, member_id: tempMember.id, from_date: "2026-09-01", to_date: "2026-09-01",
+  });
+  await sb.from("org_members").delete().eq("id", tempMember.id);
+  const orphanWfh = await sb.from("wfh_requests").select("id").eq("member_id", tempMember.id);
+  check(
+    "removing a member cascades to their WFH requests",
+    (orphanWfh.data ?? []).length === 0,
+    `got ${(orphanWfh.data ?? []).length}`,
+  );
+  }
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

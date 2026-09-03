@@ -114,6 +114,13 @@ export const TENANT_TABLES = [
   // Category as `Carpentry Woodwork + 2`, and a substring search cannot
   // answer "which vendors do POP work" (0039).
   "vendor_categories",
+  // HR (0034). `wfh_requests` is a SIBLING of `leave_requests`, not a
+  // `leave_type` on it — a WFH day is not leave, because the person worked,
+  // and it must never be deducted from an entitlement. `holidays` is
+  // tenant-owned because a Hyderabad firm and a Gurugram firm do not share a
+  // calendar. See 0034's header.
+  "wfh_requests",
+  "holidays",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];
