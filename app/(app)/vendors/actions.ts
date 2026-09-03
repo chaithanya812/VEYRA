@@ -7,10 +7,17 @@ import {
   createVendor,
   updateVendor,
   deactivateVendor,
+  setVendorStatus,
   addRateContract,
   type VendorInput,
 } from "@/lib/data/vendors";
-import { VENDOR_CATEGORIES } from "@/lib/vendors-model";
+import {
+  VENDOR_CATEGORIES,
+  VENDOR_STATUSES,
+  WORKING_MODELS,
+  type VendorStatus,
+  type WorkingModel,
+} from "@/lib/vendors-model";
 
 export type FormState = { error?: string } | undefined;
 
@@ -21,6 +28,10 @@ const vendorSchema = z.object({
   email: z.string().email("Enter a valid email").optional().or(z.literal("")),
   gstin: z.string().optional(),
   category: z.string().optional(),
+  // 0039: a vendor's trades are rows, so the form sends many.
+  categories: z.array(z.string()).optional(),
+  working_model: z.enum(WORKING_MODELS).optional(),
+  country: z.string().optional(),
   payment_terms: z.string().optional(),
   lead_time_days: z.string().optional(),
   address: z.string().optional(),
@@ -44,6 +55,18 @@ function parseForm(formData: FormData) {
       )
         ? String(formData.get("category"))
         : undefined,
+    // Every checked trade, filtered to the curated list — a form is where a
+    // request is composed, never where it is trusted.
+    categories: formData
+      .getAll("categories")
+      .map((v) => String(v ?? "").trim())
+      .filter((v) => (VENDOR_CATEGORIES as readonly string[]).includes(v)),
+    working_model: (WORKING_MODELS as readonly string[]).includes(
+      String(formData.get("working_model") ?? ""),
+    )
+      ? (String(formData.get("working_model")) as WorkingModel)
+      : undefined,
+    country: formData.get("country") || undefined,
     payment_terms: formData.get("payment_terms") || undefined,
     lead_time_days: formData.get("lead_time_days") || undefined,
     address: formData.get("address") || undefined,
@@ -69,6 +92,16 @@ function toInput(d: z.infer<typeof vendorSchema>): VendorInput | { error: string
     email: d.email || null,
     gstin: d.gstin || null,
     category: d.category || null,
+    // The single select stays a valid source when nothing was ticked, so an
+    // older form still saves the one trade it knows about.
+    categories:
+      d.categories && d.categories.length > 0
+        ? d.categories
+        : d.category
+          ? [d.category]
+          : [],
+    working_model: d.working_model ?? null,
+    country: d.country || null,
     payment_terms: d.payment_terms || null,
     lead_time_days: leadTime,
     address: d.address || null,
@@ -116,6 +149,24 @@ export async function updateVendorAction(
   revalidatePath("/vendors");
   revalidatePath(`/vendors/${id}`);
   redirect(`/vendors/${id}`);
+}
+
+/**
+ * `Created` → `Verified` → `Onboarded` (`110215`).
+ *
+ * The step is re-checked server-side in `setVendorStatus`: forward only, and
+ * only one hop at a time. A browser is a place to compose a request, never a
+ * place to trust one from.
+ */
+export async function setVendorStatusAction(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  if (!id || !(VENDOR_STATUSES as readonly string[]).includes(status)) return;
+
+  const result = await setVendorStatus(id, status as VendorStatus);
+  if (result.error) return;
+  revalidatePath("/vendors");
+  revalidatePath(`/vendors/${id}`);
 }
 
 export async function deactivateVendorAction(formData: FormData) {

@@ -219,10 +219,25 @@ async function ensureProcurement(orgId, userId, items) {
   // Vendors
   const vCentury = await ins("vendors", { org_id: orgId, name: "Century Ply Distributors", name_key: nameKey("Century Ply Distributors"), contact_person: "Mahesh Gupta", phone: "+91 98800 10101", phone_key: phoneKey("+91 98800 10101"), email: "sales@centuryply.example", gstin: "36ABCDE1234F1Z5", category: "Plywood", payment_terms: "30 days", lead_time_days: 5, city: "Hyderabad", state: "Telangana", created_by: userId });
   const vHettich = await ins("vendors", { org_id: orgId, name: "Hettich Hardware House", name_key: nameKey("Hettich Hardware House"), contact_person: "Sneha Rao", phone: "+91 98800 20202", phone_key: phoneKey("+91 98800 20202"), gstin: "36FGHIJ5678K1Z2", category: "Hardware", payment_terms: "15 days", lead_time_days: 3, city: "Hyderabad", state: "Telangana", created_by: userId });
-  await ins("vendors", { org_id: orgId, name: "Sharma Electricals", name_key: nameKey("Sharma Electricals"), contact_person: "Vikas Sharma", phone: "+91 98800 30303", phone_key: phoneKey("+91 98800 30303"), category: "Electrical", payment_terms: "Advance", lead_time_days: 2, city: "Hyderabad", state: "Telangana", created_by: userId });
+  const vSharma = await ins("vendors", { org_id: orgId, name: "Sharma Electricals", name_key: nameKey("Sharma Electricals"), contact_person: "Vikas Sharma", phone: "+91 98800 30303", phone_key: phoneKey("+91 98800 30303"), category: "Electrical", payment_terms: "Advance", lead_time_days: 2, city: "Hyderabad", state: "Telangana", created_by: userId });
 
   // Vendor rate contract (config)
   await sb.from("vendor_rate_contracts").insert({ org_id: orgId, vendor_id: vCentury, item_id: PLY.id, item_name: PLY.name, uom: "sheet", rate: 1820, moq: 20, lead_time_days: 5, valid_from: daysFromNow(-60), valid_to: daysFromNow(120), created_by: userId });
+
+  // 0039: a working model, an onboarding status, and trades as ROWS. A demo
+  // where every vendor is identical teaches the frame's filters nothing.
+  await sb.from("vendors").update({ working_model: "material", status: "onboarded" }).eq("id", vCentury);
+  await sb.from("vendors").update({ working_model: "material", status: "verified" }).eq("id", vHettich);
+  await sb.from("vendors").update({ working_model: "labour", status: "created" }).eq("id", vSharma);
+  if ((await count("vendor_categories", orgId)) === 0) {
+    await sb.from("vendor_categories").insert([
+      { org_id: orgId, vendor_id: vCentury, category: "Plywood" },
+      { org_id: orgId, vendor_id: vCentury, category: "Laminates" },
+      { org_id: orgId, vendor_id: vHettich, category: "Hardware" },
+      { org_id: orgId, vendor_id: vHettich, category: "Furniture Fittings" },
+      { org_id: orgId, vendor_id: vSharma,  category: "Electrical" },
+    ]);
+  }
 
   // Project first — a project warehouse needs a real project_id, not a label (0033).
   const projectId = await ins("projects", { org_id: orgId, name: "Malviya Nagar 3BHK", client_name: "Mr Suresh Reddy", stage: "execution", health: "on_track", project_value: 1800000, funds_received: 560000, total_payable: 250000, start_date: daysFromNow(-40), handover_date: daysFromNow(35), city: "Hyderabad", state: "Telangana", physical_progress_pct: 45, created_by: userId });

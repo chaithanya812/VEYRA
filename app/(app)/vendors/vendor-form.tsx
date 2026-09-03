@@ -3,7 +3,13 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { FormState } from "./actions";
-import { VENDOR_CATEGORIES, type Vendor } from "@/lib/vendors-model";
+import {
+  VENDOR_CATEGORIES,
+  WORKING_MODELS,
+  WORKING_MODEL_LABELS,
+  workingModelOf,
+  type Vendor,
+} from "@/lib/vendors-model";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
@@ -80,14 +86,51 @@ export function VendorForm({
           </Field>
         </div>
 
+        {/* Trades. A vendor does more than one — `110215` shows
+            `Carpentry Woodwork + 2` — so this is checkboxes over a table, not
+            a single select over a string (0039). */}
+        <Field
+          label="Categories"
+          htmlFor="categories"
+          hint="Everything this vendor works in. A vendor filter is a lookup over these, not a substring search."
+        >
+          <div
+            id="categories"
+            className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-md border border-[var(--color-border)] p-3 sm:grid-cols-3"
+          >
+            {VENDOR_CATEGORIES.map((c) => (
+              <label
+                key={c}
+                className="flex items-center gap-2 text-[13px] text-[var(--color-ink)]"
+              >
+                <input
+                  type="checkbox"
+                  name="categories"
+                  value={c}
+                  defaultChecked={vendor?.categories?.includes(c) ?? false}
+                  className="size-4 accent-[var(--color-ink)]"
+                />
+                {c}
+              </label>
+            ))}
+          </div>
+        </Field>
+
         {/* Buying terms */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Category" htmlFor="category">
-            <Select id="category" name="category" defaultValue={vendor?.category ?? ""}>
-              <option value="">— None —</option>
-              {VENDOR_CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+          <Field
+            label="Working model"
+            htmlFor="working_model"
+            hint="What they can supply — it decides which requests they can bid on"
+          >
+            <Select
+              id="working_model"
+              name="working_model"
+              defaultValue={workingModelOf(vendor?.working_model)}
+            >
+              {WORKING_MODELS.map((m) => (
+                <option key={m} value={m}>
+                  {WORKING_MODEL_LABELS[m]}
                 </option>
               ))}
             </Select>
@@ -114,7 +157,15 @@ export function VendorForm({
         </div>
 
         {/* Location */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+          <Field label="Country" htmlFor="country">
+            <Input
+              id="country"
+              name="country"
+              defaultValue={vendor?.country ?? "India"}
+              placeholder="India"
+            />
+          </Field>
           <Field label="City" htmlFor="city">
             <Input id="city" name="city" defaultValue={vendor?.city ?? ""} placeholder="e.g. Bengaluru" />
           </Field>

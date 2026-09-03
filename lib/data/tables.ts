@@ -110,6 +110,10 @@ export const TENANT_TABLES = [
   "labour_entries",
   "labour_entry_categories",
   "labour_entry_vendors",
+  // A vendor's trades. Rows, not a comma-joined string — `110215` shows
+  // Category as `Carpentry Woodwork + 2`, and a substring search cannot
+  // answer "which vendors do POP work" (0039).
+  "vendor_categories",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

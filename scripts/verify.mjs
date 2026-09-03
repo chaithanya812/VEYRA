@@ -1603,6 +1603,141 @@ async function main() {
     `got ${(survivors.data ?? []).length} rows, grn_id=${survivors.data?.[0]?.grn_id}`,
   );
 
+  {
+  // ── Vendors: working model, status ladder, trades as rows (0039) ───────────
+  const { data: vendA } = await sb.from("vendors").insert({
+    org_id: A.id, name: "A Vendor 0039", name_key: nameKey("A Vendor 0039"),
+    working_model: "material", status: "verified", country: "India",
+    city: "Hyderabad", state: "Telangana",
+  }).select("id").single();
+  await sb.from("vendors").insert({
+    org_id: B.id, name: "B Vendor 0039", name_key: nameKey("B Vendor 0039"),
+  });
+
+  const badModel = await sb.from("vendors").insert({
+    org_id: A.id, name: "A Bad Model", name_key: nameKey("A Bad Model"),
+    working_model: "subcontract",
+  });
+  const badStatus = await sb.from("vendors").insert({
+    org_id: A.id, name: "A Bad Status", name_key: nameKey("A Bad Status"),
+    status: "blacklisted",
+  });
+  check(
+    "working model and status are closed vocabularies (0039 checks)",
+    !!badModel.error && !!badStatus.error,
+    `${badModel.error?.code ?? "model accepted"} / ${badStatus.error?.code ?? "status accepted"}`,
+  );
+
+  // Trades are ROWS. `110215` shows `Carpentry Woodwork + 2`, and a
+  // comma-joined string cannot answer "which vendors do POP work" without also
+  // matching "POP Work Removal".
+  await sb.from("vendor_categories").insert([
+    { org_id: A.id, vendor_id: vendA.id, category: "Carpentry Woodwork" },
+    { org_id: A.id, vendor_id: vendA.id, category: "Plywood" },
+    { org_id: A.id, vendor_id: vendA.id, category: "Hardware" },
+  ]);
+  const vendorTrades = await sb
+    .from("vendor_categories").select("category").eq("org_id", A.id).eq("vendor_id", vendA.id);
+  const dupVendorTrade = await sb.from("vendor_categories").insert({
+    org_id: A.id, vendor_id: vendA.id, category: "carpentry woodwork",
+  });
+  check(
+    "a vendor carries many trades, each once, case-insensitively",
+    (vendorTrades.data ?? []).length === 3 && !!dupVendorTrade.error,
+    `${(vendorTrades.data ?? []).length} trades, dup ${dupVendorTrade.error?.code ?? "accepted"}`,
+  );
+
+  // The category filter is a LOOKUP, not a substring match.
+  await sb.from("vendor_categories").insert({
+    org_id: A.id, vendor_id: vendA.id, category: "POP Work Removal",
+  });
+  const exactTrade = await sb
+    .from("vendor_categories").select("vendor_id")
+    .eq("org_id", A.id).ilike("category", "Plywood");
+  const substringTrade = await sb
+    .from("vendor_categories").select("category")
+    .eq("org_id", A.id).ilike("category", "%POP Work%");
+  check(
+    "a trade lookup is exact, where a substring search would over-match",
+    (exactTrade.data ?? []).length === 1 && (substringTrade.data ?? []).length === 1,
+    `exact=${(exactTrade.data ?? []).length} substring=${(substringTrade.data ?? []).length}`,
+  );
+
+  const bTrades = await sb
+    .from("vendor_categories").select("id").eq("org_id", B.id);
+  check(
+    "one tenant's vendor trades are invisible to another",
+    (bTrades.data ?? []).length === 0,
+    `got ${(bTrades.data ?? []).length}`,
+  );
+
+  // Retiring a vendor takes its trades with it — no orphan rows pointing at
+  // a vendor that is gone.
+  const { data: throwawayVendor } = await sb.from("vendors").insert({
+    org_id: A.id, name: "A Temp Vendor", name_key: nameKey("A Temp Vendor"),
+  }).select("id").single();
+  await sb.from("vendor_categories").insert({
+    org_id: A.id, vendor_id: throwawayVendor.id, category: "Paint",
+  });
+  await sb.from("vendors").delete().eq("id", throwawayVendor.id);
+  const orphanTrades = await sb
+    .from("vendor_categories").select("id").eq("vendor_id", throwawayVendor.id);
+  check(
+    "deleting a vendor cascades to its trades",
+    (orphanTrades.data ?? []).length === 0,
+    `got ${(orphanTrades.data ?? []).length}`,
+  );
+
+  // ── Vendor Projects (`110234`) reads rows that already exist ───────────────
+  // Agreed 27,000 · disbursed 13,500 · billed 13,500 →
+  //   Total Payables (agreed − disbursed) = 13,500
+  //   Payable Dues   (billed − disbursed) = 0
+  const { data: vCt } = await sb.from("contracts").insert({
+    org_id: A.id, name: "A Vendor Contract", amount: 27000, source: "vendor",
+    vendor_id: vendA.id, project_id: payProj.id,
+  }).select("id").single();
+  await sb.from("milestones").insert([
+    { org_id: A.id, contract_id: vCt.id, seq: 1, name: "Stage 1", pct: 50, amount: 13500, work_done: true },
+    { org_id: A.id, contract_id: vCt.id, seq: 2, name: "Stage 2", pct: 50, amount: 13500, work_done: false },
+  ]);
+  await sb.from("payments").insert({
+    org_id: A.id, direction: "outflow", amount: 13500,
+    vendor_id: vendA.id, project_id: payProj.id, contract_id: vCt.id,
+  });
+
+  const vContracts = await sb
+    .from("contracts").select("id, amount, project_id")
+    .eq("org_id", A.id).eq("vendor_id", vendA.id);
+  const vMilestones = await sb
+    .from("milestones").select("amount, work_done").eq("org_id", A.id).eq("contract_id", vCt.id);
+  const vPayments = await sb
+    .from("payments").select("amount").eq("org_id", A.id)
+    .eq("vendor_id", vendA.id).eq("direction", "outflow");
+
+  const vAgreed = (vContracts.data ?? []).reduce((s, c) => s + Number(c.amount), 0);
+  const vBilled = (vMilestones.data ?? [])
+    .filter((m) => m.work_done === true)
+    .reduce((s, m) => s + Number(m.amount), 0);
+  const vPaidOut = (vPayments.data ?? []).reduce((s, p) => s + Number(p.amount), 0);
+  check(
+    "Vendor Projects is a read over existing rows (27,000 / 13,500 / 13,500 / 0)",
+    vAgreed === 27000 && vPaidOut === 13500 && vAgreed - vPaidOut === 13500 && vBilled - vPaidOut === 0,
+    `agreed=${vAgreed} disbursed=${vPaidOut} payables=${vAgreed - vPaidOut} dues=${vBilled - vPaidOut}`,
+  );
+
+  // A vendor joins a project by FK. Renaming the project must not empty this.
+  const vByFk = await sb
+    .from("contracts").select("id")
+    .eq("org_id", A.id).eq("vendor_id", vendA.id).eq("project_id", payProj.id);
+  const bSeesVendorContract = await sb
+    .from("contracts").select("id").eq("org_id", B.id).eq("vendor_id", vendA.id);
+  check(
+    "a vendor joins a project by FK, and the join is org-scoped",
+    (vByFk.data ?? []).length === 1 && (bSeesVendorContract.data ?? []).length === 0,
+    `A=${(vByFk.data ?? []).length} B=${(bSeesVendorContract.data ?? []).length}`,
+  );
+  }
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
