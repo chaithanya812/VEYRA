@@ -216,29 +216,29 @@ function ledgerRow({ stage, title, body, status, statusColour }) {
 
   const titleLines = wrap(title, textW, 10.5, "bold");
   const bodyLines = wrap(body, textW, 9, "normal");
-  const h = 14 + titleLines.length * 13 + bodyLines.length * 12.5 + 15;
+  const h = 12 + titleLines.length * 13 + bodyLines.length * 12.5 + 12;
 
   room(h);
   const top = y;
 
   font("normal", 8.5);
   ink(INK3);
-  doc.text(stage, M, top + 14 + 8);
+  doc.text(stage, M, top + 12 + 8);
 
   font("bold", 10.5);
   ink(INK);
-  doc.text(titleLines, textX, top + 14 + 8, { lineHeightFactor: 1.25 });
+  doc.text(titleLines, textX, top + 12 + 8, { lineHeightFactor: 1.25 });
 
   font("normal", 9);
   ink(INK2);
-  doc.text(bodyLines, textX, top + 14 + titleLines.length * 13 + 8, {
+  doc.text(bodyLines, textX, top + 12 + titleLines.length * 13 + 8, {
     lineHeightFactor: 1.4,
   });
 
   if (status) {
     font("bold", 8.5);
     ink(statusColour);
-    doc.text(status, M + W, top + 14 + 8, { align: "right" });
+    doc.text(status, M + W, top + 12 + 8, { align: "right" });
   }
 
   y = top + h;
@@ -285,7 +285,7 @@ for (const [stage, title, body] of [
   ledgerRow({ stage, title, body, status: "Live", statusColour: GREEN });
 }
 
-y += 26;
+y += 18;
 
 /* ── Inside a project ─────────────────────────────────────────────────────── */
 
@@ -295,18 +295,18 @@ section("Inside a project");
 function moduleRow(name, body) {
   const nameLines = wrap(name, W, 10, "bold");
   const bodyLines = wrap(body, W * 0.94, 9, "normal");
-  const h = 12 + nameLines.length * 12.5 + bodyLines.length * 12.5 + 13;
+  const h = 10 + nameLines.length * 12.5 + bodyLines.length * 12.5 + 11;
 
   room(h);
   const top = y;
 
   font("bold", 10);
   ink(INK);
-  doc.text(nameLines, M, top + 12 + 7);
+  doc.text(nameLines, M, top + 10 + 7);
 
   font("normal", 9);
   ink(INK2);
-  doc.text(bodyLines, M, top + 12 + nameLines.length * 12.5 + 7, {
+  doc.text(bodyLines, M, top + 10 + nameLines.length * 12.5 + 7, {
     lineHeightFactor: 1.4,
   });
 
@@ -352,7 +352,7 @@ for (const [name, body] of [
   moduleRow(name, body);
 }
 
-y += 26;
+y += 18;
 
 /* ── What is still to be built ────────────────────────────────────────────── */
 
@@ -396,7 +396,7 @@ for (const [stage, title, body, status, colour] of [
   ledgerRow({ stage, title, body, status, statusColour: colour });
 }
 
-y += 26;
+y += 18;
 
 /* ── Worth knowing now ────────────────────────────────────────────────────── */
 
@@ -443,18 +443,18 @@ for (const [tag, tone, title, body] of [
 
   font("bold", 10.5);
   ink(INK);
-  doc.text(titleLines, textX, top + 14 + 8, { lineHeightFactor: 1.25 });
+  doc.text(titleLines, textX, top + 12 + 8, { lineHeightFactor: 1.25 });
 
   font("normal", 9);
   ink(INK2);
-  doc.text(bodyLines, textX, top + 14 + titleLines.length * 13 + 8, {
+  doc.text(bodyLines, textX, top + 12 + titleLines.length * 13 + 8, {
     lineHeightFactor: 1.4,
   });
 
   y = top + h + 12;
 }
 
-y += 16;
+y += 8;
 
 /* ── How this is verified ─────────────────────────────────────────────────── */
 
@@ -490,7 +490,7 @@ figures.forEach(([n, label], i) => {
   ink(INK2);
   doc.text(label.split("\n"), x + 11, y + 38, { lineHeightFactor: 1.35 });
 });
-y += 58 + 22;
+y += 58 + 18;
 
 const closing = wrap(
   "The isolation checks are the important ones: they prove, against the real database, that " +
@@ -500,10 +500,10 @@ const closing = wrap(
   W * 0.86,
   9.5,
 );
-room(closing.length * 14 + 40);
+room(closing.length * 14 + 34);
 ink(INK2);
 doc.text(closing, M, y, { lineHeightFactor: 1.45 });
-y += closing.length * 14 + 20;
+y += closing.length * 14 + 16;
 
 font("bold", 10);
 ink(INK);
