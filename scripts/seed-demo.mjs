@@ -224,12 +224,13 @@ async function ensureProcurement(orgId, userId, items) {
   // Vendor rate contract (config)
   await sb.from("vendor_rate_contracts").insert({ org_id: orgId, vendor_id: vCentury, item_id: PLY.id, item_name: PLY.name, uom: "sheet", rate: 1820, moq: 20, lead_time_days: 5, valid_from: daysFromNow(-60), valid_to: daysFromNow(120), created_by: userId });
 
-  // Warehouses
-  const whHO = await ins("warehouses", { org_id: orgId, name: "Head Office Store", address: "HO — Jubilee Hills", created_by: userId });
-  await ins("warehouses", { org_id: orgId, name: "Malviya Nagar Site", project_label: "Malviya Nagar 3BHK", created_by: userId });
+  // Project first — a project warehouse needs a real project_id, not a label (0033).
+  const projectId = await ins("projects", { org_id: orgId, name: "Malviya Nagar 3BHK", client_name: "Mr Suresh Reddy", stage: "execution", health: "on_track", project_value: 1800000, funds_received: 560000, total_payable: 250000, start_date: daysFromNow(-40), handover_date: daysFromNow(35), city: "Hyderabad", state: "Telangana", physical_progress_pct: 45, created_by: userId });
 
-  // Project
-  await ins("projects", { org_id: orgId, name: "Malviya Nagar 3BHK", client_name: "Mr Suresh Reddy", stage: "execution", health: "on_track", project_value: 1800000, funds_received: 560000, total_payable: 250000, start_date: daysFromNow(-40), handover_date: daysFromNow(35), city: "Hyderabad", state: "Telangana", physical_progress_pct: 45, created_by: userId });
+  // Warehouses: one company godown with a bin inside it, one project site store.
+  const whHO = await ins("warehouses", { org_id: orgId, name: "Head Office Store", kind: "company", address: "HO — Jubilee Hills", created_by: userId });
+  await ins("warehouses", { org_id: orgId, name: "Rack A — sheet goods", kind: "company", parent_id: whHO, created_by: userId });
+  await ins("warehouses", { org_id: orgId, name: "Malviya Nagar Site", kind: "project", project_id: projectId, project_label: "Malviya Nagar 3BHK", created_by: userId });
 
   // Material Request
   const mrId = await ins("material_requests", { org_id: orgId, title: "Site materials — Malviya Nagar", project_label: "Malviya Nagar 3BHK", expected_delivery: daysFromNow(7), stage: "ordered", source: "manual", remarks: "Carcass + shutters phase", created_by: userId });
@@ -278,14 +279,17 @@ async function ensureProcurement(orgId, userId, items) {
     { org_id: orgId, receipt_id: rcptId, po_line_id: poLineIds[0], qty_received: 40 },
     { org_id: orgId, receipt_id: rcptId, po_line_id: poLineIds[1], qty_received: 10 },
   ]);
-  // GRN posted for the receipt
-  await ins("grns", { org_id: orgId, po_id: poId, warehouse_id: whHO, grn_no: "GRN/2026-27/0001", status: "recorded", recorded_by: userId, note: "Matched against PO" });
+  // GRN posted for the receipt, and the issue note for what went out to site.
+  // Every movement points at its document (0033) — a number that names nothing
+  // is what Transaction History could not be built on.
+  const grnId = await ins("grns", { org_id: orgId, po_id: poId, warehouse_id: whHO, vendor_id: vCentury, grn_no: "GRN/2026-27/0001", direction: "in", reference: "Century challan 4471", status: "recorded", recorded_by: userId, note: "Matched against PO" });
+  const issueId = await ins("grns", { org_id: orgId, warehouse_id: whHO, grn_no: "ISSUE/2026-27/0001", direction: "out", status: "recorded", recorded_by: userId, note: "Issued to site" });
 
   // Stock ledger (append-only): the received goods in, plus one issue out to site
   await sb.from("stock_movements").insert([
-    { org_id: orgId, item_id: PLY.id, item_name: PLY.name, warehouse_id: whHO, direction: "in", qty: 40, uom: "sheet", unit_rate: 1820, gst_pct: 18, hsn_sac: PLY.hsn_sac, source_doc: "GRN/2026-27/0001", note: "PO receipt", created_by: userId },
-    { org_id: orgId, item_id: LAM.id, item_name: LAM.name, warehouse_id: whHO, direction: "in", qty: 10, uom: "sheet", unit_rate: 940, gst_pct: 18, hsn_sac: LAM.hsn_sac, source_doc: "GRN/2026-27/0001", note: "PO receipt", created_by: userId },
-    { org_id: orgId, item_id: PLY.id, item_name: PLY.name, warehouse_id: whHO, direction: "out", qty: 8, uom: "sheet", unit_rate: 1820, gst_pct: 18, hsn_sac: PLY.hsn_sac, source_doc: "ISSUE/0001", note: "Issued to site", created_by: userId },
+    { org_id: orgId, item_id: PLY.id, item_name: PLY.name, warehouse_id: whHO, direction: "in", qty: 40, uom: "sheet", unit_rate: 1820, gst_pct: 18, hsn_sac: PLY.hsn_sac, source_doc: "GRN/2026-27/0001", grn_id: grnId, note: "PO receipt", created_by: userId },
+    { org_id: orgId, item_id: LAM.id, item_name: LAM.name, warehouse_id: whHO, direction: "in", qty: 10, uom: "sheet", unit_rate: 940, gst_pct: 18, hsn_sac: LAM.hsn_sac, source_doc: "GRN/2026-27/0001", grn_id: grnId, note: "PO receipt", created_by: userId },
+    { org_id: orgId, item_id: PLY.id, item_name: PLY.name, warehouse_id: whHO, direction: "out", qty: 8, uom: "sheet", unit_rate: 1820, gst_pct: 18, hsn_sac: PLY.hsn_sac, source_doc: "ISSUE/2026-27/0001", grn_id: issueId, note: "Issued to site", created_by: userId },
   ]);
 }
 
@@ -535,6 +539,8 @@ async function ensureConfig(orgId, userId) {
       { org_id: orgId, doc_type: "rfq", prefix: "RFQ", fy_segment: true, padding: 4, current_int: 1 },
       { org_id: orgId, doc_type: "purchase_order", prefix: "PO", fy_segment: true, padding: 4, current_int: 1 },
       { org_id: orgId, doc_type: "grn", prefix: "GRN", fy_segment: true, padding: 4, current_int: 1 },
+      // An outward note is not a GRN, so it does not share the GRN register (0033).
+      { org_id: orgId, doc_type: "stock_issue", prefix: "ISSUE", fy_segment: true, padding: 4, current_int: 1 },
     ]);
   }
   if ((await count("approval_rules", orgId)) === 0) {

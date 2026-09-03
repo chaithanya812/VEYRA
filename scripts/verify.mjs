@@ -1444,6 +1444,165 @@ async function main() {
     `got ${(bLedger.data ?? []).length}`,
   );
 
+
+  // ── Inventory warehouses & stock documents (PLAN-V4 §10.2, migration 0033) ──
+  // The owner's split — Company Warehouses | Project Warehouses — asserted at
+  // the database, plus the three-way isolation a project warehouse gets.
+
+  // A company warehouse may not carry a project. This half of the invariant IS
+  // a CHECK constraint (0033's header explains why the mirror is not).
+  const badCompanyWh = await sb.from("warehouses").insert({
+    org_id: A.id, name: "A Contradiction", kind: "company", project_id: payProj.id,
+  });
+  check(
+    "a company warehouse cannot carry a project (0033 check)",
+    !!badCompanyWh.error,
+    badCompanyWh.error?.code || "the insert was accepted",
+  );
+
+  // Scoped uniqueness — the 0029 folder rule, applied to warehouses: two
+  // projects may each own a "Site store", and neither may own two.
+  const { data: whP1 } = await sb.from("warehouses").insert({
+    org_id: A.id, name: "Site store", kind: "project", project_id: payProj.id,
+  }).select("id").single();
+  const { data: whP2 } = await sb.from("warehouses").insert({
+    org_id: A.id, name: "Site store", kind: "project", project_id: projA2.id,
+  }).select("id").single();
+  check(
+    "two projects in one org can each own a warehouse called Site store",
+    !!whP1 && !!whP2 && whP1.id !== whP2.id,
+    `p1=${whP1?.id ? "ok" : "missing"} p2=${whP2?.id ? "ok" : "missing"}`,
+  );
+
+  const dupProjectWh = await sb.from("warehouses").insert({
+    org_id: A.id, name: "site STORE", kind: "project", project_id: payProj.id,
+  });
+  check(
+    "a warehouse name is unique WITHIN a project, case-insensitively",
+    !!dupProjectWh.error,
+    dupProjectWh.error?.code || "the duplicate was accepted",
+  );
+
+  // A bin is a warehouse inside a warehouse, and its name is unique within its
+  // container — not globally, and not within the project.
+  const { data: binA } = await sb.from("warehouses").insert({
+    org_id: A.id, name: "Rack A", kind: "project", project_id: payProj.id, parent_id: whP1.id,
+  }).select("id").single();
+  await sb.from("warehouses").insert({
+    org_id: A.id, name: "Rack A", kind: "project", project_id: projA2.id, parent_id: whP2.id,
+  });
+  const dupBin = await sb.from("warehouses").insert({
+    org_id: A.id, name: "Rack A", kind: "project", project_id: payProj.id, parent_id: whP1.id,
+  });
+  check(
+    "a location name is unique within its warehouse, not across warehouses",
+    !!binA && !!dupBin.error,
+    dupBin.error?.code || "the duplicate bin was accepted",
+  );
+
+  // Emptying a warehouse takes its bins with it — no orphan shelves.
+  const { data: throwaway } = await sb.from("warehouses").insert({
+    org_id: A.id, name: "Temp store", kind: "company",
+  }).select("id").single();
+  await sb.from("warehouses").insert({
+    org_id: A.id, name: "Shelf 1", kind: "company", parent_id: throwaway.id,
+  });
+  await sb.from("warehouses").delete().eq("id", throwaway.id);
+  const orphanBins = await sb
+    .from("warehouses").select("id").eq("org_id", A.id).eq("parent_id", throwaway.id);
+  check(
+    "deleting a warehouse cascades to its locations",
+    (orphanBins.data ?? []).length === 0,
+    `got ${(orphanBins.data ?? []).length}`,
+  );
+
+  // Warehouses are org-scoped like everything else.
+  const bSeesAWh = await sb
+    .from("warehouses").select("id").eq("org_id", B.id).eq("kind", "project");
+  check(
+    "one tenant's project warehouses are invisible to another",
+    (bSeesAWh.data ?? []).length === 0,
+    `got ${(bSeesAWh.data ?? []).length}`,
+  );
+
+  // ── Stock documents: totals are DERIVED, never stored ──────────────────────
+  // The headline assertion, the same shape as labour_entries above: the schema
+  // CANNOT hold a document total, so a note's Qty and Amount can never drift
+  // from the movements they are summed from.
+  const noteQtyCol = await sb.from("grns").select("qty").limit(1);
+  const noteAmtCol = await sb.from("grns").select("amount").limit(1);
+  check(
+    "grns has no `qty` and no `amount` column — both are summed from the ledger",
+    !!noteQtyCol.error && !!noteAmtCol.error,
+    `${noteQtyCol.error?.code ?? "qty exists"} / ${noteAmtCol.error?.code ?? "amount exists"}`,
+  );
+
+  const { data: noteIn } = await sb.from("grns").insert({
+    org_id: A.id, warehouse_id: whP1.id, grn_no: "V-GRN-1",
+    direction: "in", status: "recorded",
+  }).select("id").single();
+  await sb.from("stock_movements").insert([
+    { org_id: A.id, item_id: aItemId, item_name: "Ply", warehouse_id: whP1.id, grn_id: noteIn.id, direction: "in", qty: 10, unit_rate: 100, gst_pct: 18 },
+    { org_id: A.id, item_id: aItemId, item_name: "Ply", warehouse_id: binA.id,  grn_id: noteIn.id, direction: "in", qty: 5,  unit_rate: 100, gst_pct: 18 },
+  ]);
+  const noteLines = await sb
+    .from("stock_movements").select("qty, unit_rate, warehouse_id").eq("grn_id", noteIn.id);
+  const noteQty = (noteLines.data ?? []).reduce((s, l) => s + Number(l.qty), 0);
+  const noteAmount = (noteLines.data ?? []).reduce((s, l) => s + Number(l.qty) * Number(l.unit_rate), 0);
+  check(
+    "a stock note's Qty and Amount are sums over its linked movements (15 / 1500)",
+    noteQty === 15 && noteAmount === 1500,
+    `qty=${noteQty} amount=${noteAmount}`,
+  );
+
+  // The bin's stock rolls up into its warehouse — a shelf's stock is in the
+  // warehouse whether or not the row is expanded.
+  const rolled = (noteLines.data ?? [])
+    .filter((l) => l.warehouse_id === whP1.id || l.warehouse_id === binA.id)
+    .reduce((s, l) => s + Number(l.qty) * Number(l.unit_rate), 0);
+  const ownOnly = (noteLines.data ?? [])
+    .filter((l) => l.warehouse_id === whP1.id)
+    .reduce((s, l) => s + Number(l.qty) * Number(l.unit_rate), 0);
+  check(
+    "a warehouse's goods value rolls its locations up (1500 rolled vs 1000 own)",
+    rolled === 1500 && ownOnly === 1000,
+    `rolled=${rolled} own=${ownOnly}`,
+  );
+
+  // A number is unique per tenant, and only per tenant.
+  const dupNoteNumber = await sb.from("grns").insert({
+    org_id: A.id, warehouse_id: whP1.id, grn_no: "V-GRN-1", direction: "in", status: "recorded",
+  });
+  const sameNoteNumberOtherOrg = await sb.from("grns").insert({
+    org_id: B.id, warehouse_id: whP1.id, grn_no: "V-GRN-1", direction: "in", status: "recorded",
+  });
+  check(
+    "a document number is unique within a tenant, and two tenants may share one",
+    !!dupNoteNumber.error && !sameNoteNumberOtherOrg.error,
+    `${dupNoteNumber.error?.code ?? "dup accepted"} / ${sameNoteNumberOtherOrg.error?.message ?? "ok"}`,
+  );
+
+  // An outward note is not a GRN, and the vocabulary is enforced.
+  const badDirection = await sb.from("grns").insert({
+    org_id: A.id, warehouse_id: whP1.id, direction: "sideways", status: "recorded",
+  });
+  check(
+    "a stock note moves in or out — nothing else (0033 check)",
+    !!badDirection.error,
+    badDirection.error?.code || "the insert was accepted",
+  );
+
+  // Discarding a document must NEVER delete the ledger rows that prove goods
+  // moved. `set null`, not `cascade`.
+  await sb.from("grns").delete().eq("id", noteIn.id);
+  const survivors = await sb
+    .from("stock_movements").select("id, grn_id").eq("org_id", A.id).eq("warehouse_id", binA.id);
+  check(
+    "deleting a stock note keeps its movements, unlinked",
+    (survivors.data ?? []).length === 1 && survivors.data[0].grn_id === null,
+    `got ${(survivors.data ?? []).length} rows, grn_id=${survivors.data?.[0]?.grn_id}`,
+  );
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({

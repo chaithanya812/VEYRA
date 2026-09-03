@@ -46,6 +46,7 @@ import type {
   RequestRow,
   ProjectRef,
 } from "@/lib/data/project-procurement";
+import type { ProjectInventory } from "@/lib/data/inventory";
 import { seriesColor } from "@/lib/palette";
 import {
   createRequestAction,
@@ -99,10 +100,13 @@ function rowProject(ref: ProjectRef, scope: ProcScope): string {
 export function ProcurementView({
   scope,
   data,
+  inventory,
   initialTab,
 }: {
   scope: ProcScope;
   data: ProjectProcurement;
+  /** This project's own stock. Absent in company scope — /inventory owns that. */
+  inventory?: ProjectInventory;
   initialTab: ProcTab;
 }) {
   const companyWide = scope.kind === "company";
@@ -332,7 +336,12 @@ export function ProcurementView({
       {tab === "deliveries" && (
         <DeliveryTable data={inScope} showProject={companyWide} />
       )}
-      {tab === "inventory" && <InventoryPanel />}
+      {tab === "inventory" && (
+        <InventoryPanel
+          inventory={inventory ?? null}
+          projectId={scope.kind === "project" ? scope.projectId : null}
+        />
+      )}
     </>
   );
 }
@@ -833,36 +842,129 @@ function DeliveryTable({
   );
 }
 
-/* ── Inventory ────────────────────────────────────────────────────────────── */
+/* ── Inventory (PLAN-V4 §10.2 — the placeholder this replaces) ───────────── */
 
 /**
- * The frame has this tab, and it belongs to §10.2 — project warehouses, GRN
- * numbering, migration 0033. Building it here would squat on a reserved
- * migration and produce a second stock model.
+ * This project's own stock: its site stores, what is in them, and the notes
+ * that put it there.
  *
- * So the tab exists and says exactly that, rather than being hidden (which
- * would lose the shape of the product) or faked (which would be worse).
+ * Company warehouses are deliberately not here. A godown every project draws
+ * from is not this project's stock, and showing it would let two projects each
+ * claim the same sheet of plywood. The link out is how you reach it.
  */
-function InventoryPanel() {
+function InventoryPanel({
+  inventory,
+  projectId,
+}: {
+  inventory: ProjectInventory | null;
+  projectId: string | null;
+}) {
+  if (!inventory || inventory.warehouses.length === 0) {
+    return (
+      <Card className="border-dashed p-10 text-center">
+        <Boxes className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
+        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
+          No site store for this project yet
+        </p>
+        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
+          A project warehouse belongs to exactly one project and its stock is
+          never shared with another. Add one from Inventory, then goods received
+          against this project land here.
+        </p>
+        <Link
+          href="/inventory"
+          className="mt-3 inline-flex items-center gap-1 text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
+        >
+          <Truck className="size-3.5" /> Company-wide inventory
+        </Link>
+      </Card>
+    );
+  }
+
+  const total = inventory.warehouses.reduce((s, w) => s + w.rolledValue, 0);
+
   return (
-    <Card className="border-dashed p-10 text-center">
-      <Boxes className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-      <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-        Project inventory arrives with warehouses
-      </p>
-      <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-        A line reaching <span className="font-medium">In stock</span> is already
-        recorded here. The stock ledger it should land in — project warehouses
-        and GRN numbering — is the next phase, and building a second stock model
-        now is how two of them end up disagreeing.
-      </p>
-      <Link
-        href="/inventory"
-        className="mt-3 inline-flex items-center gap-1 text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
-      >
-        <Truck className="size-3.5" /> Company-wide inventory
-      </Link>
-    </Card>
+    <div className="flex flex-col gap-4">
+      <TileGrid>
+        <StatTile
+          label="Site stores"
+          value={inventory.warehouses.length}
+          hero
+          icon={<Boxes className="size-4" />}
+        />
+        <StatTile label="Goods value" value={inr(total)} tone="info" />
+        <StatTile
+          label="Stock notes"
+          value={inventory.notes.length}
+          tone="neutral"
+          hint="Receipts and issues against this project"
+        />
+      </TileGrid>
+
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-[13px]">
+            <thead>
+              <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
+                <th className="px-4 py-2 font-medium">Item</th>
+                <th className="px-4 py-2 font-medium">Warehouse</th>
+                <th className="px-4 py-2 text-right font-medium">Qty</th>
+                <th className="px-4 py-2 font-medium">UOM</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inventory.levels.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={4}
+                    className="px-4 py-6 text-center text-[var(--color-ink-secondary)]"
+                  >
+                    Nothing in stock yet. Levels are summed from the movement
+                    ledger, never stored.
+                  </td>
+                </tr>
+              ) : (
+                inventory.levels.map((l) => (
+                  <tr
+                    key={`${l.item_id ?? l.item_name}-${l.warehouse_id}`}
+                    className="border-b border-[var(--color-border)] last:border-0"
+                  >
+                    <td className="px-4 py-2.5 text-[var(--color-ink)]">
+                      {l.item_name}
+                    </td>
+                    <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
+                      {inventory.warehouseNames[l.warehouse_id] ?? "—"}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular">{l.qty}</td>
+                    <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
+                      {l.uom ?? "—"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="flex flex-wrap items-center gap-3">
+        {inventory.warehouses.map((w) => (
+          <Link
+            key={w.id}
+            href={`/inventory/stock-in?warehouse=${w.id}`}
+            className="text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
+          >
+            Stock in to {w.name}
+          </Link>
+        ))}
+        <Link
+          href={`/inventory?tab=history${projectId ? "" : ""}`}
+          className="inline-flex items-center gap-1 text-[13px] text-[var(--color-ink-secondary)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
+        >
+          <Truck className="size-3.5" /> All stock notes
+        </Link>
+      </div>
+    </div>
   );
 }
 

@@ -7,6 +7,17 @@ import {
   signedQty,
   stockValue,
   projectStock,
+  buildWarehouseTree,
+  goodsValue,
+  inventoryTabOf,
+  lastMovement,
+  movedAmount,
+  movedQty,
+  noteDirectionOf,
+  unlinkedCount,
+  warehouseKindOf,
+  type LedgerLine,
+  type Warehouse,
 } from "./inventory-model";
 
 /**
@@ -169,5 +180,186 @@ describe("inventory model (design guardrails)", () => {
       expect(meta.tone).not.toBe("red");
     }
     expect(GRN_STATUS_META.recorded.tone).toBe("positive");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   INVENTORY, COMPANY-WIDE (PLAN-V4 §10.2, frames `110109` / `110101`)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const line = (
+  warehouse_id: string,
+  direction: string,
+  qty: number,
+  unit_rate: number,
+  created_at = "2026-08-01T10:00:00Z",
+): LedgerLine => ({ warehouse_id, direction, qty, unit_rate, created_at });
+
+const wh = (
+  id: string,
+  name: string,
+  parent_id: string | null = null,
+  kind: "company" | "project" = "company",
+): Warehouse => ({
+  id,
+  org_id: "org",
+  name,
+  kind,
+  project_id: kind === "project" ? "p1" : null,
+  parent_id,
+  project_label: null,
+  address: null,
+  is_active: true,
+  created_by: null,
+  created_at: "2026-01-01T00:00:00Z",
+});
+
+describe("goodsValue", () => {
+  it("adds inward at its rate and subtracts outward at its own", () => {
+    // 40×1820 + 10×940 − 8×1820 = 72800 + 9400 − 14560
+    const v = goodsValue([
+      line("w", "in", 40, 1820),
+      line("w", "in", 10, 940),
+      line("w", "out", 8, 1820),
+    ]);
+    expect(v).toBe(67640);
+  });
+
+  it("treats a transfer as no change in value", () => {
+    expect(goodsValue([line("w", "transfer", 50, 100)])).toBe(0);
+  });
+
+  it("can go negative, because that is a real and reportable state", () => {
+    expect(goodsValue([line("w", "out", 3, 100)])).toBe(-300);
+  });
+
+  it("is zero for a warehouse nothing has ever moved through", () => {
+    expect(goodsValue([])).toBe(0);
+  });
+});
+
+describe("movedQty / movedAmount", () => {
+  it("are unsigned — a document's Qty is what it moved, not a net", () => {
+    const lines = [line("w", "in", 40, 1820), line("w", "in", 10, 940)];
+    expect(movedQty(lines)).toBe(50);
+    expect(movedAmount(lines)).toBe(82200);
+  });
+
+  it("count an outward note's own quantity as positive", () => {
+    expect(movedQty([line("w", "out", 8, 1820)])).toBe(8);
+    expect(movedAmount([line("w", "out", 8, 1820)])).toBe(14560);
+  });
+});
+
+describe("lastMovement", () => {
+  const lines = [
+    line("w", "in", 1, 1, "2026-08-01T10:00:00Z"),
+    line("w", "in", 1, 1, "2026-09-03T09:00:00Z"),
+    line("w", "out", 1, 1, "2026-08-24T12:00:00Z"),
+  ];
+
+  it("finds the latest of each direction independently", () => {
+    expect(lastMovement(lines, "in")).toBe("2026-09-03T09:00:00Z");
+    expect(lastMovement(lines, "out")).toBe("2026-08-24T12:00:00Z");
+  });
+
+  it("returns null rather than a zero date when it has never happened", () => {
+    // The frame has rows with a stock-in and no stock-out. A dash is the
+    // truthful cell; 1 Jan 1970 is not.
+    expect(lastMovement([line("w", "in", 1, 1)], "out")).toBeNull();
+    expect(lastMovement([], "in")).toBeNull();
+  });
+});
+
+describe("buildWarehouseTree", () => {
+  it("rolls a bin's value up into its warehouse", () => {
+    // A shelf's stock is in the warehouse whether or not the row is expanded.
+    const tree = buildWarehouseTree(
+      [wh("w1", "Head Office Store"), wh("b1", "Rack A", "w1")],
+      new Map([
+        ["w1", [line("w1", "in", 10, 100)]],
+        ["b1", [line("b1", "in", 5, 100)]],
+      ]),
+    );
+    expect(tree).toHaveLength(1);
+    expect(tree[0].ownValue).toBe(1000);
+    expect(tree[0].rolledValue).toBe(1500);
+    expect(tree[0].bins).toHaveLength(1);
+    expect(tree[0].bins[0].rolledValue).toBe(500);
+  });
+
+  it("rolls the latest movement dates up too", () => {
+    const tree = buildWarehouseTree(
+      [wh("w1", "Store"), wh("b1", "Rack", "w1")],
+      new Map([
+        ["w1", [line("w1", "in", 1, 1, "2026-08-01T00:00:00Z")]],
+        ["b1", [line("b1", "in", 1, 1, "2026-09-03T00:00:00Z")]],
+      ]),
+    );
+    expect(tree[0].lastIn).toBe("2026-09-03T00:00:00Z");
+  });
+
+  it("folds bins of bins before the parent reads them", () => {
+    const tree = buildWarehouseTree(
+      [wh("w1", "Store"), wh("b1", "Aisle", "w1"), wh("b2", "Shelf", "b1")],
+      new Map([["b2", [line("b2", "in", 2, 250)]]]),
+    );
+    expect(tree[0].rolledValue).toBe(500);
+    expect(tree[0].bins[0].rolledValue).toBe(500);
+  });
+
+  it("promotes a bin whose parent is missing rather than dropping it", () => {
+    // A filtered-out or archived parent must not make a warehouse's stock
+    // vanish from the screen. A lost row is worse than an odd-looking one.
+    const tree = buildWarehouseTree(
+      [wh("b1", "Rack A", "gone")],
+      new Map([["b1", [line("b1", "in", 4, 100)]]]),
+    );
+    expect(tree).toHaveLength(1);
+    expect(tree[0].id).toBe("b1");
+    expect(tree[0].rolledValue).toBe(400);
+  });
+
+  it("sorts by name at every level, so a row does not move as stock changes", () => {
+    const tree = buildWarehouseTree(
+      [wh("w2", "Beta"), wh("w1", "Alpha"), wh("b2", "Zulu", "w1"), wh("b1", "Delta", "w1")],
+      new Map(),
+    );
+    expect(tree.map((n) => n.name)).toEqual(["Alpha", "Beta"]);
+    expect(tree[0].bins.map((n) => n.name)).toEqual(["Delta", "Zulu"]);
+  });
+});
+
+describe("warehouseKindOf / noteDirectionOf", () => {
+  it("default to the safe reading rather than throwing", () => {
+    // "No project" is not the same statement as "company-owned", but an
+    // unreadable value has to land somewhere, and company is the scope that
+    // leaks nothing into a project.
+    expect(warehouseKindOf("project")).toBe("project");
+    expect(warehouseKindOf("company")).toBe("company");
+    expect(warehouseKindOf(null)).toBe("company");
+    expect(warehouseKindOf("nonsense")).toBe("company");
+
+    expect(noteDirectionOf("out")).toBe("out");
+    expect(noteDirectionOf(null)).toBe("in");
+  });
+});
+
+describe("inventoryTabOf", () => {
+  it("resolves the frame's tabs and falls back to the first", () => {
+    expect(inventoryTabOf("history")).toBe("history");
+    expect(inventoryTabOf("expense")).toBe("expense");
+    expect(inventoryTabOf(undefined)).toBe("warehouses");
+    expect(inventoryTabOf("../etc/passwd")).toBe("warehouses");
+  });
+});
+
+describe("unlinkedCount", () => {
+  it("counts movements that belong to no document", () => {
+    // Pre-0033 history. These are shown as themselves and never handed a
+    // number they never had.
+    expect(
+      unlinkedCount([{ grn_id: "g1" }, { grn_id: null }, { grn_id: undefined }]),
+    ).toBe(2);
   });
 });

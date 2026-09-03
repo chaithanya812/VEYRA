@@ -216,7 +216,10 @@ export async function getProcurement(
             .table("po_receipts")
             .select("*")
             .in("po_id", orderIds)
-            .order("received_on", { ascending: false })
+            // `received_at` (0013). This said `received_on` — a column that
+            // does not exist — so every delivery has been sorted by nothing
+            // and printed "—" for its date since Phase 8.
+            .order("received_at", { ascending: false })
         : Promise.resolve({ data: [] }),
       db.table("vendors").select("id, name"),
     ]);
@@ -401,7 +404,7 @@ export async function getProcurement(
           vendorName: po?.vendor_id
             ? (vendorName.get(String(po.vendor_id)) ?? "Unknown vendor")
             : null,
-          received_on: (rc.received_on as string | null) ?? null,
+          received_on: (rc.received_at as string | null) ?? null,
           note: (rc.note as string | null) ?? null,
           lineCount: 0,
         };

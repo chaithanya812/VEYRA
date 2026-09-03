@@ -71,6 +71,9 @@ export const DOC_TYPES = [
   "rfq",
   "purchase_order",
   "grn",
+  // An outward stock note is not a GRN — calling it one would be a naming lie
+  // in a register somebody audits (0033). It gets its own series.
+  "stock_issue",
   "invoice",
 ] as const;
 export type DocType = (typeof DOC_TYPES)[number];
@@ -81,6 +84,7 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   rfq: "RFQ",
   purchase_order: "Purchase order",
   grn: "GRN",
+  stock_issue: "Stock issue note",
   invoice: "Invoice",
 };
 

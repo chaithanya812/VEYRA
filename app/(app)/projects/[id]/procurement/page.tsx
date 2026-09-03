@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getProject } from "@/lib/data/projects";
 import { getProjectProcurement } from "@/lib/data/project-procurement";
+import { getProjectInventory } from "@/lib/data/inventory";
 import { PageHeader } from "@/components/ui/primitives";
 import { procTabOf } from "@/lib/material-requests-model";
 import { ProcurementView } from "./procurement-view";
@@ -26,7 +27,12 @@ export default async function ProjectProcurementPage({
   const result = await getProject(id);
   if (!result) notFound();
 
-  const data = await getProjectProcurement(id);
+  const [data, inventory] = await Promise.all([
+    getProjectProcurement(id),
+    // This project's own site stores. Scoped by `project_id`, never by name —
+    // a project's stock is not shared with another project (§10.2).
+    getProjectInventory(id),
+  ]);
   const initialTab = procTabOf(view);
 
   return (
@@ -46,6 +52,7 @@ export default async function ProjectProcurementPage({
       <ProcurementView
         scope={{ kind: "project", projectId: id }}
         data={data}
+        inventory={inventory}
         initialTab={initialTab}
       />
     </div>

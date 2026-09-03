@@ -26,6 +26,25 @@ interface WarehouseOption {
   project_label: string | null;
 }
 
+interface VendorOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * What the caller already knows. `Deliveries StockIn` and `Expense StockIn`
+ * both arrive here from a row that names its vendor, its order or its payment
+ * — re-typing that is how the link between the two records gets lost.
+ */
+export interface StockInPrefill {
+  warehouseId?: string;
+  vendorId?: string;
+  poId?: string;
+  paymentId?: string;
+  reference?: string;
+  direction?: "in" | "out";
+}
+
 interface Row {
   key: string;
   item_id: string | null;
@@ -52,14 +71,25 @@ const newRow = (): Row => ({
 const GRID =
   "grid grid-cols-[minmax(0,1.6fr)_96px_84px_84px_110px_84px_110px_28px] items-start gap-2";
 
-export function StockInForm({ warehouses }: { warehouses: WarehouseOption[] }) {
+export function StockInForm({
+  warehouses,
+  vendors = [],
+  prefill,
+}: {
+  warehouses: WarehouseOption[];
+  vendors?: VendorOption[];
+  prefill?: StockInPrefill;
+}) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addStockInAction,
     undefined,
   );
 
-  const [warehouseId, setWarehouseId] = useState("");
-  const [createGrn, setCreateGrn] = useState(true);
+  const [warehouseId, setWarehouseId] = useState(prefill?.warehouseId ?? "");
+  const [vendorId, setVendorId] = useState(prefill?.vendorId ?? "");
+  const [direction, setDirection] = useState<"in" | "out">(
+    prefill?.direction ?? "in",
+  );
   const [rows, setRows] = useState<Row[]>([newRow()]);
 
   // Autocomplete state — one open dropdown at a time (the focused row).
@@ -157,23 +187,60 @@ export function StockInForm({ warehouses }: { warehouses: WarehouseOption[] }) {
               htmlFor="source_doc"
               hint="Invoice, PO or challan reference"
             >
-              <Input id="source_doc" name="source_doc" placeholder="e.g. INV-2043" />
+              <Input
+                id="source_doc"
+                name="source_doc"
+                defaultValue={prefill?.reference ?? ""}
+                placeholder="e.g. INV-2043"
+              />
             </Field>
           </div>
 
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-[var(--color-ink)]">
-            <input
-              type="checkbox"
-              name="create_grn"
-              value="1"
-              checked={createGrn}
-              onChange={(e) => setCreateGrn(e.target.checked)}
-              className="size-4 accent-[var(--color-ink)]"
-            />
-            Generate GRN for this receipt
-          </label>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Direction"
+              htmlFor="direction"
+              required
+              hint="Inward becomes a GRN; outward becomes an issue note"
+            >
+              <Select
+                id="direction"
+                name="direction"
+                value={direction}
+                onChange={(e) => setDirection(e.target.value as "in" | "out")}
+              >
+                <option value="in">Stock in — goods received</option>
+                <option value="out">Stock out — issued from store</option>
+              </Select>
+            </Field>
+            <Field label="Vendor" htmlFor="vendor_id" hint="Optional">
+              <Select
+                id="vendor_id"
+                name="vendor_id"
+                value={vendorId}
+                onChange={(e) => setVendorId(e.target.value)}
+              >
+                <option value="">— No vendor —</option>
+                {vendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
 
-          <input type="hidden" name="po_id" value="" />
+          {/* A document is created either way and takes the next number from
+              the tenant's series — a movement with no document is a row
+              Transaction History cannot name (0033). */}
+          <p className="text-xs text-[var(--color-ink-secondary)]">
+            This posts one numbered{" "}
+            {direction === "in" ? "goods receipt note" : "issue note"} and one
+            ledger line per item. Both are append-only.
+          </p>
+
+          <input type="hidden" name="po_id" value={prefill?.poId ?? ""} />
+          <input type="hidden" name="payment_id" value={prefill?.paymentId ?? ""} />
         </div>
       </Card>
 
