@@ -23,6 +23,14 @@ import {
  * onto the LINE ITEM, because `105729`'s Stage cell holds a breakdown and not a
  * status. Every count on the screen is an aggregation computed by
  * `lib/material-requests-model.ts` — nothing here stores a stage summary.
+ *
+ * ── SCOPE (PLAN-V4 §10.1, frame `110014`) ──────────────────────────────────
+ * `110014` is the same four sub-modules across EVERY project, with a `Project`
+ * column and filter. That is one predicate away from the project view, so it
+ * is one predicate away here too: `getProcurement(scope)` either pins
+ * `project_id` or it does not, and every row carries the project it came from
+ * either way. A second company-wide procurement read is how two screens start
+ * disagreeing about what has been ordered.
  */
 
 export interface RequestItemRow {
@@ -38,7 +46,20 @@ export interface RequestItemRow {
   scope_item_id: string | null;
 }
 
-export interface RequestRow {
+/**
+ * Every row carries the project it belongs to, in both scopes.
+ *
+ * `projectName` resolves through the real `project_id` FK (0028) and falls
+ * back to the legacy `project_label` ONLY for display, for the rows that never
+ * matched a project by name — `v_project_label_unmatched` is the list of them.
+ * Reads go through the id; the label is a last word, not a join key.
+ */
+export interface ProjectRef {
+  project_id: string | null;
+  projectName: string | null;
+}
+
+export interface RequestRow extends ProjectRef {
   id: string;
   number: string | null;
   title: string;
@@ -53,7 +74,7 @@ export interface RequestRow {
   items: RequestItemRow[];
 }
 
-export interface RfqRow {
+export interface RfqRow extends ProjectRef {
   id: string;
   title: string;
   status: string;
@@ -67,7 +88,7 @@ export interface RfqRow {
   awardReason: string | null;
 }
 
-export interface OrderRow {
+export interface OrderRow extends ProjectRef {
   id: string;
   name: string | null;
   kind: string;

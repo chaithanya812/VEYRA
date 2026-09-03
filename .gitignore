@@ -18,3 +18,6 @@ node_modules/
 
 # TypeScript incremental build cache — churns on every build
 tsconfig.tsbuildinfo
+
+# Generated client deliverables — regenerate with scripts/client-report.mjs
+*.pdf
