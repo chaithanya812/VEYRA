@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   MR_ITEM_STAGES,
   MR_ITEM_STAGE_META,
+  MR_LIFECYCLE_STAGES,
   MR_STAGES,
   MR_STAGE_META,
   MR_SOURCES,
@@ -233,5 +234,30 @@ describe("nextItemStages", () => {
 
   it("lets a cancelled line be reopened, and only to the start", () => {
     expect(nextItemStages("cancelled")).toEqual(["pending"]);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The two stage vocabularies must not overlap where it matters (0036).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("MR_LIFECYCLE_STAGES", () => {
+  it("is a strict subset of MR_STAGES, so every value still has a label", () => {
+    for (const s of MR_LIFECYCLE_STAGES) {
+      expect(MR_STAGES).toContain(s);
+      expect(MR_STAGE_META[s]).toBeDefined();
+    }
+  });
+
+  it("offers no procurement position — that answer lives on the lines", () => {
+    // If any of these ever became settable on the parent, one dropdown could
+    // contradict thirteen line items. That is the model 0036 ended.
+    for (const banned of ["rfq_raised", "order_requested", "ordered"]) {
+      expect(MR_LIFECYCLE_STAGES as readonly string[]).not.toContain(banned);
+    }
+  });
+
+  it("keeps draft, so the company view's Draft Requests toggle has a source", () => {
+    expect(MR_LIFECYCLE_STAGES).toContain("draft");
   });
 });

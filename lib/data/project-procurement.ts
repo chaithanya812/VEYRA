@@ -103,7 +103,7 @@ export interface OrderRow extends ProjectRef {
   receivedLines: number;
 }
 
-export interface DeliveryRow {
+export interface DeliveryRow extends ProjectRef {
   id: string;
   poId: string;
   orderName: string | null;
@@ -111,6 +111,11 @@ export interface DeliveryRow {
   received_on: string | null;
   note: string | null;
   lineCount: number;
+}
+
+export interface ProjectOption {
+  id: string;
+  name: string;
 }
 
 export interface ProjectProcurement {
@@ -121,33 +126,62 @@ export interface ProjectProcurement {
   members: Member[];
   /** The catalogue, for the line-item picker on a new request. */
   catalogue: { id: string; name: string; base_uom: string | null }[];
+  /**
+   * Live projects, for the company view's `Project` filter and for the project
+   * picker a request raised outside a project needs. Empty in project scope —
+   * the project is already decided there.
+   */
+  projects: ProjectOption[];
 }
+
+/**
+ * One project, or all of them. `110014` is the second reading of the same
+ * query; nothing below branches on it beyond the predicate and the label join.
+ */
+export type ProcurementScope =
+  | { kind: "project"; projectId: string }
+  | { kind: "company" };
 
 /* ── Read ─────────────────────────────────────────────────────────────────── */
 
 export async function getProjectProcurement(
   projectId: string,
 ): Promise<ProjectProcurement> {
-  const { db } = await withOrg();
+  return getProcurement({ kind: "project", projectId });
+}
 
-  const [reqRes, rfqRes, poRes, members, itemRes] = await Promise.all([
-    db
-      .table("material_requests")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false }),
-    db
-      .table("rfqs")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false }),
-    db
-      .table("purchase_orders")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false }),
+export async function getProcurement(
+  scope: ProcurementScope,
+): Promise<ProjectProcurement> {
+  const { db } = await withOrg();
+  const companyWide = scope.kind === "company";
+
+  // `.eq` before `.order` — the transform builder has no `.eq` (the note in
+  // lib/data/inventory.ts, learned the hard way).
+  const reqQ = db.table("material_requests").select("*");
+  const rfqQ = db.table("rfqs").select("*");
+  const poQ = db.table("purchase_orders").select("*");
+
+  const [reqRes, rfqRes, poRes, members, itemRes, projectRes] = await Promise.all([
+    (companyWide ? reqQ : reqQ.eq("project_id", scope.projectId)).order(
+      "created_at",
+      { ascending: false },
+    ),
+    (companyWide ? rfqQ : rfqQ.eq("project_id", scope.projectId)).order(
+      "created_at",
+      { ascending: false },
+    ),
+    (companyWide ? poQ : poQ.eq("project_id", scope.projectId)).order(
+      "created_at",
+      { ascending: false },
+    ),
     listMembers(),
     db.table("items").select("id, name, base_uom").order("name", { ascending: true }),
+    // The company view needs every project's name; the project view already
+    // knows its own, so it does not pay for the read.
+    companyWide
+      ? db.table("projects").select("id, name").order("name", { ascending: true })
+      : Promise.resolve({ data: [] }),
   ]);
   if (reqRes.error) throw reqRes.error;
 
@@ -276,10 +310,31 @@ export async function getProjectProcurement(
 
   const orderById = new Map(orders.map((o) => [String(o.id), o]));
 
+  const projects = ((projectRes.data ?? []) as unknown as ProjectOption[]).map(
+    (p) => ({ id: String(p.id), name: String(p.name ?? "") }),
+  );
+  const projectName = new Map(projects.map((p) => [p.id, p.name]));
+
+  /**
+   * The project of a row: the FK first, the legacy label only as a display
+   * fallback for rows 0028's backfill could not match (`project_label` is
+   * legacy but not dead — see 0028's header).
+   */
+  const refOf = (raw: Record<string, unknown>): ProjectRef => {
+    const id = (raw.project_id as string | null) ?? null;
+    const label = (raw.project_label as string | null) ?? null;
+    return {
+      project_id: id,
+      projectName: (id ? (projectName.get(id) ?? null) : null) ?? label,
+    };
+  };
+
   return {
     members,
+    projects,
     catalogue: (itemRes.data ?? []) as unknown as ProjectProcurement["catalogue"],
     requests: requests.map((r) => ({
+      ...refOf(r),
       id: String(r.id),
       number: (r.number as string | null) ?? null,
       title: String(r.title ?? ""),
@@ -296,6 +351,7 @@ export async function getProjectProcurement(
       items: linesByRequest.get(String(r.id)) ?? [],
     })),
     rfqs: rfqs.map((r) => ({
+      ...refOf(r),
       id: String(r.id),
       title: String(r.title ?? ""),
       status: String(r.status ?? "draft"),
@@ -313,6 +369,7 @@ export async function getProjectProcurement(
     orders: orders.map((o) => {
       const counts = poLines.get(String(o.id)) ?? { total: 0, received: 0 };
       return {
+        ...refOf(o),
         id: String(o.id),
         name: (o.name as string | null) ?? null,
         kind: String(o.kind ?? "purchase"),
@@ -335,6 +392,9 @@ export async function getProjectProcurement(
       (rc) => {
         const po = orderById.get(String(rc.po_id));
         return {
+          // A receipt has no project of its own — it inherits the order's,
+          // which is the only place the truth lives.
+          ...(po ? refOf(po) : { project_id: null, projectName: null }),
           id: String(rc.id),
           poId: String(rc.po_id),
           orderName: (po?.name as string | null) ?? null,

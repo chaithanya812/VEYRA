@@ -41,6 +41,18 @@ export const MR_STAGE_META: Record<MRStage, { label: string; tone: MRTone }> = {
   cancelled: { label: "Cancelled", tone: "muted" },
 };
 
+/**
+ * The REQUEST's OWN lifecycle — all that `material_requests.stage` still means
+ * after migration 0036 narrowed it. Whether a request has been raised at all
+ * is a genuinely different question from where its goods are, and the second
+ * one is answered by `MR_ITEM_STAGES` on the lines.
+ *
+ * Offering `ordered` at this level would let one dropdown contradict thirteen
+ * lines, which is exactly the model 0036 exists to end.
+ */
+export const MR_LIFECYCLE_STAGES = ["draft", "requested", "cancelled"] as const;
+export type MRLifecycleStage = (typeof MR_LIFECYCLE_STAGES)[number];
+
 export const MR_SOURCES = ["manual", "from_quotation", "ai_parsed"] as const;
 export type MRSource = (typeof MR_SOURCES)[number];
 
@@ -69,6 +81,9 @@ export interface MaterialRequestItem {
   uom: string | null;
   qty: number;
   remarks: string | null;
+  /** Where THIS line is (migration 0036). The request has no such answer. */
+  stage: MRItemStage;
+  stage_changed_at: string | null;
   created_at: string;
 }
 

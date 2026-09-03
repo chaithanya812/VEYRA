@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PDF proof sheet</title>
+<style>
+  body { margin: 0; background: #444; font: 13px system-ui; }
+  .pg { display: block; margin: 12px auto; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  #err { color: #fff; padding: 12px; font-family: monospace; }
+</style>
+</head>
+<body>
+<div id="err"></div>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.mjs" type="module"></script>
+<script type="module">
+  import * as pdfjsLib from "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.min.mjs";
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.6.82/pdf.worker.min.mjs";
+
+  const params = new URLSearchParams(location.search);
+  const only = params.get("page");
+  const scale = Number(params.get("scale") || 1.35);
+
+  try {
+    const pdf = await pdfjsLib.getDocument("/report-check.pdf?t=" + Date.now()).promise;
+    const out = document.getElementById("out");
+    const pages = only ? [Number(only)] : Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+    for (const n of pages) {
+      const page = await pdf.getPage(n);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.className = "pg";
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      out.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    }
+    document.getElementById("err").textContent = `rendered ${pages.length} page(s) of ${pdf.numPages}`;
+  } catch (e) {
+    document.getElementById("err").textContent = "ERROR: " + e.message;
+  }
+</script>
+</body>
+</html>

@@ -43,7 +43,11 @@ export default async function ProjectProcurementPage({
         subtitle={`${result.project.name} · requests, RFQs, orders and what has landed`}
       />
 
-      <ProcurementView projectId={id} data={data} initialTab={initialTab} />
+      <ProcurementView
+        scope={{ kind: "project", projectId: id }}
+        data={data}
+        initialTab={initialTab}
+      />
     </div>
   );
 }

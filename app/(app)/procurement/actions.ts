@@ -12,7 +12,7 @@ import {
   type CatalogueMatch,
   type MRItemInput,
 } from "@/lib/data/material-requests";
-import { MR_STAGES, type MRStage } from "@/lib/material-requests-model";
+import { MR_LIFECYCLE_STAGES, type MRStage } from "@/lib/material-requests-model";
 
 export type FormState = { error?: string } | undefined;
 
@@ -101,10 +101,19 @@ export async function createMaterialRequestAction(
 }
 
 /* ── Stage ─────────────────────────────────────────────────────────────────── */
+/**
+ * Move a request's OWN lifecycle (0036): draft → requested → cancelled.
+ *
+ * The full `MR_STAGES` ladder is deliberately NOT accepted here. Since 0036 a
+ * request's procurement position is the aggregate of its lines, so writing
+ * `ordered` onto the parent would put a number on the screen that thirteen
+ * lines can disagree with. The browser is not trusted to have sent only a
+ * lifecycle value — the server re-checks it.
+ */
 export async function updateMRStageAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const stage = String(formData.get("stage"));
-  if (!id || !(MR_STAGES as readonly string[]).includes(stage)) return;
+  if (!id || !(MR_LIFECYCLE_STAGES as readonly string[]).includes(stage)) return;
   const result = await updateMRStage(id, stage as MRStage);
   if (result.error) return;
   revalidatePath(`/procurement/${id}`);

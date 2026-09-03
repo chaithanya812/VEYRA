@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Package,
   Plus,
+  RotateCcw,
   Trash2,
   Truck,
 } from "lucide-react";
@@ -40,7 +41,11 @@ import {
   type ProcTab,
 } from "@/lib/material-requests-model";
 import { RFQ_STATUS_META } from "@/lib/rfq-model";
-import type { ProjectProcurement, RequestRow } from "@/lib/data/project-procurement";
+import type {
+  ProjectProcurement,
+  RequestRow,
+  ProjectRef,
+} from "@/lib/data/project-procurement";
 import { seriesColor } from "@/lib/palette";
 import {
   createRequestAction,
@@ -63,6 +68,13 @@ import { cn, fmtDate, inr } from "@/lib/utils";
  * control here moves LINE ITEMS, and every count — the tiles included — is an
  * aggregation over lines. Nothing on this screen stores a summary that could
  * drift from what it summarises.
+ *
+ * ── ONE VIEW, TWO SCOPES (PLAN-V4 §10.1, frame `110014`) ───────────────────
+ * `/procurement` is this same component with `scope.kind === "company"`: the
+ * project filter and the `Project` column appear, the tables gain a column,
+ * and nothing else differs. Two implementations of "where is this order" is
+ * how a company screen and a project screen start disagreeing about the same
+ * purchase order.
  */
 
 const TONE_CHIP = {
@@ -72,21 +84,58 @@ const TONE_CHIP = {
   positive: "green",
 } as const;
 
+/** The company view's `All Requests` / `Draft Requests` toggle (`110014`). */
+type DraftFilter = "all" | "draft";
+
+export type ProcScope =
+  | { kind: "project"; projectId: string }
+  | { kind: "company" };
+
+/** The project a row's own writes must be guarded against. */
+function rowProject(ref: ProjectRef, scope: ProcScope): string {
+  return scope.kind === "project" ? scope.projectId : (ref.project_id ?? "");
+}
+
 export function ProcurementView({
-  projectId,
+  scope,
   data,
   initialTab,
 }: {
-  projectId: string;
+  scope: ProcScope;
   data: ProjectProcurement;
   initialTab: ProcTab;
 }) {
+  const companyWide = scope.kind === "company";
   const [tab, setTab] = useState<ProcTab>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
 
-  const totals = useMemo(() => procurementTotals(data.requests), [data.requests]);
+  /* The company view's two filters (`110014`). Both are client-side over rows
+     already read — the scope switch is a server predicate; narrowing WITHIN a
+     scope is not worth a round trip. */
+  const [projectFilter, setProjectFilter] = useState<string>("");
+  const [draftFilter, setDraftFilter] = useState<DraftFilter>("all");
+
+  const inScope = useMemo(() => {
+    if (!companyWide) return data;
+    const keep = <T extends ProjectRef>(rows: T[]) =>
+      projectFilter ? rows.filter((r) => r.project_id === projectFilter) : rows;
+    return {
+      ...data,
+      requests: keep(data.requests).filter((r) =>
+        draftFilter === "draft" ? r.stage === "draft" : true,
+      ),
+      rfqs: keep(data.rfqs),
+      orders: keep(data.orders),
+      deliveries: keep(data.deliveries),
+    };
+  }, [companyWide, data, projectFilter, draftFilter]);
+
+  const totals = useMemo(
+    () => procurementTotals(inScope.requests),
+    [inScope.requests],
+  );
 
   function run(
     action: (prev: ProcState, fd: FormData) => Promise<ProcState>,
@@ -101,7 +150,13 @@ export function ProcurementView({
     });
   }
 
-  function moveLines(itemIds: string[], stage: MRItemStage) {
+  function moveLines(projectId: string, itemIds: string[], stage: MRItemStage) {
+    if (!projectId) {
+      setError(
+        "This request is not linked to a project, so its lines cannot be moved. Link it to a project first.",
+      );
+      return;
+    }
     const fd = new FormData();
     fd.set("project_id", projectId);
     fd.set("stage", stage);
@@ -121,20 +176,66 @@ export function ProcurementView({
             label: PROC_TAB_LABELS[t],
             badge:
               t === "requests"
-                ? data.requests.length
+                ? inScope.requests.length
                 : t === "rfqs"
-                  ? data.rfqs.length
+                  ? inScope.rfqs.length
                   : t === "orders"
-                    ? data.orders.length
+                    ? inScope.orders.length
                     : t === "deliveries"
-                      ? data.deliveries.length
+                      ? inScope.deliveries.length
                       : undefined,
           }))}
         />
-        {tab === "requests" && (
-          <NewRequestDialog projectId={projectId} data={data} />
-        )}
+        {tab === "requests" && <NewRequestDialog scope={scope} data={data} />}
       </div>
+
+      {/* The company view's filter band (`110014`). Filters top-left, the one
+          primary action top-right — DESIGN-DIRECTION §3. */}
+      {companyWide && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          {tab === "requests" && (
+            <SegmentedControl
+              label="Request set"
+              value={draftFilter}
+              onChange={setDraftFilter}
+              options={[
+                { value: "all", label: "All Requests" },
+                {
+                  value: "draft",
+                  label: "Draft Requests",
+                  badge: data.requests.filter((r) => r.stage === "draft").length,
+                },
+              ]}
+            />
+          )}
+          <label className="flex items-center gap-2 text-[13px] text-[var(--color-ink-secondary)]">
+            Project
+            <Select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              aria-label="Filter by project"
+              className="h-8 w-56 text-[13px]"
+            >
+              <option value="">All projects</option>
+              {data.projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          {projectFilter && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setProjectFilter("")}
+              title="Clear the project filter"
+            >
+              <RotateCcw className="size-3.5" /> Reset
+            </Button>
+          )}
+        </div>
+      )}
 
       {error && (
         <p className="mb-3 rounded-md border border-[color-mix(in_srgb,var(--color-red)_25%,white)] bg-[var(--color-red-tint)] px-3 py-2 text-[13px] text-[var(--color-red)]">
@@ -195,20 +296,27 @@ export function ProcurementView({
           )}
 
           <div className="mt-4 flex flex-col gap-3">
-            {data.requests.length === 0 ? (
+            {inScope.requests.length === 0 ? (
               <Card className="border-dashed p-10 text-center">
                 <p className="text-sm font-medium text-[var(--color-ink)]">
-                  No requests raised for this project
+                  {companyWide
+                    ? draftFilter === "draft"
+                      ? "No draft requests"
+                      : "No requests raised yet"
+                    : "No requests raised for this project"}
                 </p>
                 <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-                  Raise one to start the trail: request → RFQ → order → delivery.
+                  {companyWide && draftFilter === "draft"
+                    ? "Drafts park here until somebody raises them."
+                    : "Raise one to start the trail: request → RFQ → order → delivery."}
                 </p>
               </Card>
             ) : (
-              data.requests.map((r) => (
+              inScope.requests.map((r) => (
                 <RequestCard
                   key={r.id}
-                  projectId={projectId}
+                  projectId={rowProject(r, scope)}
+                  showProject={companyWide}
                   request={r}
                   onMove={moveLines}
                   busy={busy}
@@ -219,9 +327,11 @@ export function ProcurementView({
         </>
       )}
 
-      {tab === "rfqs" && <RfqTable data={data} />}
-      {tab === "orders" && <OrderTable data={data} />}
-      {tab === "deliveries" && <DeliveryTable data={data} />}
+      {tab === "rfqs" && <RfqTable data={inScope} showProject={companyWide} />}
+      {tab === "orders" && <OrderTable data={inScope} showProject={companyWide} />}
+      {tab === "deliveries" && (
+        <DeliveryTable data={inScope} showProject={companyWide} />
+      )}
       {tab === "inventory" && <InventoryPanel />}
     </>
   );
@@ -231,13 +341,15 @@ export function ProcurementView({
 
 function RequestCard({
   projectId,
+  showProject,
   request,
   onMove,
   busy,
 }: {
   projectId: string;
+  showProject: boolean;
   request: RequestRow;
-  onMove: (itemIds: string[], stage: MRItemStage) => void;
+  onMove: (projectId: string, itemIds: string[], stage: MRItemStage) => void;
   busy: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -261,12 +373,37 @@ function RequestCard({
               <ChevronRight className="size-4 shrink-0 text-[var(--color-ink-secondary)]" />
             )}
             <span className="font-medium text-[var(--color-ink)]">{request.title}</span>
-            {request.number && (
-              <span className="tabular text-[12px] text-[var(--color-ink-secondary)]">
-                {request.number}
-              </span>
-            )}
           </button>
+          {/* `110014`'s `ID` column is the deep link: the number opens the
+              request's own page, where its lines and remarks live. */}
+          <Link
+            href={`/procurement/${request.id}`}
+            className="ml-1.5 tabular text-[12px] text-[var(--color-ink-secondary)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
+          >
+            {request.number ?? "Open request"}
+          </Link>
+          {/* The `Project` column from `110014`, as the card's own line. A
+              request whose project never resolved says so rather than showing
+              a blank cell that reads like "no project needed". */}
+          {showProject && (
+            <p className="mt-1 pl-6 text-[12px]">
+              {request.project_id ? (
+                <Link
+                  href={`/projects/${request.project_id}/procurement`}
+                  className="font-medium text-[var(--color-ink)] hover:underline"
+                >
+                  {request.projectName ?? "Untitled project"}
+                </Link>
+              ) : (
+                <span
+                  className="text-[var(--color-ink-secondary)]"
+                  title="This request has no project FK — the name shown is the legacy label"
+                >
+                  {request.projectName ?? "No project linked"}
+                </span>
+              )}
+            </p>
+          )}
           <p className="mt-1 pl-6 text-[12px] text-[var(--color-ink-secondary)]">
             {request.request_type} · raised by {request.createdByName ?? "someone"} on{" "}
             <span className="tabular">{fmtDate(request.created_at)}</span>
@@ -291,7 +428,12 @@ function RequestCard({
               type="submit"
               variant="ghost"
               size="sm"
-              title="Delete this request"
+              disabled={!projectId}
+              title={
+                projectId
+                  ? "Delete this request"
+                  : "This request is not linked to a project"
+              }
               className="hover:text-[var(--color-red)]"
             >
               <Trash2 className="size-3.5" />
@@ -372,11 +514,11 @@ function RequestCard({
                           with a vendor, not a dropdown (nextItemStages). */}
                       <Select
                         value=""
-                        disabled={busy || next.length === 0}
+                        disabled={busy || next.length === 0 || !projectId}
                         aria-label={`Move ${it.item_name} to another stage`}
                         onChange={(e) => {
                           const to = e.target.value as MRItemStage;
-                          if (to) onMove([it.id], to);
+                          if (to) onMove(projectId, [it.id], to);
                         }}
                         className="h-7 w-44 text-[12px]"
                       >
@@ -399,9 +541,38 @@ function RequestCard({
   );
 }
 
+/* ── The `Project` column the company scope adds (`110014`) ──────────────── */
+
+function ProjectCell({ ref: r }: { ref: ProjectRef }) {
+  if (!r.project_id) {
+    return (
+      <span
+        className="text-[var(--color-ink-disabled)]"
+        title="No project FK on this row — any name shown is the legacy label"
+      >
+        {r.projectName ?? "—"}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={`/projects/${r.project_id}/procurement`}
+      className="text-[var(--color-ink)] hover:underline"
+    >
+      {r.projectName ?? "Untitled project"}
+    </Link>
+  );
+}
+
 /* ── RFQs (frame `105818`) ────────────────────────────────────────────────── */
 
-function RfqTable({ data }: { data: ProjectProcurement }) {
+function RfqTable({
+  data,
+  showProject,
+}: {
+  data: ProjectProcurement;
+  showProject: boolean;
+}) {
   if (data.rfqs.length === 0) {
     return (
       <Card className="border-dashed p-10 text-center">
@@ -421,6 +592,7 @@ function RfqTable({ data }: { data: ProjectProcurement }) {
           <thead>
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
               <th className="px-4 py-2 font-medium">Name</th>
+              {showProject && <th className="px-4 py-2 font-medium">Project</th>}
               <th className="px-4 py-2 font-medium">Vendors</th>
               <th className="px-4 py-2 text-right font-medium">Items</th>
               <th className="px-4 py-2 font-medium">Bid deadline</th>
@@ -445,6 +617,11 @@ function RfqTable({ data }: { data: ProjectProcurement }) {
                       {r.place_of_supply ? ` · ${r.place_of_supply}` : ""}
                     </span>
                   </td>
+                  {showProject && (
+                    <td className="px-4 py-2.5">
+                      <ProjectCell ref={r} />
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
                     {r.vendorNames.length === 0
                       ? "—"
@@ -490,7 +667,13 @@ function RfqTable({ data }: { data: ProjectProcurement }) {
 
 /* ── Orders (frame `105913`) ──────────────────────────────────────────────── */
 
-function OrderTable({ data }: { data: ProjectProcurement }) {
+function OrderTable({
+  data,
+  showProject,
+}: {
+  data: ProjectProcurement;
+  showProject: boolean;
+}) {
   const value = data.orders.reduce((sum, o) => sum + o.amount, 0);
 
   if (data.orders.length === 0) {
@@ -530,6 +713,7 @@ function OrderTable({ data }: { data: ProjectProcurement }) {
             <thead>
               <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
                 <th className="px-4 py-2 font-medium">Order</th>
+                {showProject && <th className="px-4 py-2 font-medium">Project</th>}
                 <th className="px-4 py-2 font-medium">Vendor</th>
                 <th className="px-4 py-2 text-right font-medium">Value</th>
                 <th className="px-4 py-2 font-medium">Delivery</th>
@@ -553,6 +737,11 @@ function OrderTable({ data }: { data: ProjectProcurement }) {
                       {o.kind === "work" ? "Work order" : "Purchase order"}
                     </span>
                   </td>
+                  {showProject && (
+                    <td className="px-4 py-2.5">
+                      <ProjectCell ref={o} />
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
                     {o.vendorName ?? "—"}
                   </td>
@@ -578,7 +767,13 @@ function OrderTable({ data }: { data: ProjectProcurement }) {
 
 /* ── Deliveries — the "Acceptance" the owner called non-negotiable ────────── */
 
-function DeliveryTable({ data }: { data: ProjectProcurement }) {
+function DeliveryTable({
+  data,
+  showProject,
+}: {
+  data: ProjectProcurement;
+  showProject: boolean;
+}) {
   if (data.deliveries.length === 0) {
     return (
       <Card className="border-dashed p-10 text-center">
@@ -601,6 +796,7 @@ function DeliveryTable({ data }: { data: ProjectProcurement }) {
             <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
               <th className="px-4 py-2 font-medium">Received on</th>
               <th className="px-4 py-2 font-medium">Order</th>
+              {showProject && <th className="px-4 py-2 font-medium">Project</th>}
               <th className="px-4 py-2 font-medium">Vendor</th>
               <th className="px-4 py-2 font-medium">Note</th>
             </tr>
@@ -617,6 +813,11 @@ function DeliveryTable({ data }: { data: ProjectProcurement }) {
                     {d.orderName ?? "Order"}
                   </Link>
                 </td>
+                {showProject && (
+                  <td className="px-4 py-2.5">
+                    <ProjectCell ref={d} />
+                  </td>
+                )}
                 <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
                   {d.vendorName ?? "—"}
                 </td>
@@ -677,10 +878,10 @@ interface DraftLine {
 }
 
 function NewRequestDialog({
-  projectId,
+  scope,
   data,
 }: {
-  projectId: string;
+  scope: ProcScope;
   data: ProjectProcurement;
 }) {
   const [open, setOpen] = useState(false);
@@ -693,8 +894,12 @@ function NewRequestDialog({
   const [expected, setExpected] = useState("");
   const [remarks, setRemarks] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([]);
+  // Company scope has to ask which project — a request is always FOR one, and
+  // `createProjectRequest` will not accept a request without a project id.
+  const [picked, setPicked] = useState("");
 
-  const ready = title.trim().length > 0;
+  const projectId = scope.kind === "project" ? scope.projectId : picked;
+  const ready = title.trim().length > 0 && projectId.length > 0;
   const usable = lines.filter((l) => l.item_name.trim() && l.qty > 0);
 
   function addLine() {
@@ -725,6 +930,7 @@ function NewRequestDialog({
         setStep(1);
         setTitle("");
         setLines([]);
+        setPicked("");
       }
     });
   }
@@ -757,6 +963,24 @@ function NewRequestDialog({
         {step === 1 ? (
           <div className="flex flex-col gap-4">
             <FormError error={error ?? undefined} />
+
+            {scope.kind === "company" && (
+              <Field label="Project" htmlFor="req_project" required>
+                <Select
+                  id="req_project"
+                  value={picked}
+                  onChange={(e) => setPicked(e.target.value)}
+                  required
+                >
+                  <option value="">Choose a project…</option>
+                  {data.projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
 
             <Field label="Request type" htmlFor="req_type" required>
               <Select
