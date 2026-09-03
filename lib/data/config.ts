@@ -101,6 +101,44 @@ export async function previewNextNumber(
   );
 }
 
+/**
+ * Issue the next number and consume it.
+ *
+ * `previewNextNumber` above shows what is coming WITHOUT moving the counter —
+ * this one moves it, and the two are deliberately separate calls. A preview
+ * that consumed a number would burn one every time a form was opened and
+ * abandoned, and the gaps in a document series are exactly the thing an
+ * auditor asks about.
+ *
+ * Returns null when the tenant has no series for that document type, which is
+ * a legitimate state: the row is still created, just unnumbered, rather than
+ * refused.
+ */
+export async function issueDocNumber(doc_type: DocType): Promise<string | null> {
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("numbering_series")
+    .select("*")
+    .eq("doc_type", doc_type)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const s = data as unknown as NumberingSeries;
+  const next = Math.max(0, Math.trunc(s.current_int ?? 0)) + 1;
+
+  const { error: bumpErr } = await db
+    .table("numbering_series")
+    .updateById(s.id, { current_int: next, updated_at: new Date().toISOString() });
+  // Handing back a number the counter did not keep would issue it twice.
+  if (bumpErr) return null;
+
+  return formatDocNumber(
+    { prefix: s.prefix, fy_segment: s.fy_segment, padding: s.padding, current_int: next },
+    new Date(),
+  );
+}
+
 /* ── Roles & permissions ──────────────────────────────────────────────────── */
 
 /** The org's roles, from the EXISTING roles table (migration 0001). */

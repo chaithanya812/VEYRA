@@ -163,14 +163,34 @@ export async function enterBidAction(
 }
 
 /* ── Award ─────────────────────────────────────────────────────────────────── */
-export async function awardRfqAction(formData: FormData): Promise<void> {
+
+export type RfqActionState = { error?: string } | undefined;
+
+/**
+ * Award to the vendor a person chose, for the reason they gave.
+ *
+ * It returns its error instead of swallowing it (the old version returned
+ * `void` and a refused award looked exactly like a successful one). PLAN-V4
+ * §9.7: the cheapest bid is not automatically the winner, so a refusal here —
+ * no reason, wrong vendor — has to be visible.
+ */
+export async function awardRfqAction(
+  _prev: RfqActionState,
+  formData: FormData,
+): Promise<RfqActionState> {
   const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const result = await awardRfq(id);
-  if (result.error) return;
+  if (!id) return { error: "Missing RFQ." };
+
+  const result = await awardRfq(id, {
+    vendorId: String(formData.get("vendor_id") ?? ""),
+    reason: String(formData.get("reason") ?? ""),
+  });
+  if (result.error) return { error: result.error };
+
   revalidatePath(`/rfq/${id}`);
   revalidatePath("/rfq");
   revalidatePath("/orders");
   // Jump straight to the auto-drafted PO for the winning vendor when one was made.
   if (result.poId) redirect(`/orders/${result.poId}`);
+  return undefined;
 }

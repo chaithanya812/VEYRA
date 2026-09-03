@@ -462,6 +462,70 @@ async function count2(table, orgId, projectId) {
   return n ?? 0;
 }
 
+/* ── Procurement: one request whose lines are in FOUR places at once ───────── */
+/**
+ * PLAN-V4 §9.7. The whole point of migration 0036 is that a request does not
+ * have a status — `105729`'s Stage cell stacks
+ * `Ordered (4) · Pending (8) · In Stock (4)`. A demo where every line sits at
+ * the same stage demonstrates precisely nothing, so this seeds one request
+ * whose eight lines are spread across four stages, plus a second that has not
+ * been started.
+ */
+async function ensureProjectProcurement(orgId, userId) {
+  const { data: project } = await sb
+    .from("projects").select("id, name").eq("org_id", orgId)
+    .eq("name", "Malviya Nagar 3BHK").limit(1).maybeSingle();
+  if (!project) return;
+
+  const { data: existing } = await sb
+    .from("material_requests").select("id").eq("org_id", orgId)
+    .eq("project_id", project.id).eq("title", "Kitchen interior material request")
+    .maybeSingle();
+  if (existing) return;
+
+  const { data: req } = await sb.from("material_requests").insert({
+    org_id: orgId, project_id: project.id, project_label: project.name,
+    title: "Kitchen interior material request", request_type: "material",
+    number: "MR/2026-27/0042", stage: "requested",
+    expected_delivery: daysFromNow(9), created_by: userId,
+  }).select("id").single();
+
+  if (req) {
+    // Uniform keys on every row — a PostgREST bulk insert sends an explicit
+    // NULL for a key one row omits, defeating the column default.
+    await sb.from("material_request_items").insert([
+      ["Plywood 18mm BWP", "sheet", 24, "ordered"],
+      ["Plywood 12mm BWP", "sheet", 10, "ordered"],
+      ["Laminate — matte walnut", "sheet", 18, "order_requested"],
+      ["Edge banding 22mm", "m", 120, "in_stock"],
+      ["Soft-close hinges", "no", 64, "rfq_raised"],
+      ["Drawer channels 18in", "pair", 24, "rfq_raised"],
+      ["Handles — brushed brass", "no", 32, "pending"],
+      ["Silicone sealant", "tube", 12, "pending"],
+    ].map(([item_name, uom, qty, stage]) => ({
+      org_id: orgId, mr_id: req.id, item_name, uom, qty, stage,
+      item_id: null, is_adhoc: true, remarks: null,
+    })));
+  }
+
+  const { data: req2 } = await sb.from("material_requests").insert({
+    org_id: orgId, project_id: project.id, project_label: project.name,
+    title: "Bedroom wardrobe hardware", request_type: "material",
+    number: "MR/2026-27/0043", stage: "requested",
+    expected_delivery: daysFromNow(21), created_by: userId,
+  }).select("id").single();
+
+  if (req2) {
+    await sb.from("material_request_items").insert([
+      ["Wardrobe rod 8ft", "no", 6, "pending"],
+      ["Mirror 4x2", "no", 2, "pending"],
+    ].map(([item_name, uom, qty, stage]) => ({
+      org_id: orgId, mr_id: req2.id, item_name, uom, qty, stage,
+      item_id: null, is_adhoc: true, remarks: null,
+    })));
+  }
+}
+
 /* ── Config: numbering series + approval rules & a pending request ──────────── */
 async function ensureConfig(orgId, userId) {
   if ((await count("numbering_series", orgId)) === 0) {
@@ -498,6 +562,7 @@ async function main() {
   await ensureSite(orgId, userId);
   await ensureSiteProgress(orgId, userId);
   await ensureLabour(orgId, userId);
+  await ensureProjectProcurement(orgId, userId);
   await ensureConfig(orgId, userId);
 
   console.log(`✓ Demo tenant ${fresh ? "created" : "topped up"} with a full cross-module slice.`);

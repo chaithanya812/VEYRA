@@ -47,8 +47,8 @@ what is obviously missing.
    every number. Log every call to `ai_requests`.
 3. **Migrations are additive and idempotent**, with
    `org_id uuid not null references public.orgs(id) on delete cascade`.
-   **Next free numbers: 0033–0036, then 0039+.** 0030, 0031, 0032, 0037 and
-   0038 are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
+   **Next free numbers: 0033–0035, then 0039+.** 0030, 0031, 0032, 0036, 0037
+   and 0038 are applied. See §5 — and note 0030 is NOT what `PLAN-V4 §15` reserved.
 4. **Ledgers are append-only.** A reversal is a new row plus a filter, never a
    delete.
 5. **Projects never share anything.** A folder, a file, a milestone and a scope
@@ -78,8 +78,8 @@ reaches the client.
 
 ## 2. Where the build is
 
-**State at this handoff: Phases 0–7 complete; Phase 8 complete through §9.6.**
-The next unbuilt thing is **§9.7 Project Procurement** — go to §6.
+**State at this handoff: Phases 0–8 complete.** Phase 8 is finished — §9.1
+through §9.7 are all built. The next unbuilt thing is **Phase 9** — go to §6.
 
 Gates at HEAD, all re-run personally in PowerShell with
 `$LASTEXITCODE` checked. Every number below was verified at this commit, not
@@ -89,15 +89,16 @@ carried over from a previous handoff:
 |---|---|
 | `node ./node_modules/typescript/bin/tsc --noEmit` | ✅ 0 |
 | `node ./node_modules/eslint/bin/eslint.js app lib components` | ✅ 0 |
-| `node ./node_modules/vitest/vitest.mjs run` | ✅ 544/544, 39 files |
-| `node ./node_modules/next/dist/bin/next build` | ✅ 62 page routes |
-| `node scripts/verify.mjs` | ✅ 135/135 |
+| `node ./node_modules/vitest/vitest.mjs run` | ✅ 560/560, 39 files |
+| `node ./node_modules/next/dist/bin/next build` | ✅ 63 page routes |
+| `node scripts/verify.mjs` | ✅ 142/142 |
 | `node scripts/verify-storage.mjs` | ✅ 11/11 |
 
 Baseline when the Phase 0–8 run started: 267 tests · 56 routes · 77 verify.
 Baseline when the Phase 8 completion run started: 426 tests · 57 pages · 94 verify.
 Baseline when §9.5 started: 501 tests · 60 pages · 116 verify · 8 storage.
 Baseline when §9.6 started: 520 tests · 61 pages · 124 verify · 11 storage.
+Baseline when §9.7 started: 544 tests · 62 pages · 135 verify · 11 storage.
 (The earlier "34 files" and "59 routes" were miscounts — vitest reports test
 *files*, of which there were 33, and the build's route list carries entries that
 are not `page.tsx` files. Counting `page.tsx` is unambiguous, so this table now
@@ -134,7 +135,7 @@ does that.)
   Modules tabs, the composable Progress Report at `/projects/[id]/report`.
   Migration 0032: `project_milestones`, `project_milestone_deps`,
   `milestone_templates`.
-- **Phase 8 — §9.1 through §9.6 are DONE.**
+- **Phase 8 — COMPLETE. §9.1 through §9.7 are DONE.**
   - `/projects/[id]/documents` — the browser (migration 0029: `project_folders`,
     `project_files`, `project_file_versions`, `entity_comments`, plus the
     private storage bucket).
@@ -181,6 +182,22 @@ does that.)
     (3) **`No Vendor` is the absence of vendor rows**, never a placeholder
     vendor — a tenant who later creates a vendor with that name must not absorb
     a year of unattributed labour.
+  - `/projects/[id]/procurement` — **Project Procurement** (§9.7), the last item
+    in Phase 8. Sub-tabs Request · RFQs · Orders · Deliveries · Inventory, the
+    four tiles, the `Total items` segmented bar, the two-step `Raise request`
+    wizard from `105800`, and a per-LINE stage control. Migration 0036.
+    **Three things to know.** (1) **A request does not have a status.** 0036
+    moved the procurement stage onto `material_request_items` and
+    `material_requests.stage` narrowed to the request's own lifecycle (draft /
+    requested / cancelled). Every count on the screen — tiles included — is an
+    aggregation from `lib/material-requests-model.ts`. There is no "advance
+    this request" action on purpose: it would re-stamp lines somebody has
+    already handled. (2) **`awardRfq` no longer picks the cheapest bid.** It
+    takes `{ vendorId, reason }`, both required, and stores who decided —
+    frame `105853` shows a buyer ordering from the dearer vendor, and the
+    ranking is now a suggestion the dialog shows. (3) **The Inventory sub-tab is
+    a labelled placeholder** pointing at §10.2. Building it would squat on
+    migration 0033 and produce a second stock model.
 
   **Four things to know before touching this.**
   1. **PDFs do not carry pins.** A raster renders in our own element, so a click
@@ -267,7 +284,7 @@ do the same**:
 
 ## 5. Migration ledger
 
-Applied: **0001–0032, 0037, 0038.**
+Applied: **0001–0032, 0036, 0037, 0038.**
 
 | # | Contents | § | Status |
 |---|---|---|---|
@@ -281,7 +298,7 @@ Applied: **0001–0032, 0037, 0038.**
 | **0033** | warehouse `kind` + `project_id`; GRN auto-numbering | 10.2 | free |
 | **0034** | `wfh_requests`, `holidays` | 11.1 | free |
 | **0035** | `audit_events`; permission enforcement columns | 11.3–11.4 | free |
-| **0036** | material-request **per-line stage** model | 9.7 | free |
+| **0036** | material-request **per-line stage** model (+ `request_type`, `number`, and the RFQ award columns) | 9.7 | ✅ applied |
 | 0037 | payment ledger columns (`vendor_id`, `member_id`, `expense_type`, `category`, `reversal_of`, `stock_in_requested`) + `project_files.payment_id` | 9.4 | ✅ applied |
 | **0038** | site progress columns on `site_photos` (`storage_path`, `mime_type`, `size_bytes`, `client_visible`, `taken_on`, `uploaded_by`) + the "a stored photo names its project" check | 9.5 | ✅ applied |
 
@@ -296,19 +313,12 @@ the gaps are filled. **Do not renumber.** The ledger now runs past 0036.
 
 ## 6. What to build next, in order
 
-### Phase 8, the rest (`PLAN-V4 §9`) — **start here**
+### Phase 8 (`PLAN-V4 §9`) — done, nothing to do here
 
-**§9.1 through §9.6 are done** (see §2). The next unbuilt thing is §9.7, and
-it is the last item in Phase 8.
+**Phase 8 is COMPLETE — §9.1 through §9.7 are all built** (see §2). Start at
+Phase 9.
 
-1. **§9.7 Project Procurement** — frames `105729`–`105927`. **Migration 0036**,
-   the per-line stage model — the most important schema change in the phase.
-   `Stage` is multi-valued per request; move status to the LINE ITEM and derive
-   the request's breakdown by aggregation. Much already exists (`rfqs`,
-   `purchase_orders`, `po_lines`, migrations 0012–0013) — **re-point it at
-   `project_id` and `scope_items`, do not rebuild it.**
-
-Then Phases 9–12 (`PLAN-V4 §10–§13`), in order:
+Phases 9–12 (`PLAN-V4 §10–§13`), in order — **start here**:
 
 - **Phase 9** — company-wide Procurement (§10.1, a scope switch over the same
   data layer, NOT a second implementation) · Inventory (§10.2, migration 0033)
@@ -373,6 +383,8 @@ extending this codebase and forking it.
 | `workspace_options` kind `labour_category` | trades, anywhere | Nine trades from `105659`, seeded. Used by vendor contract categories AND labour. One list. |
 | `lib/data/project-files.ts` → `listEntityCommentsBatch` | any grid whose rows each carry a thread | Every comment on a SET of objects in ONE read, keyed by entity id. Forty photos each with a thread is forty round-trips without it. Takes the same `audience` narrowing. |
 | `lib/data/storage.ts` → `sitePhotoPath` + `ALLOWED_IMAGE_MIME` | any image-only upload | Same `<org>/<project>/<id>/…` prefix as documents, so `projectStorageUsage` counts it without being taught about it. |
+| `lib/material-requests-model.ts` → `stageBreakdown` / `procurementTotals` | anything whose parts are in different places at once | The §9.7 shape: status on the LINE, the parent's stage derived by counting. `PROC_TABS` and `procTabOf` live here too — see the §9.7 lesson about client-module consts. |
+| `lib/data/config.ts` → `issueDocNumber` | any numbered document | Consumes the tenant's series; `previewNextNumber` shows the next one WITHOUT consuming it. Two calls on purpose — a preview that burned a number would leave gaps an auditor asks about. |
 | `lib/labour-model.ts` | any headcount, and any breakdown that can double-count | `totalOf` / `summarise` are the ONLY places labour is added. `LabourBreakdown` is the shape to copy whenever one row can belong to several slices: it reports `sliceTotal` AND `reportTotal` AND `overlaps`, so the screen can state the double-count instead of hiding it. §9.7's per-line stages will need exactly this. |
 | `uploadProjectFile({ link })` | any module that needs an attachment | Typed `{ contract_id \| payment_id \| labour_entry_id }`. **Do not add a fifth attachment table** — point at `project_files` and add a column. |
 | `MultiSelect` in `app/(app)/projects/[id]/labour/labour-view.tsx` | any searchable checkbox dropdown | `105659` / `105706`. Lift it into `components/ui/` the moment a second module needs it — §9.7's vendor pickers probably will. |
@@ -555,3 +567,23 @@ opened.
   saves the headcount, then attempts the file, and reports a partial success if
   the file fails. Deciding that a 30 MB photo means nobody worked that day is
   the kind of "correctness" that loses real data.
+
+### Added by the §9.7 session
+
+- **A `"use client"` module's exported CONST is a client reference on the
+  server.** `PROC_TABS` was declared in the view and imported by the page;
+  `tsc` passed, `next build` passed, and every request threw
+  `PROC_TABS.includes is not a function`. Types cross that boundary, values do
+  not. Vocabulary belongs in the pure model — which is where it now lives.
+- **Selecting a column that does not exist empties the WHOLE read, silently.**
+  `po_lines` has no `received_qty` (receipts live in `po_receipt_lines`, one row
+  per load, because a line can arrive in three). Asking for it made PostgREST
+  error, the result came back empty, and every order showed "— lines received"
+  as if that were the data. This is §9's first lesson wearing a new hat: an
+  unchecked `.error` is a lie with a plausible shape.
+- **The dev server's action ids are NOT the build's.** Both exist in
+  `.next` at once. Pull them from `/_next/static/chunks/*` while the dev server
+  is the thing you are testing.
+- **Award captures a reason now, and old awards do not have one.** The RFQ list
+  prints "No reason recorded" for pre-0036 awards rather than inventing one.
+  Backfilling a plausible reason would have been worse than the gap.

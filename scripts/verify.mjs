@@ -1073,6 +1073,108 @@ async function main() {
     `${(orphanTrades.data ?? []).length} trades, file link ${survivingFile.data?.labour_entry_id}`,
   );
 
+  // ── Procurement: status lives on the LINE (PLAN-V4 §9.7, migration 0036) ─
+  // The assertion that matters: one request holds several stages at once,
+  // which is what `105729`'s Stage cell shows and what a single
+  // `material_requests.stage` could never express.
+  const { data: req } = await sb.from("material_requests").insert({
+    org_id: A.id, project_id: payProj.id, title: "Kitchen interior material request",
+    request_type: "material", number: "DZY-REQ-170", stage: "requested",
+    expected_delivery: "2026-06-30",
+  }).select("id").single();
+
+  await sb.from("material_request_items").insert([
+    // Uniform keys: a PostgREST bulk insert sends an explicit NULL for a key
+    // one row omits, which defeats the column default.
+    { org_id: A.id, mr_id: req.id, item_name: "Plywood 18mm", uom: "sheet", qty: 12, stage: "ordered",         item_id: null, is_adhoc: true, remarks: null },
+    { org_id: A.id, mr_id: req.id, item_name: "Laminate",     uom: "sheet", qty: 20, stage: "pending",         item_id: null, is_adhoc: true, remarks: null },
+    { org_id: A.id, mr_id: req.id, item_name: "Edge banding", uom: "m",     qty: 60, stage: "in_stock",        item_id: null, is_adhoc: true, remarks: null },
+    { org_id: A.id, mr_id: req.id, item_name: "Hinges",       uom: "no",    qty: 40, stage: "order_requested", item_id: null, is_adhoc: true, remarks: null },
+  ]);
+
+  const lines = await sb
+    .from("material_request_items").select("stage").eq("org_id", A.id).eq("mr_id", req.id);
+  const stageSet = new Set((lines.data ?? []).map((l) => l.stage));
+  check(
+    "ONE request holds several line stages at once (the §9.7 model)",
+    stageSet.size === 4,
+    `stages: ${[...stageSet].sort().join(", ")}`,
+  );
+
+  // The tile's arithmetic: the breakdown adds back to the item count.
+  const counted = {};
+  for (const l of lines.data ?? []) counted[l.stage] = (counted[l.stage] ?? 0) + 1;
+  const breakdownTotal = Object.values(counted).reduce((a, b) => a + b, 0);
+  check(
+    "the stage breakdown adds back to the total item count",
+    breakdownTotal === (lines.data ?? []).length && breakdownTotal === 4,
+    `${Object.entries(counted).map(([k, v]) => `${k}(${v})`).join(" · ")} = ${breakdownTotal}`,
+  );
+
+  // A typo'd stage is refused rather than becoming a fifth column nobody
+  // planned for.
+  const badStage = await sb.from("material_request_items").insert({
+    org_id: A.id, mr_id: req.id, item_name: "Mystery", qty: 1, stage: "hlaf_ordered",
+  });
+  check(
+    "an unknown line stage is refused at the database",
+    !!badStage.error,
+    badStage.error?.code || "no error",
+  );
+
+  // Request numbers are unique per tenant, not globally: two orgs may each run
+  // their own DZY-REQ-170.
+  const dupNumber = await sb.from("material_requests").insert({
+    org_id: A.id, project_id: payProj.id, title: "Duplicate number", number: "DZY-REQ-170",
+  });
+  const sameNumberOtherOrg = await sb.from("material_requests").insert({
+    org_id: B.id, title: "Another tenant's 170", number: "DZY-REQ-170",
+  });
+  check(
+    "a request number is unique WITHIN a tenant, and free across tenants",
+    !!dupNumber.error && !sameNumberOtherOrg.error,
+    `${dupNumber.error?.code || "dup accepted"} / ${sameNumberOtherOrg.error?.message ?? "other org ok"}`,
+  );
+
+  // Project isolation, the same rule as everywhere else in this phase.
+  const otherProjectReqs = await sb
+    .from("material_requests").select("id").eq("org_id", A.id).eq("project_id", projA2.id);
+  check(
+    "one project's requests are invisible to another project",
+    (otherProjectReqs.data ?? []).length === 0,
+    `got ${(otherProjectReqs.data ?? []).length}`,
+  );
+
+  // ── The award is a decision, not arithmetic (frame `105853`) ─────────────
+  // `name_key` is the dedupe key the vendors table requires (0004).
+  const { data: vendorCheap } = await sb
+    .from("vendors")
+    .insert({ org_id: A.id, name: "Cheaper Traders", name_key: nameKey("Cheaper Traders") })
+    .select("id").single();
+  const { data: vendorChosen } = await sb
+    .from("vendors")
+    .insert({ org_id: A.id, name: "Reliable Timbers", name_key: nameKey("Reliable Timbers") })
+    .select("id").single();
+
+  const { data: rfq } = await sb.from("rfqs").insert({
+    org_id: A.id, project_id: payProj.id, mr_id: req.id, title: "Ply and laminate",
+    status: "awarded", awarded_vendor_id: vendorChosen.id,
+    award_reason: "Can deliver by the 14th; the cheaper vendor was short twice.",
+  }).select("id, awarded_vendor_id, award_reason").single();
+
+  check(
+    "an award records WHO won and WHY, not just a status",
+    rfq.awarded_vendor_id === vendorChosen.id
+      && (rfq.award_reason ?? "").length > 10,
+    rfq.award_reason ?? "no reason",
+  );
+
+  check(
+    "the awarded vendor need not be the cheapest — that is the point",
+    rfq.awarded_vendor_id !== vendorCheap.id,
+    "a person chose",
+  );
+
   // ── Milestone dependencies (PLAN-V4 §9.2) ────────────────────────────────
   const deliveryRows = await sb
     .from("project_milestones").select("id, name")

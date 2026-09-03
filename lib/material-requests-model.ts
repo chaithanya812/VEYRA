@@ -112,3 +112,236 @@ export function isOverdue(
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return deliveryDay < today;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PER-LINE STAGES (PLAN-V4 §9.7, migration 0036, frame `105729`)
+   ══════════════════════════════════════════════════════════════════════════
+   The frame's Stage cell is not a status, it is a BREAKDOWN:
+
+       DZY-REQ-164   Order Requested (3) · Ordered (6) · Pending (3) · In Stock (1)
+
+   A request of thirteen items is not "ordered" — six of them are. So the
+   procurement status lives on the line item and the request's stage is derived
+   here, in one place, by counting.
+
+   The tile in `105729` is the same arithmetic one level up: `Total items (177)`
+   split `Pending (39) · RFQ Raised (11) · Ordered (127)`, and those three add
+   back to 177. Every count on this screen comes out of these functions so that
+   addition can never stop holding.
+   ────────────────────────────────────────────────────────────────────────── */
+
+export const MR_ITEM_STAGES = [
+  "pending",
+  "rfq_raised",
+  "order_requested",
+  "ordered",
+  "in_stock",
+  "cancelled",
+] as const;
+export type MRItemStage = (typeof MR_ITEM_STAGES)[number];
+
+/**
+ * Grey → amber → green as a line moves toward site. Red is NOT here: a line
+ * that is merely waiting is not an alarm (DESIGN-DIRECTION §2). The one red
+ * job in this module stays `isOverdue`.
+ */
+export const MR_ITEM_STAGE_META: Record<MRItemStage, { label: string; tone: MRTone }> = {
+  pending: { label: "Pending", tone: "muted" },
+  rfq_raised: { label: "RFQ raised", tone: "active" },
+  order_requested: { label: "Order requested", tone: "active" },
+  ordered: { label: "Ordered", tone: "positive" },
+  in_stock: { label: "In stock", tone: "positive" },
+  cancelled: { label: "Cancelled", tone: "muted" },
+};
+
+/** Anything unrecognised reads as `pending` rather than vanishing from a count. */
+export function itemStageOf(raw: string | null | undefined): MRItemStage {
+  return (MR_ITEM_STAGES as readonly string[]).includes(String(raw))
+    ? (raw as MRItemStage)
+    : "pending";
+}
+
+export interface StageCount {
+  stage: MRItemStage;
+  label: string;
+  tone: MRTone;
+  count: number;
+}
+
+/**
+ * One request's Stage cell.
+ *
+ * Stages with no items are dropped — the frame never prints `Cancelled (0)` —
+ * and the order is the lifecycle order, not the count order, so the same
+ * request does not reshuffle its own cell as work progresses.
+ */
+export function stageBreakdown(
+  items: readonly { stage?: string | null }[],
+): StageCount[] {
+  const counts = new Map<MRItemStage, number>();
+  for (const i of items) {
+    const s = itemStageOf(i.stage);
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  return MR_ITEM_STAGES.filter((s) => (counts.get(s) ?? 0) > 0).map((s) => ({
+    stage: s,
+    label: MR_ITEM_STAGE_META[s].label,
+    tone: MR_ITEM_STAGE_META[s].tone,
+    count: counts.get(s) ?? 0,
+  }));
+}
+
+/**
+ * Where a whole request stands, derived — never stored.
+ *
+ * `not_started` every line is pending · `complete` every line has landed or
+ * been cancelled · `in_progress` anything in between. This is what the frame's
+ * `In Progress Requests` tile counts, and deriving it means it cannot drift
+ * from the lines it describes.
+ */
+export type RequestProgress = "empty" | "not_started" | "in_progress" | "complete";
+
+export function requestProgress(
+  items: readonly { stage?: string | null }[],
+): RequestProgress {
+  if (items.length === 0) return "empty";
+  const stages = items.map((i) => itemStageOf(i.stage));
+  const settled = stages.filter((s) => s === "in_stock" || s === "cancelled").length;
+  if (settled === stages.length) return "complete";
+  if (stages.every((s) => s === "pending")) return "not_started";
+  return "in_progress";
+}
+
+export const REQUEST_PROGRESS_LABELS: Record<RequestProgress, string> = {
+  empty: "No items",
+  not_started: "Not started",
+  in_progress: "In progress",
+  complete: "Complete",
+};
+
+export interface ProcurementTotals {
+  requests: number;
+  inProgress: number;
+  dueSoon: number;
+  overdue: number;
+  items: number;
+  byStage: StageCount[];
+}
+
+/**
+ * The four tiles in `105729`, from the same counting as everything else.
+ *
+ * `dueSoon` is "expected within the next `withinDays` days and not yet
+ * settled" — the frame's `Due Delivery Date` tile. Overdue is counted
+ * separately because a late delivery is a different problem from an imminent
+ * one, and only one of them is red.
+ */
+export function procurementTotals(
+  requests: readonly {
+    expected_delivery?: string | null;
+    stage?: string | null;
+    items: readonly { stage?: string | null }[];
+  }[],
+  withinDays = 7,
+  today = new Date(),
+): ProcurementTotals {
+  const allItems: { stage?: string | null }[] = [];
+  let inProgress = 0;
+  let dueSoon = 0;
+  let overdue = 0;
+
+  const midnight = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  ).getTime();
+  const horizon = midnight + withinDays * 86_400_000;
+
+  for (const r of requests) {
+    allItems.push(...r.items);
+    const progress = requestProgress(r.items);
+    if (progress === "in_progress" || progress === "not_started") {
+      if (progress === "in_progress") inProgress++;
+
+      const due = dayValue(r.expected_delivery);
+      if (due != null) {
+        if (due < midnight) overdue++;
+        else if (due <= horizon) dueSoon++;
+      }
+    }
+  }
+
+  return {
+    requests: requests.length,
+    inProgress,
+    dueSoon,
+    overdue,
+    items: allItems.length,
+    byStage: stageBreakdown(allItems),
+  };
+}
+
+/** A `YYYY-MM-DD` read on the calendar, never shifted through UTC. */
+function dayValue(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(raw).trim());
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+}
+
+/**
+ * The legal next stages for a line.
+ *
+ * Forward only, with one exception: anything may be cancelled, and a cancelled
+ * line may be reopened to `pending`. Procurement moves in one direction on a
+ * real site — un-ordering something that has been ordered is a new
+ * conversation with a vendor, not a dropdown.
+ */
+export function nextItemStages(current: MRItemStage): MRItemStage[] {
+  if (current === "cancelled") return ["pending"];
+  const order: MRItemStage[] = [
+    "pending",
+    "rfq_raised",
+    "order_requested",
+    "ordered",
+    "in_stock",
+  ];
+  const at = order.indexOf(current);
+  if (at < 0) return ["cancelled"];
+  return [...order.slice(at + 1), "cancelled"];
+}
+
+/* ── The project procurement sub-tabs (frame `105729`) ────────────────────── */
+
+/**
+ * The owner named four of these as non-negotiable: *"you got RFQs, you got
+ * Orders, you got Acceptance… you have got to keep those four things."*
+ *
+ * They live HERE, in the pure model, and not in the view — a `"use client"`
+ * module's exported const is a client reference when a server component
+ * imports it, so `PROC_TABS.includes(...)` compiles and then throws at request
+ * time. Types cross that boundary; values do not.
+ */
+export const PROC_TABS = [
+  "requests",
+  "rfqs",
+  "orders",
+  "deliveries",
+  "inventory",
+] as const;
+export type ProcTab = (typeof PROC_TABS)[number];
+
+export const PROC_TAB_LABELS: Record<ProcTab, string> = {
+  requests: "Request",
+  rfqs: "RFQs",
+  orders: "Orders",
+  deliveries: "Deliveries",
+  inventory: "Inventory",
+};
+
+/** Unknown values fall back to the first tab rather than throwing. */
+export function procTabOf(raw: string | null | undefined): ProcTab {
+  return (PROC_TABS as readonly string[]).includes(String(raw))
+    ? (raw as ProcTab)
+    : "requests";
+}

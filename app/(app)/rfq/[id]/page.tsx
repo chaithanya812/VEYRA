@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
-import { awardRfqAction } from "../actions";
 import { getRfq, bidComparison, vendorNames } from "@/lib/data/rfq";
 import {
   RFQ_STATUS_META,
@@ -11,7 +10,7 @@ import {
   type RfqTone,
 } from "@/lib/rfq-model";
 import { EnterBidForm } from "./enter-bid-form";
-import { Button } from "@/components/ui/button";
+import { AwardDialog } from "./award-dialog";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
 import { fmtDate, inr } from "@/lib/utils";
 
@@ -51,6 +50,19 @@ export default async function RfqDetailPage({
   const awardable = rfq.status !== "awarded" && rfq.status !== "closed";
   const comparison = tab === "comparison" ? await bidComparison(id) : null;
 
+  // The award dialog needs every bidding vendor and its total, whichever tab is
+  // open — so this read is not tied to the comparison tab being visible.
+  const forAward = await bidComparison(id);
+  const awardOptions = (forAward?.vendorTotals ?? [])
+    .filter((v) => v.total > 0)
+    .map((v) => ({
+      vendorId: v.vendorId,
+      vendorName: v.vendorName,
+      total: v.total,
+      rank: v.rank,
+    }))
+    .sort((a, b) => a.total - b.total);
+
   return (
     <div className="mx-auto max-w-6xl">
       <Link
@@ -65,13 +77,8 @@ export default async function RfqDetailPage({
         actions={
           <>
             <StatusChip tone={TONE_TO_CHIP[meta.tone]} label={meta.label} />
-            {awardable && (
-              <form action={awardRfqAction}>
-                <input type="hidden" name="id" value={rfq.id} />
-                <Button type="submit" variant="primary">
-                  Award
-                </Button>
-              </form>
+            {awardable && awardOptions.length > 0 && (
+              <AwardDialog rfqId={rfq.id} options={awardOptions} />
             )}
           </>
         }

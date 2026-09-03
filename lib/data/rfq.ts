@@ -481,21 +481,42 @@ export async function bidComparison(rfqId: string): Promise<BidComparison | null
 /* ── Award ─────────────────────────────────────────────────────────────────── */
 
 /**
- * One-click award: flips status to 'awarded' AND auto-creates a draft PO for the
- * winning (rank-1, lowest landed total) vendor, with lines carried over from that
- * vendor's active bid (PROC-RFQ-008). Rates are CONFIG copied from the bid — no
- * LLM. PO creation is best-effort: the award still succeeds if it can't be built,
- * and re-awarding is a no-op (so no duplicate PO). Returns the new PO id.
+ * Award the RFQ to a vendor A PERSON CHOSE, with the reason they chose them.
+ *
+ * ⚠ THIS USED TO PICK THE CHEAPEST BID AUTOMATICALLY, and PLAN-V4 §9.7 says
+ * that was wrong. Frame `105853` is the evidence: in the owner's own data the
+ * cheaper bid was NOT the one ordered. A site buys on delivery date, on whose
+ * last three loads were not short, on who answers the phone — arithmetic ranks
+ * the bids, it does not decide between them. `bidComparison()` still computes
+ * the ranking and the screen still shows it; it is a suggestion now.
+ *
+ * So `vendorId` is required and `reason` is required, and both are stored. An
+ * award nobody can explain six months later is an award nobody can defend.
+ *
+ * The draft PO is still built from the winner's active bid — rates are CONFIG
+ * copied from that bid, never an LLM (HARD RULE 2). PO creation stays
+ * best-effort: the award stands even if the draft cannot be built, and
+ * re-awarding is a no-op so there is never a duplicate PO.
  */
 export async function awardRfq(
   rfqId: string,
+  choice: { vendorId: string; reason: string },
 ): Promise<{ error?: string; poId?: string }> {
+  const reason = (choice?.reason ?? "").trim();
+  if (!choice?.vendorId) return { error: "Choose the vendor to award to." };
+  if (reason.length < 3) {
+    return { error: "Say why this vendor won — an award nobody can explain is not a decision." };
+  }
+
   const full = await getRfq(rfqId);
   if (!full) return { error: "RFQ not found." };
   const { rfq, vendors, items, bids, bidLines } = full;
   if (rfq.status === "awarded") return {}; // idempotent — don't re-create a PO
   if (rfq.status === "closed") return { error: "This RFQ is closed." };
   if (bids.length < 1) return { error: "Award needs at least one submitted bid." };
+  if (!vendors.some((v) => v.vendor_id === choice.vendorId)) {
+    return { error: "That vendor was not invited to this RFQ." };
+  }
 
   const { db } = await withOrg();
 
@@ -512,30 +533,28 @@ export async function awardRfq(
     m.set(l.rfq_item_id, l);
   }
 
-  // Rank vendors by total landed cost; the winner is rank 1.
-  const totals = vendors
-    .map((v) => {
-      const bid = activeByVendor.get(v.vendor_id);
-      const lines = bid ? [...(linesByBid.get(bid.id)?.values() ?? [])] : [];
-      return {
-        vendorId: v.vendor_id,
-        total: lines.reduce((s, l) => s + (Number(l.line_total) || 0), 0),
-        hasBid: !!bid && lines.length > 0,
-      };
-    })
-    .filter((t) => t.hasBid);
-  const ranks = rankBids(totals.map((t) => ({ vendorId: t.vendorId, total: t.total })));
-  const winnerId = Object.keys(ranks).find((vid) => ranks[vid] === 1);
+  // The winner is the vendor a person picked. The ranking below is computed
+  // only so the award can record whether the buyer went with the cheapest —
+  // which is a useful thing to be able to ask later, and a terrible thing to
+  // decide automatically.
+  const winnerId = choice.vendorId;
+  if (!activeByVendor.get(winnerId)) {
+    return { error: "That vendor has not submitted a bid on this RFQ." };
+  }
 
   // Flip the RFQ to awarded first (the guaranteed part of the operation).
+  const { ctx } = await withOrg();
   const { error: awardErr } = await db.table("rfqs").updateById(rfqId, {
     status: "awarded" satisfies (typeof RFQ_STATUSES)[number],
+    awarded_vendor_id: winnerId,
+    award_reason: reason,
+    awarded_by: ctx.userId,
+    awarded_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
   if (awardErr) return { error: awardErr.message };
 
   // Best-effort: draft a PO for the winner from their bid lines.
-  if (!winnerId) return {};
   const winnerBid = activeByVendor.get(winnerId)!;
   const winnerLines = linesByBid.get(winnerBid.id);
   const poLines = items
