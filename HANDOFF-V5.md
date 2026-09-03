@@ -1,3 +1,7 @@
+> **⛔ SUPERSEDED — do not read this file.** `HANDOFF-V6.md` is the current
+> handoff. This one describes the build mid-Phase-8 and its "what to build next"
+> section is finished work. Kept only as history.
+
 # HANDOFF V5 — VEYRA
 
 **This is the current, authoritative handoff.** It supersedes `HANDOFF-V4.md`
