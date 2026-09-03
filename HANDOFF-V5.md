@@ -347,13 +347,14 @@ and push on through Phase 12**. So:
   = false`), **Quotation 2.0**, **accounting export** — all still parked. Do not
   build them, do not design them unprompted, and do not delete the parked
   panels or the "soon" cards.
-- **Deployed on 1 Sept 2026, at the owner's explicit instruction.** `6afb484`
-  (Phase 8 through §9.5) is pushed to `origin/quotations-v2-plus-fleet` and live
-  in Vercel production at **https://veyra-five-beta.vercel.app**, reading the
-  same Supabase project the local app does. `main` is untouched — production is
-  running this branch's code, not main's.
-  **Rule 9 has not changed:** that was one authorisation, for that state. Do
-  not push or deploy again without asking.
+- **Deployed at the owner's instruction.** `bb872c5` (Phase 8, COMPLETE) is
+  pushed to `origin/quotations-v2-plus-fleet` and live in Vercel production at
+  **https://veyra-five-beta.vercel.app**, reading the same Supabase project the
+  local app does. `main` is untouched — production is running this branch's
+  code, not main's. Deployed twice: `6afb484` (through §9.5) on the owner's
+  first instruction, then `bb872c5` at the Phase 8 boundary.
+  **Rule 9 has not changed:** the owner authorised publishing this run's work.
+  Do not push or deploy a NEW phase without asking.
   Two things known about production and not yet fixed:
   1. **The Vercel project has only the six Supabase env vars.** No `GEMINI_*` /
      `AI_*` keys, so every AI surface (SmartPlan, the BOQ parse) will fail in
