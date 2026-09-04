@@ -1,13 +1,21 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Card, PageHeader } from "@/components/ui/primitives";
+import { Card, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { canAll } from "@/lib/data/permissions";
 import { REPORTS } from "./reports-config";
 
 /**
- * Reports index (FEATURE-REGISTER OPS-REP-001) — six focused, read-only
- * reports, not a builder. Cards link into each report's table.
+ * Reports index (FEATURE-REGISTER OPS-REP-001) — focused, read-only reports,
+ * not a builder. Cards link into each report's table.
+ *
+ * A card is only rendered when the caller holds that report's capability.
+ * Showing a card that leads to a refusal teaches people the app is broken; the
+ * route guard behind it still refuses, because a hidden link is presentation
+ * and never a control.
  */
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const allowed = await canAll(REPORTS.map((r) => r.capability));
+  const visible = REPORTS.filter((r) => allowed[r.capability]);
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
@@ -15,8 +23,14 @@ export default function ReportsPage() {
         subtitle="Read-only views across leads, money, procurement and projects"
       />
 
+      {visible.length === 0 ? (
+        <EmptyState
+          title="No reports available to you"
+          description="Reports are granted one at a time. An admin can enable them in Settings → Roles & permissions."
+        />
+      ) : (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {REPORTS.map((r) => {
+        {visible.map((r) => {
           const Icon = r.icon;
           return (
             <Link key={r.slug} href={`/reports/${r.slug}`} className="group">
@@ -40,6 +54,7 @@ export default function ReportsPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }

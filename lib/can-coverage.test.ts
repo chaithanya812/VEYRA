@@ -74,6 +74,51 @@ const all = files.flatMap((f) =>
   ),
 );
 
+describe("every report is gated on a real capability", () => {
+  const src = readFileSync(join("app", "(app)", "reports", "reports-config.tsx"), "utf8");
+
+  it("finds the report definitions (guards the reader itself)", () => {
+    expect(src.match(/slug: "/g)?.length ?? 0).toBeGreaterThanOrEqual(9);
+  });
+
+  it("every report declares a capability", () => {
+    const slugs = src.match(/slug: "/g)?.length ?? 0;
+    const caps = src.match(/capability: "/g)?.length ?? 0;
+    // One capability per report. A report without one would be reachable by
+    // anybody who could guess its URL.
+    expect(caps).toBe(slugs);
+  });
+
+  it("every declared capability exists in the registry", () => {
+    const bad: string[] = [];
+    for (const m of src.matchAll(/capability: "([^"]+)"/g)) {
+      if (!isCapability(m[1])) bad.push(m[1]);
+    }
+    // A typo here fails CLOSED, so the report refuses everyone — owner
+    // included — and only shows up when somebody tries to open it.
+    expect(bad).toEqual([]);
+  });
+
+  it("all six Reports permission groups resolve to a real report", () => {
+    // Part 3 Unit 5 named six. A report a permission names and the product
+    // does not have is the same broken promise as a permission nothing
+    // enforces, pointing the other way.
+    const declared = new Set(
+      [...src.matchAll(/capability: "([^"]+)"/g)].map((m) => m[1]),
+    );
+    for (const key of [
+      "reports.payment.view",
+      "reports.client.view",
+      "reports.user.view",
+      "reports.labour.view",
+      "reports.lead.view",
+      "reports.financial.view",
+    ]) {
+      expect(declared.has(key), `${key} has no report`).toBe(true);
+    }
+  });
+});
+
 describe("every server action is behind can()", () => {
   it("finds the action files at all (guards the walker itself)", () => {
     expect(files.length).toBeGreaterThan(25);

@@ -6,15 +6,21 @@ import {
   FolderKanban,
   Hourglass,
   Percent,
+  HardHat,
   Truck,
+  UserRound,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import {
+  clientSummary,
   gstSummary,
+  labourSummary,
   projectProfitability,
   receivablesAgeing,
   salesFunnel,
   stockSummary,
+  userActivity,
   vendorPerformance,
 } from "@/lib/data/reports";
 import { inr } from "@/lib/utils";
@@ -52,6 +58,22 @@ export interface ReportDef {
   subtitle: string;
   cardDescription: string;
   icon: LucideIcon;
+  /**
+   * The capability that opens this report (Part 3 Unit 5).
+   *
+   * The permission matrix names SIX report groups — Payment, Client, User,
+   * Labour, Lead, Financial — and each now resolves to a real report. A report
+   * a permission names and the product does not have is the same broken
+   * promise as a permission nothing enforces, pointing the other way.
+   *
+   * Two reports predate that taxonomy and do not belong to any of the six:
+   * Vendor Performance and Stock Summary. Rather than force them into a group
+   * they are not, each is gated on the capability that owns the DATA it reads
+   * — if you may not view vendors, you may not read a vendor report. That is
+   * the safer rule anyway: a report is a read, and it should need whatever
+   * reading that module needs.
+   */
+  capability: string;
   run(): Promise<RenderedReport>;
 }
 
@@ -71,6 +93,7 @@ const FUNNEL_LABELS: Record<string, string> = {
 export const REPORTS: ReportDef[] = [
   {
     slug: "sales-funnel",
+    capability: "reports.lead.view",
     title: "Sales Funnel",
     subtitle: "Leads grouped by pipeline status — count and total value",
     cardDescription:
@@ -99,6 +122,7 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "receivables-ageing",
+    capability: "reports.payment.view",
     title: "Receivables Ageing",
     subtitle:
       "Outstanding client receivables — current vs past-due milestones",
@@ -142,6 +166,7 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "vendor-performance",
+    capability: "vendors.vendor.view",
     title: "Vendor Performance",
     subtitle: "Purchase orders grouped by vendor — count and total spend",
     cardDescription:
@@ -170,6 +195,7 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "stock-summary",
+    capability: "inventory.warehouse.view",
     title: "Stock Summary",
     subtitle: "Current quantity per item across warehouses",
     cardDescription:
@@ -202,6 +228,7 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "gst-summary",
+    capability: "reports.financial.view",
     title: "GST Summary",
     subtitle:
       "Rate-wise taxable value and tax across live quotation lines",
@@ -231,6 +258,7 @@ export const REPORTS: ReportDef[] = [
   },
   {
     slug: "project-profitability",
+    capability: "reports.financial.view",
     title: "Project Profitability",
     subtitle: "Project value next to cash P&L booked under the same label",
     cardDescription:
@@ -254,6 +282,122 @@ export const REPORTS: ReportDef[] = [
         emptyTitle: "No projects yet",
         emptyDescription:
           "Create a project (and tag payments with its label) to see profitability.",
+      };
+    },
+  },
+  {
+    slug: "client-summary",
+    capability: "reports.client.view",
+    title: "Client Summary",
+    subtitle: "Money by client — sold, received, and still outstanding",
+    cardDescription:
+      "Every client's projects, what the work was sold for, and what is still to come in.",
+    icon: Users,
+    async run() {
+      const rows = await clientSummary();
+      return {
+        head: ["Client", "Projects", "Value", "Received", "Outstanding"],
+        rows: rows.map((r) => [
+          { node: r.client },
+          { node: r.projects.toLocaleString("en-IN"), right: true },
+          { node: inr(r.value), right: true },
+          { node: inr(r.received), right: true },
+          // Outstanding is only an ALERT when the client owes money. A negative
+          // figure means they have paid ahead, which is not a problem.
+          { node: inr(r.outstanding), right: true, alert: r.outstanding > 0 },
+        ]),
+        csv: rows.map((r) => [
+          r.client,
+          String(r.projects),
+          String(num(r.value)),
+          String(num(r.received)),
+          String(num(r.outstanding)),
+        ]),
+        isEmpty: rows.length === 0,
+        emptyTitle: "No clients yet",
+        emptyDescription:
+          "Clients appear here once a project carries a client name.",
+      };
+    },
+  },
+  {
+    slug: "user-activity",
+    capability: "reports.user.view",
+    title: "User Activity",
+    subtitle: "Hours, leave and tasks per person — closed sessions only",
+    cardDescription:
+      "What each person logged: hours from closed sessions, approved leave, and their task load.",
+    icon: UserRound,
+    async run() {
+      const rows = await userActivity();
+      return {
+        head: ["Member", "Role", "Hours", "Sessions", "Open", "Leave days", "Tasks open", "Tasks done"],
+        rows: rows.map((r) => [
+          { node: r.member },
+          { node: r.role },
+          { node: qtyFmt.format(r.hours), right: true },
+          // Hours never travel without the sessions they came from (§11).
+          { node: r.sessions.toLocaleString("en-IN"), right: true },
+          // An open session is not an alert — it means somebody is at work.
+          { node: r.openSessions.toLocaleString("en-IN"), right: true },
+          { node: qtyFmt.format(r.leaveDays), right: true },
+          { node: r.tasksOpen.toLocaleString("en-IN"), right: true },
+          { node: r.tasksDone.toLocaleString("en-IN"), right: true },
+        ]),
+        csv: rows.map((r) => [
+          r.member,
+          r.role,
+          String(r.hours),
+          String(r.sessions),
+          String(r.openSessions),
+          String(r.leaveDays),
+          String(r.tasksOpen),
+          String(r.tasksDone),
+        ]),
+        isEmpty: rows.length === 0,
+        emptyTitle: "No members yet",
+        emptyDescription: "Activity appears here as people check in and take on work.",
+      };
+    },
+  },
+  {
+    slug: "labour-summary",
+    capability: "reports.labour.view",
+    title: "Labour Summary",
+    subtitle: "Headcount-days per project, split by trade",
+    cardDescription:
+      "Skilled, unskilled and coordinator days on each project, with the span they cover.",
+    icon: HardHat,
+    async run() {
+      const rows = await labourSummary();
+      return {
+        head: ["Project", "Days", "Skilled", "Unskilled", "Coordinator", "Total", "From", "To"],
+        rows: rows.map((r) => [
+          { node: r.project },
+          { node: r.days.toLocaleString("en-IN"), right: true },
+          { node: qtyFmt.format(r.skilled), right: true },
+          { node: qtyFmt.format(r.unskilled), right: true },
+          { node: qtyFmt.format(r.coordinator), right: true },
+          { node: qtyFmt.format(r.total), right: true },
+          // Formatted from the STRING — never through a Date, which shifts a
+          // DATE column back a day in IST (§11).
+          { node: r.firstDay ?? "—" },
+          { node: r.lastDay ?? "—" },
+        ]),
+        csv: rows.map((r) => [
+          r.project,
+          String(r.days),
+          String(r.skilled),
+          String(r.unskilled),
+          String(r.coordinator),
+          String(r.total),
+          r.firstDay ?? "",
+          r.lastDay ?? "",
+        ]),
+        isEmpty: rows.length === 0,
+        emptyTitle: "No labour recorded",
+        emptyDescription:
+          "Labour days appear here once a project records attendance on site.",
       };
     },
   },

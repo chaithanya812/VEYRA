@@ -3,6 +3,7 @@ import { withOrg } from "./with-org";
 import { listLeadStatuses } from "./lead-management";
 import { listWarehouses, stockLevels } from "./inventory";
 import { vendorNames } from "./purchase-orders";
+import { sessionHours, type WorkSession } from "@/lib/workspace-model";
 
 /**
  * Reports data module (FEATURE-REGISTER OPS-REP-001 · PLAN §6.10) — six
@@ -342,4 +343,283 @@ export async function projectProfitability(): Promise<ProjectProfitabilityRow[]>
       (byId.get(pr.id) ?? 0) + (byLabel.get(pr.name.trim().toLowerCase()) ?? 0),
     ),
   }));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * The three reports the permission matrix NAMED but the product did not have.
+ *
+ * Part 3 Unit 5 shipped six Reports capabilities — Payment, Client, User,
+ * Labour, Lead, Financial. Three of them pointed at nothing. A report a
+ * permission names and the product does not have is the same broken promise as
+ * a permission nothing enforces, just pointing the other way.
+ *
+ * Every figure here is a COUNT or a SUM of stored values, read through
+ * withOrg(). Nothing is stored, nothing is inferred, and no ratio travels
+ * without the two numbers it came from (§11).
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+export interface ClientSummaryRow {
+  client: string;
+  projects: number;
+  /** Σ `projects.project_value` — what the work was sold for. */
+  value: number;
+  /** Σ inflow − Σ outflow attributed to those projects. */
+  received: number;
+  /** `value − received`. Travels with both parts, never alone. */
+  outstanding: number;
+}
+
+/**
+ * Money by CLIENT rather than by project — the view a partner asks for when
+ * deciding who to chase and who to keep.
+ *
+ * Grouped on `projects.client_name`, trimmed and case-folded, because "Sharma
+ * Residence" and "sharma residence" are one client to the person reading it.
+ * A project with no client name is grouped under "(No client recorded)" rather
+ * than dropped: a blank is a data-entry gap somebody should see, and silently
+ * omitting it would make the totals disagree with the projects list.
+ */
+export async function clientSummary(): Promise<ClientSummaryRow[]> {
+  const { db } = await withOrg();
+
+  const [projectsRes, paymentsRes] = await Promise.all([
+    db.table("projects").select("id, name, client_name, project_value"),
+    db.table("payments").select("direction, amount, project_id, project_label"),
+  ]);
+  if (projectsRes.error) throw projectsRes.error;
+  if (paymentsRes.error) throw paymentsRes.error;
+
+  const projects = (projectsRes.data ?? []) as unknown as {
+    id: string;
+    name: string;
+    client_name: string | null;
+    project_value: number | string | null;
+  }[];
+
+  // Payments still reach a project either by FK or by the older text label,
+  // exactly as projectProfitability() resolves them. Both paths are honoured
+  // here so the two reports cannot disagree about the same rupee.
+  const byId = new Map<string, number>();
+  const byLabel = new Map<string, number>();
+  for (const p of (paymentsRes.data ?? []) as unknown as {
+    direction: string;
+    amount: number | string | null;
+    project_id: string | null;
+    project_label: string | null;
+  }[]) {
+    const delta = p.direction === "inflow" ? num(p.amount) : -num(p.amount);
+    if (p.project_id) byId.set(p.project_id, (byId.get(p.project_id) ?? 0) + delta);
+    else if (p.project_label) {
+      const key = p.project_label.trim().toLowerCase();
+      byLabel.set(key, (byLabel.get(key) ?? 0) + delta);
+    }
+  }
+
+  const NO_CLIENT = "(No client recorded)";
+  const acc = new Map<string, ClientSummaryRow>();
+  for (const pr of projects) {
+    const label = pr.client_name?.trim() || NO_CLIENT;
+    const key = label.toLowerCase();
+    const row =
+      acc.get(key) ??
+      ({ client: label, projects: 0, value: 0, received: 0, outstanding: 0 } as ClientSummaryRow);
+    row.projects += 1;
+    row.value += num(pr.project_value);
+    row.received +=
+      (byId.get(pr.id) ?? 0) + (byLabel.get(pr.name.trim().toLowerCase()) ?? 0);
+    acc.set(key, row);
+  }
+
+  return [...acc.values()]
+    .map((r) => ({
+      ...r,
+      value: round2(r.value),
+      received: round2(r.received),
+      outstanding: round2(r.value - r.received),
+    }))
+    .sort((a, b) => b.value - a.value || a.client.localeCompare(b.client));
+}
+
+export interface UserActivityRow {
+  member: string;
+  role: string;
+  /** Closed sessions only — an open one has not produced hours yet. */
+  hours: number;
+  /** Sessions counted, so `hours` is never a figure without its denominator. */
+  sessions: number;
+  openSessions: number;
+  leaveDays: number;
+  tasksOpen: number;
+  tasksDone: number;
+}
+
+/**
+ * What each person did — the report behind `reports.user.view`.
+ *
+ * HOURS COME FROM CLOSED SESSIONS ONLY, and the open count is reported beside
+ * them rather than folded in. An open session has no check-out, so giving it
+ * hours would mean inventing a finish time; `lib/workspace-model.ts` already
+ * refuses to, and this must not quietly disagree with the attendance screen.
+ *
+ * Deactivated members are INCLUDED. They did the work, and a report that drops
+ * them makes last quarter's totals change when somebody leaves.
+ */
+export async function userActivity(): Promise<UserActivityRow[]> {
+  const { db } = await withOrg();
+
+  const [membersRes, sessionsRes, leaveRes, tasksRes] = await Promise.all([
+    db.table("org_members").select("id, role, display_name, status"),
+    db.table("work_sessions").select("member_id, check_in, check_out"),
+    db.table("leave_requests").select("member_id, days, status"),
+    db.table("tasks").select("assignee_id, status"),
+  ]);
+  if (membersRes.error) throw membersRes.error;
+  if (sessionsRes.error) throw sessionsRes.error;
+  if (leaveRes.error) throw leaveRes.error;
+  if (tasksRes.error) throw tasksRes.error;
+
+  const members = (membersRes.data ?? []) as unknown as {
+    id: string;
+    role: string;
+    display_name: string | null;
+    status: string;
+  }[];
+
+  const acc = new Map<string, UserActivityRow>();
+  for (const m of members) {
+    acc.set(m.id, {
+      member: m.display_name?.trim() || "Unnamed member",
+      role: m.role,
+      hours: 0,
+      sessions: 0,
+      openSessions: 0,
+      leaveDays: 0,
+      tasksOpen: 0,
+      tasksDone: 0,
+    });
+  }
+
+  for (const s of (sessionsRes.data ?? []) as unknown as {
+    member_id: string | null;
+    check_in: string | null;
+    check_out: string | null;
+  }[]) {
+    const row = s.member_id ? acc.get(s.member_id) : undefined;
+    if (!row) continue;
+    if (!s.check_in || !s.check_out) {
+      row.openSessions += 1;
+      continue;
+    }
+    // `sessionHours` is the ONLY place a session becomes hours. Writing the
+    // subtraction again here would be a second implementation free to drift
+    // from the attendance screen, and two screens disagreeing about somebody's
+    // hours is worse than either being wrong.
+    row.hours += sessionHours({ check_in: s.check_in, check_out: s.check_out } as WorkSession);
+    row.sessions += 1;
+  }
+
+  for (const l of (leaveRes.data ?? []) as unknown as {
+    member_id: string | null;
+    days: number | string | null;
+    status: string;
+  }[]) {
+    // Only APPROVED leave is time actually taken. A pending request is a
+    // question, not an absence.
+    if (l.status !== "approved") continue;
+    const row = l.member_id ? acc.get(l.member_id) : undefined;
+    if (row) row.leaveDays += num(l.days);
+  }
+
+  for (const t of (tasksRes.data ?? []) as unknown as {
+    assignee_id: string | null;
+    status: string;
+  }[]) {
+    const row = t.assignee_id ? acc.get(t.assignee_id) : undefined;
+    if (!row) continue;
+    if (t.status === "done") row.tasksDone += 1;
+    else row.tasksOpen += 1;
+  }
+
+  return [...acc.values()]
+    .map((r) => ({ ...r, hours: round2(r.hours), leaveDays: round2(r.leaveDays) }))
+    .sort((a, b) => b.hours - a.hours || a.member.localeCompare(b.member));
+}
+
+export interface LabourSummaryRow {
+  project: string;
+  days: number;
+  skilled: number;
+  unskilled: number;
+  coordinator: number;
+  total: number;
+  firstDay: string | null;
+  lastDay: string | null;
+}
+
+/**
+ * Labour by project — the report behind `reports.labour.view`.
+ *
+ * `total` is `skilled + unskilled + coordinator`, computed here exactly as
+ * `lib/labour-model.ts::totalOf` computes it, because `labour_entries` has NO
+ * total column and must not grow one (§2 rule 6 — the invariant is
+ * unrepresentable on purpose).
+ *
+ * Dates are compared as STRINGS and never through a `Date`: `entry_date` is a
+ * DATE column, and putting it through a JS Date shifts it a day in IST — the
+ * mistake §11 records against site photos.
+ */
+export async function labourSummary(): Promise<LabourSummaryRow[]> {
+  const { db } = await withOrg();
+
+  const [entriesRes, projectsRes] = await Promise.all([
+    db
+      .table("labour_entries")
+      .select("project_id, entry_date, skilled, unskilled, coordinator"),
+    db.table("projects").select("id, name"),
+  ]);
+  if (entriesRes.error) throw entriesRes.error;
+  if (projectsRes.error) throw projectsRes.error;
+
+  const names = new Map(
+    ((projectsRes.data ?? []) as unknown as { id: string; name: string }[]).map((p) => [
+      p.id,
+      p.name,
+    ]),
+  );
+
+  const acc = new Map<string, LabourSummaryRow>();
+  for (const e of (entriesRes.data ?? []) as unknown as {
+    project_id: string;
+    entry_date: string;
+    skilled: number | string | null;
+    unskilled: number | string | null;
+    coordinator: number | string | null;
+  }[]) {
+    const row =
+      acc.get(e.project_id) ??
+      ({
+        project: names.get(e.project_id) ?? "(Unknown project)",
+        days: 0,
+        skilled: 0,
+        unskilled: 0,
+        coordinator: 0,
+        total: 0,
+        firstDay: null,
+        lastDay: null,
+      } as LabourSummaryRow);
+
+    row.days += 1;
+    row.skilled += num(e.skilled);
+    row.unskilled += num(e.unskilled);
+    row.coordinator += num(e.coordinator);
+    if (e.entry_date) {
+      if (!row.firstDay || e.entry_date < row.firstDay) row.firstDay = e.entry_date;
+      if (!row.lastDay || e.entry_date > row.lastDay) row.lastDay = e.entry_date;
+    }
+    acc.set(e.project_id, row);
+  }
+
+  return [...acc.values()]
+    .map((r) => ({ ...r, total: r.skilled + r.unskilled + r.coordinator }))
+    .sort((a, b) => b.total - a.total || a.project.localeCompare(b.project));
 }

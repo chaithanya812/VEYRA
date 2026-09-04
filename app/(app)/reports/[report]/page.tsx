@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Card, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { PermissionLimited } from "@/components/ui/permission-limited";
+import { can } from "@/lib/data/permissions";
 import { ExportCsvButton } from "@/components/reports/export-csv-button";
 import { cn } from "@/lib/utils";
 import { findReport, type ReportCell } from "../reports-config";
@@ -21,6 +23,23 @@ export default async function ReportPage({
   const { report: slug } = await params;
   const def = findReport(slug);
   if (!def) notFound();
+
+  // The guard sits BEFORE `run()`. Fetching the rows and then hiding them would
+  // still have read the data — and a report is nothing but the data.
+  if (!(await can(def.capability))) {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <Link
+          href="/reports"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)]"
+        >
+          <ArrowLeft className="size-3.5" /> All reports
+        </Link>
+        <PageHeader title={def.title} subtitle={def.subtitle} />
+        <PermissionLimited capability={def.capability} />
+      </div>
+    );
+  }
 
   const data = await def.run();
 
