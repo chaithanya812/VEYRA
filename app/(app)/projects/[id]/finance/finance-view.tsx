@@ -351,20 +351,18 @@ function ContractCard({
               value={rollup.settled}
               tone="green"
             />
-            {/* Same three words as the band above, for the same arithmetic —
-                narrower scope, one contract instead of the project. A card
-                that said "Total payables ₹96,000" under a band reading
-                "Billed ₹96,000 · Dues ₹46,000" is exactly the one-label-two-
-                meanings bug §10.1 settled. */}
-            <Figure
-              label={client ? "Total receivables" : "Billed"}
-              value={rollup.billable}
-            />
-            <Figure
-              label={client ? "Receivables due" : "Dues"}
-              value={rollup.due}
-              tone="amber"
-            />
+            {/* Same words as the band above, for the same arithmetic — narrower
+                scope, one contract instead of the project. A card that said
+                "Total receivables ₹12,60,000" under a band reading "Billed
+                ₹12,60,000" is the one-label-two-meanings bug in miniature, on
+                a single screen.
+
+                These deliberately no longer branch on client/vendor. §10.1
+                settled the outflow side and §10.8 settled the inflow side on
+                the SAME words, so Billed and Dues mean the same thing on both
+                — and the card's own heading already says which side it is. */}
+            <Figure label="Billed" value={rollup.billable} />
+            <Figure label="Dues" value={rollup.due} tone="amber" />
           </div>
           <div className="flex items-center gap-1">
             <RecordPaymentDialog
