@@ -363,7 +363,7 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 | ~~1~~ | ~~The `Total Payables` rename + the per-project matrix model~~ | **DONE.** Shipped `Committed`/`Billed` per §10.1; `lib/payments-dashboard-model.ts` is the matrix Unit 2 consumes. Also corrected contract-less payments — see the commit. |
 | ~~2~~ | ~~`/finance/payments` — the Payments Dashboard with drill-through~~ | **DONE.** Read-only by design — no server action; the route is gated by `can("billing.payment.view")` as the page's first statement. Band = Σ visible rows. |
 | ~~3~~ | ~~`/finance/petty` — Petty Finance, extending `expense_claims`~~ | **DONE.** Migration **0041 applied.** Three columns on `expense_claims`, not a second ledger. `recordPettyEntryAction` is self-service and ungated (§5a) because `member_id` comes from the acting context; reverse/decide carry `billing.payment.approve`. |
-| 4 | `/finance/receivables` — Account Receivables | needs migration **0042** if Written Off is built. **⚠ Settle §10.8 (`Total Receivables` collision) BEFORE dispatching this.** |
+| 4 | `/finance/receivables` — Account Receivables | needs migration **0042** if Written Off is built. **§10.8 is now SETTLED** — ship `Contracted` / `Billed` / `Dues`, symmetric with §10.1. Implement it; do not choose. |
 
 ### Phase 12 — Reports & polish · **Part 4**
 
@@ -402,6 +402,21 @@ Two things production is missing. Fix them with the owner, not silently:
    `lib/finance-model.ts::summarisePlan` currently calls `totalPayables`. *Dues* is unchanged — both
    screens already agree on it. **Part 3 Unit 1 implements this; it does not choose.**
 
+8. **`Total Receivables` — the receivables twin of the above. SETTLED 2026-09-04 by the owner: the
+   same remedy, keep BOTH figures and rename them.** Found doing Phase 11 Unit 1: two screens used
+   the same two labels for different numbers on the same project — the Summary band showed
+   ₹18,00,000 (Σ client-contract value) with dues ₹12,40,000, while Financial Planning showed
+   ₹12,60,000 (signed-off client milestones) with dues ₹7,00,000.
+
+   Ship **`Contracted`** for the sum of client contracts (₹18,00,000 — the whole client commitment)
+   and **`Billed`** for client milestones signed off (₹12,60,000). **`Receivable Dues` is unchanged
+   and means `billed − received`** (₹7,00,000). This is deliberately symmetric with §10.1, so both
+   halves of the money model read the same way: *Contracted/Committed* is the whole commitment,
+   *Billed* is what has been earned, *Dues* is what is payable now.
+
+   **Part 3 Unit 4 implements this; it does not choose.** Do not re-litigate, and do not introduce a
+   third word for either quantity.
+
 ### Still open — do not settle silently
 
 2. **Vendor Documents.** `project_files.project_id` is NOT NULL and a vendor's GST certificate
@@ -424,20 +439,8 @@ Two things production is missing. Fix them with the owner, not silently:
    10 shipped it read-only and says so on screen.
 7. **Applying for leave on somebody else's behalf.** The audit ledger now exists to record it, but
    *who may do it for whom* is a policy nobody has set. The Approvals screen says so.
-8. **`Total Receivables` — the receivables twin of the payables bug. Found doing Phase 11 Unit 1.**
-   Two screens, the same two labels, the same project, different numbers:
-
-   | | Total receivables | Receivable dues |
-   |---|---|---|
-   | Project Summary band | ₹18,00,000 (Σ client-contract value) | ₹12,40,000 |
-   | Financial Planning band | ₹12,60,000 (signed-off client milestones) | ₹7,00,000 |
-
-   This is structurally identical to the payables collision §10.1 settled — one label over two real
-   quantities — and the same remedy is available: keep both and name them (the contracted total vs.
-   what has been billed to the client). **It is NOT settled, and Unit 1 deliberately did not settle
-   it**, because choosing what a client "owes" means is the owner's call, not an agent's.
-   **Part 3 Unit 4 (Account Receivables) walks straight into this** — settle it before dispatching
-   that unit, or Unit 4 will have to pick one silently, which is the bug all over again.
+*(§10.8 was here and is now SETTLED — it has moved up into "Settled — do not reopen" above, keeping
+its number so existing `§10.8` references still resolve.)*
 
 ---
 
