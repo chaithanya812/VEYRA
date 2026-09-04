@@ -22,16 +22,18 @@ import { cn, inr } from "@/lib/utils";
  * already knows whether its work is signed off. The whole table is those three
  * rows, added up — which is only possible because the spine landed first.
  *
- * ⚠ TWO COLUMNS, TWO DIFFERENT QUESTIONS, and the frame's labels do not say
- * which is which — so this screen does:
+ * THREE COLUMNS, THREE DIFFERENT QUESTIONS. The frame labelled the first one
+ * `Total Payables`, a phrase `summarisePlan` used for the second; the owner
+ * settled it on 2026-09-04 (HANDOFF-V8 §10.1) by keeping both figures and
+ * naming them apart, because both are real and both are wanted:
  *
- *   Total Payables = Agreed − Disbursed   (the whole remaining commitment)
- *   Payable Dues   = Billed − Disbursed   (what is payable right now)
+ *   Committed = Agreed − Disbursed   (the whole remaining commitment)
+ *   Billed    = milestone work signed off
+ *   Dues      = Billed − Disbursed   (what is payable right now)
  *
- * `lib/finance-model.ts::summarisePlan` uses "Total Payables" for the second
- * quantity's numerator. The two screens agree on Dues and disagree on
- * Payables, so both figures are printed with what they mean rather than one
- * being quietly picked. §12.1 has to settle the vocabulary.
+ * `lib/finance-model.ts::summarisePlan` now uses those exact three words for
+ * those exact three quantities, so this screen and Financial Planning agree.
+ * All three are printed here rather than one being quietly picked.
  *
  * Negatives are not clamped. Paying a vendor more than was agreed happens on a
  * real site, and a screen that floored it at zero would hide the one row
@@ -90,16 +92,16 @@ export default async function VendorProjectsPage({
           hint="Paid to this vendor so far"
         />
         <StatTile
-          label="Total Payables"
-          value={inr(totals.outstanding)}
-          tone={totals.outstanding < 0 ? "negative" : "info"}
+          label="Committed"
+          value={inr(totals.committed)}
+          tone={totals.committed < 0 ? "negative" : "info"}
           hint="Agreed less disbursed — the whole remaining commitment"
         />
         <StatTile
-          label="Payable Dues"
+          label="Dues"
           value={inr(totals.dues)}
           tone={totals.dues > 0 ? "warning" : totals.dues < 0 ? "negative" : "neutral"}
-          hint="Signed off and not yet paid"
+          hint="Billed less disbursed — payable today"
         />
       </TileGrid>
 
@@ -118,7 +120,7 @@ export default async function VendorProjectsPage({
       ) : (
         <Card className="mt-4 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-[13px]">
+            <table className="w-full min-w-[1020px] text-[13px]">
               <thead>
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
                   <th className="px-4 py-2 font-medium">Project Name</th>
@@ -127,8 +129,9 @@ export default async function VendorProjectsPage({
                   <th className="px-4 py-2 text-right font-medium">
                     Disbursed Amount
                   </th>
-                  <th className="px-4 py-2 text-right font-medium">Total Payables</th>
-                  <th className="px-4 py-2 text-right font-medium">Payable Dues</th>
+                  <th className="px-4 py-2 text-right font-medium">Committed</th>
+                  <th className="px-4 py-2 text-right font-medium">Billed</th>
+                  <th className="px-4 py-2 text-right font-medium">Dues</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,7 +170,10 @@ export default async function VendorProjectsPage({
                     <td className="px-4 py-2.5 text-right tabular text-[var(--color-ink-secondary)]">
                       {inr(r.disbursed)}
                     </td>
-                    <Money value={r.outstanding} />
+                    <Money value={r.committed} />
+                    <td className="px-4 py-2.5 text-right tabular text-[var(--color-ink-secondary)]">
+                      {inr(r.billed)}
+                    </td>
                     <Money value={r.dues} warnPositive />
                   </tr>
                 ))}
@@ -184,7 +190,10 @@ export default async function VendorProjectsPage({
                     {inr(totals.disbursed)}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular">
-                    {inr(totals.outstanding)}
+                    {inr(totals.committed)}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular">
+                    {inr(totals.billed)}
                   </td>
                   <td className="px-4 py-2.5 text-right tabular">
                     {inr(totals.dues)}
@@ -199,10 +208,11 @@ export default async function VendorProjectsPage({
       {/* A figure travels with the two numbers it came from — every ratio and
           every difference in this codebase does (HANDOFF §10). */}
       <p className="mt-3 text-xs text-[var(--color-ink-secondary)]">
-        <span className="font-medium text-[var(--color-ink)]">Total Payables</span>{" "}
-        is Agreed less Disbursed — everything still committed to this vendor.{" "}
-        <span className="font-medium text-[var(--color-ink)]">Payable Dues</span>{" "}
-        is signed-off work less Disbursed — what is payable today. Of{" "}
+        <span className="font-medium text-[var(--color-ink)]">Committed</span>{" "}
+        is Agreed less Disbursed — everything still owed to this vendor over the
+        life of the job.{" "}
+        <span className="font-medium text-[var(--color-ink)]">Dues</span>{" "}
+        is Billed less Disbursed — what is payable today. Of{" "}
         {inr(totals.estimatedExpenses)} agreed, {inr(totals.billed)} has been
         signed off and {inr(totals.disbursed)} paid.
       </p>

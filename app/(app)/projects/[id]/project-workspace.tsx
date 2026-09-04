@@ -288,8 +288,8 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
                 <Figure label="Total disbursed" value={inr(f.totalDisbursed)} tone="red" />
                 <Figure label="Total receivables" value={inr(f.totalReceivables)} />
                 <Figure label="Receivable dues" value={inr(f.receivableDues)} tone="amber" />
-                <Figure label="Total payables" value={inr(f.totalPayables)} />
-                <Figure label="Payable dues" value={inr(f.payableDues)} tone="amber" />
+                <Figure label="Estimated expenses" value={inr(f.estimatedExpenses)} />
+                <Figure label="Committed" value={inr(f.committed)} tone="amber" />
               </div>
               <div className="mt-3">
                 <TileGrid>
@@ -304,7 +304,7 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
                     label="Expected P&L"
                     value={inr(f.pnl)}
                     tone={f.pnl >= 0 ? "positive" : "negative"}
-                    hint="Project value less committed payables"
+                    hint="Project value less estimated expenses"
                   />
                 </TileGrid>
               </div>

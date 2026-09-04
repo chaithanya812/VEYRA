@@ -122,12 +122,25 @@ export function PaymentsView({
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {/* `Committed` (agreed less disbursed) and `Billed` (work signed
+                off) were one label, "Total payables", meaning two things.
+                Settled 2026-09-04: both ship, both say what they are. */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <Figure label="Funds received" value={s.funds} tone="green" />
               <Figure label="Disbursed" value={s.disbursed} />
               <Figure label="Receivable dues" value={s.receivableDues} tone="amber" />
-              <Figure label="Total payables" value={s.totalPayables} />
-              <Figure label="Payable dues" value={s.payableDues} tone="amber" />
+              <Figure
+                label="Committed"
+                value={s.committed}
+                hint="Agreed less disbursed"
+              />
+              <Figure label="Billed" value={s.billed} hint="Work signed off" />
+              <Figure
+                label="Dues"
+                value={s.payableDues}
+                tone="amber"
+                hint="Billed less disbursed"
+              />
             </div>
             <div className="mt-4">
               <TileGrid>
@@ -230,10 +243,13 @@ function Figure({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: number;
   tone?: "green" | "amber";
+  /** The two numbers a difference came from, printed beside it (§11). */
+  hint?: string;
 }) {
   const negative = value < 0;
   return (
@@ -253,6 +269,11 @@ function Figure({
       >
         {inr(value)}
       </p>
+      {hint ? (
+        <p className="mt-0.5 text-[10px] leading-tight text-[var(--color-ink-secondary)]">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

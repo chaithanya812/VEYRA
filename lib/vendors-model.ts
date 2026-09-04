@@ -151,26 +151,25 @@ export function nextVendorStatuses(current: VendorStatus): VendorStatus[] {
 /* ── Vendor Projects (`110234`) ───────────────────────────────────────────── */
 
 /**
- * One row of `110234`, and the arithmetic is worth stating precisely because
- * the frame uses a phrase this codebase already uses for something else.
- *
- * ⚠ `Total Payables` HERE MEANS SOMETHING DIFFERENT FROM `summarisePlan`'s.
+ * One row of `110234`. Frame `110234` labelled a column `Total Payables` and
+ * so did `lib/finance-model.ts::summarisePlan` — for two different quantities.
  *
  * Reading the frame's own numbers:
  *   Sudha Interior   agreed 27,000 · disbursed 13,500 · payables 13,500 · dues 0
  *   Daizy Interiors  agreed 51,200 · disbursed 0      · payables 51,200 · dues 7,100
  *   project-1wh5kos  agreed 0      · disbursed 1,000  · payables −1,000 · dues −1,000
  *
- * Only one pair of formulas fits all three:
- *   Total Payables = agreed − disbursed   (the whole remaining commitment)
- *   Payable Dues   = billed − disbursed   (what is payable NOW)
+ * Only one pair of formulas fits all three, and the owner SETTLED the naming on
+ * 2026-09-04 (HANDOFF-V8 §10.1): neither reading wins, because both are real.
  *
- * `lib/finance-model.ts::summarisePlan` calls `billed` itself "totalPayables"
- * and `billed − disbursed` "payableDues". So the DUES agree between the two
- * screens and the PAYABLES do not. Rather than quietly pick one, both figures
- * are returned here under unambiguous names and the screen prints what each
- * one is. §12.1 builds the company-wide matrix off the same two columns and
- * has to settle the vocabulary — this is the note that says so.
+ *   Committed = agreed − disbursed   (the whole remaining commitment)
+ *   Billed    = milestone work signed off
+ *   Dues      = billed − disbursed   (what is payable NOW)
+ *
+ * `summarisePlan` now uses exactly these three words for exactly these three
+ * quantities, so this screen and Financial Planning no longer disagree — and
+ * both print all three, so a reader can see the difference instead of having
+ * to know it.
  *
  * Negative values are NOT clamped. Disbursing more than was agreed is a real
  * thing that happens on a site, and a screen that floors it at zero hides the
@@ -186,9 +185,9 @@ export interface VendorProjectRow {
   disbursed: number;
   /** Σ of milestone amounts whose work has been signed off. */
   billed: number;
-  /** The frame's `Total Payables`: the whole remaining commitment. */
-  outstanding: number;
-  /** The frame's `Payable Dues`: signed off and not yet paid. */
+  /** `Committed`: agreed less disbursed — the whole remaining commitment. */
+  committed: number;
+  /** `Dues`: signed off and not yet paid. */
   dues: number;
   contractCount: number;
 }
@@ -196,11 +195,11 @@ export interface VendorProjectRow {
 export interface VendorProjectTotals {
   /** The frame's `Estimated Expenses` — every contract, whatever its state. */
   estimatedExpenses: number;
-  /** The frame's `Total Payables`. */
-  outstanding: number;
+  /** `Committed` — agreed less disbursed. */
+  committed: number;
   /** The frame's `Total Disbursed`. */
   disbursed: number;
-  /** The frame's `Payable Dues`. */
+  /** `Dues` — billed less disbursed. */
   dues: number;
   billed: number;
   projectCount: number;
@@ -278,7 +277,7 @@ export function vendorProjects(input: {
       agreed,
       disbursed,
       billed,
-      outstanding: r2(agreed - disbursed),
+      committed: r2(agreed - disbursed),
       dues: r2(billed - disbursed),
       contractCount: acc.contractCount,
     });
@@ -312,7 +311,7 @@ export function vendorProjectTotals(
     estimatedExpenses,
     disbursed,
     billed,
-    outstanding: r2(estimatedExpenses - disbursed),
+    committed: r2(estimatedExpenses - disbursed),
     dues: r2(billed - disbursed),
     projectCount: rows.length,
   };

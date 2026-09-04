@@ -129,7 +129,7 @@ export default async function VendorDetailPage({
           detail={
             projectRows.length === 0
               ? "Not on any project yet"
-              : `${projectRows.length} ${projectRows.length === 1 ? "project" : "projects"} · ${inr(totals.outstanding)} payable`
+              : `${projectRows.length} ${projectRows.length === 1 ? "project" : "projects"} · ${inr(totals.committed)} committed`
           }
           href={`/vendors/${vendor.id}/projects`}
         />

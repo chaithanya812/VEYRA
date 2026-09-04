@@ -247,7 +247,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **729 tests in 42 files** · **verify 186/186** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **753 tests in 43 files** · **verify 186/186** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -348,10 +348,10 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 
 | Unit | What | Notes |
 |---|---|---|
-| 1 | The `Total Payables` rename + the per-project matrix model | **the owner has SETTLED this — see §10.1. Do not re-litigate.** |
-| 2 | `/finance/payments` — the Payments Dashboard with drill-through | depends on Unit 1 |
+| ~~1~~ | ~~The `Total Payables` rename + the per-project matrix model~~ | **DONE.** Shipped `Committed`/`Billed` per §10.1; `lib/payments-dashboard-model.ts` is the matrix Unit 2 consumes. Also corrected contract-less payments — see the commit. |
+| 2 | `/finance/payments` — the Payments Dashboard with drill-through | depends on Unit 1. `paymentsMatrix` / `summariseMatrix` / `filterMatrix` / `describeFilter` already exist and are tested — **build the screen on them, do not write a second model.** No `can()` guard is owed yet; this unit adds the first server action, so it owes one. |
 | 3 | `/finance/petty` — Petty Finance, extending `expense_claims` | independent |
-| 4 | `/finance/receivables` — Account Receivables | needs migration **0041** if Written Off is built |
+| 4 | `/finance/receivables` — Account Receivables | needs migration **0041** if Written Off is built. **⚠ Settle §10.8 (`Total Receivables` collision) BEFORE dispatching this.** |
 
 ### Phase 12 — Reports & polish · **Part 4**
 
@@ -412,6 +412,20 @@ Two things production is missing. Fix them with the owner, not silently:
    10 shipped it read-only and says so on screen.
 7. **Applying for leave on somebody else's behalf.** The audit ledger now exists to record it, but
    *who may do it for whom* is a policy nobody has set. The Approvals screen says so.
+8. **`Total Receivables` — the receivables twin of the payables bug. Found doing Phase 11 Unit 1.**
+   Two screens, the same two labels, the same project, different numbers:
+
+   | | Total receivables | Receivable dues |
+   |---|---|---|
+   | Project Summary band | ₹18,00,000 (Σ client-contract value) | ₹12,40,000 |
+   | Financial Planning band | ₹12,60,000 (signed-off client milestones) | ₹7,00,000 |
+
+   This is structurally identical to the payables collision §10.1 settled — one label over two real
+   quantities — and the same remedy is available: keep both and name them (the contracted total vs.
+   what has been billed to the client). **It is NOT settled, and Unit 1 deliberately did not settle
+   it**, because choosing what a client "owes" means is the owner's call, not an agent's.
+   **Part 3 Unit 4 (Account Receivables) walks straight into this** — settle it before dispatching
+   that unit, or Unit 4 will have to pick one silently, which is the bug all over again.
 
 ---
 

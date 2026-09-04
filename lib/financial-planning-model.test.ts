@@ -10,6 +10,7 @@ import {
   clampPct,
   pctFromAmount,
   rollupContract,
+  round2,
   scheduleTotals,
   splitEvenly,
   summarisePlan,
@@ -191,8 +192,34 @@ describe("summarisePlan", () => {
     expect(summary.funds).toBe(1974400);
     expect(summary.totalReceivables).toBe(2000000);
     expect(summary.receivableDues).toBe(25600);
-    expect(summary.totalPayables).toBe(469481.23);
+    expect(summary.billed).toBe(469481.23);
     expect(summary.disbursed).toBe(179535.4);
+  });
+
+  // HANDOFF-V8 §10.1, settled 2026-09-04: `Committed` and `Billed` are two
+  // real figures that one label used to cover. They must not collapse.
+  it("reports Committed and Billed as different figures", () => {
+    expect(summary.estimatedExpenses).toBe(650000);
+    expect(summary.committed).toBe(650000 - 179535.4);
+    expect(summary.billed).toBe(469481.23);
+    expect(summary.payableDues).toBe(round2(469481.23 - 179535.4));
+    expect(summary.committed).not.toBe(summary.billed);
+  });
+
+  it("counts a payment with no contract as money that really moved", () => {
+    const loose = summarisePlan({
+      projectValue: 1800000,
+      contracts: [{ id: "out", amount: 240000, source: "vendor" }],
+      milestonesByContract: new Map([
+        ["out", [{ pct: 40, amount: 96000, work_done: true }]],
+      ]),
+      paymentsByContract: new Map(),
+      unattachedPayments: [{ direction: "outflow", amount: 50000 }],
+    });
+    expect(loose.disbursed).toBe(50000);
+    expect(loose.committed).toBe(190000);
+    expect(loose.payableDues).toBe(46000);
+    expect(loose.cashFlow).toBe(-50000);
   });
 
   it("derives cash flow as what came in less what went out", () => {

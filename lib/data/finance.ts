@@ -342,13 +342,17 @@ export async function getProjectFinancialPlan(
   const contracts = (contractRes.data ?? []) as unknown as Contract[];
   const ids = contracts.map((c) => c.id);
 
-  const [msRes, payRes, catRes, docRes] = await Promise.all([
+  const [msRes, payRes, looseRes, catRes, docRes] = await Promise.all([
     ids.length
       ? db.table("milestones").select("*").in("contract_id", ids).order("seq", { ascending: true })
       : Promise.resolve({ data: [] }),
     ids.length
       ? db.table("payments").select("*").in("contract_id", ids)
       : Promise.resolve({ data: [] }),
+    // Money that moved on this project against no contract at all. A separate
+    // read rather than a widened one, so the contract rollups keep reading
+    // exactly the rows they always did.
+    db.table("payments").select("*").eq("project_id", projectId).is("contract_id", null),
     ids.length
       ? db.table("contract_categories").select("contract_id, category").in("contract_id", ids)
       : Promise.resolve({ data: [] }),
@@ -371,6 +375,11 @@ export async function getProjectFinancialPlan(
     list.push(p);
     payBy.set(p.contract_id, list);
   }
+
+  // Payments carrying this project but no contract are still money in or out
+  // (see `summarisePlan`). An unchecked .error here would silently empty them.
+  if (looseRes.error) throw looseRes.error;
+  const unattachedPayments = (looseRes.data ?? []) as unknown as Payment[];
 
   const catBy = new Map<string, string[]>();
   for (const c of (catRes.data ?? []) as unknown as {
@@ -408,6 +417,7 @@ export async function getProjectFinancialPlan(
       contracts,
       milestonesByContract: msBy,
       paymentsByContract: payBy,
+      unattachedPayments,
     }),
     documents: (docRes.data ?? []) as unknown as {
       id: string;
@@ -737,8 +747,12 @@ export async function getProjectLedger(
     msBy.set(m.contract_id, list);
   }
   const payBy = new Map<string, Payment[]>();
+  const unattachedPayments: Payment[] = [];
   for (const p of all) {
-    if (!p.contract_id) continue;
+    if (!p.contract_id) {
+      unattachedPayments.push(p as unknown as Payment);
+      continue;
+    }
     const list = payBy.get(p.contract_id) ?? [];
     list.push(p);
     payBy.set(p.contract_id, list);
@@ -756,6 +770,7 @@ export async function getProjectLedger(
       contracts: contracts as unknown as Contract[],
       milestonesByContract: msBy,
       paymentsByContract: payBy,
+      unattachedPayments,
     }),
   };
 }

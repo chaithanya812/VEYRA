@@ -96,11 +96,31 @@ export function FinanceView({
           <h2 className="mb-3 mt-5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-secondary)]">
             Outflow · what we owe vendors
           </h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/*
+            `Committed` and `Billed` used to share one label, "Total payables",
+            and meant two different things here and on Vendor Projects. Settled
+            2026-09-04: keep both figures, name them apart, and print what each
+            one is rather than expecting the reader to know.
+          */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <Figure label="Estimated expenses" value={s.estimatedExpenses} />
             <Figure label="Disbursed" value={s.disbursed} />
-            <Figure label="Total payables" value={s.totalPayables} />
-            <Figure label="Payable dues" value={s.payableDues} tone="amber" />
+            <Figure
+              label="Committed"
+              value={s.committed}
+              hint="Agreed less disbursed"
+            />
+            <Figure
+              label="Billed"
+              value={s.billed}
+              hint="Work signed off"
+            />
+            <Figure
+              label="Dues"
+              value={s.payableDues}
+              tone="amber"
+              hint="Billed less disbursed"
+            />
           </div>
         </Card>
 
@@ -182,10 +202,13 @@ function Figure({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: number;
   tone?: "green" | "amber";
+  /** The two numbers a difference came from, printed beside it (§11). */
+  hint?: string;
 }) {
   // A negative figure is the one worth noticing, so it gets red — and it also
   // keeps its minus sign, which is the label a colour-blind reader relies on.
@@ -207,6 +230,11 @@ function Figure({
       >
         {inr(value)}
       </p>
+      {hint ? (
+        <p className="mt-0.5 text-[10px] leading-tight text-[var(--color-ink-secondary)]">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -303,12 +331,17 @@ function ContractCard({
               value={rollup.settled}
               tone="green"
             />
+            {/* Same three words as the band above, for the same arithmetic —
+                narrower scope, one contract instead of the project. A card
+                that said "Total payables ₹96,000" under a band reading
+                "Billed ₹96,000 · Dues ₹46,000" is exactly the one-label-two-
+                meanings bug §10.1 settled. */}
             <Figure
-              label={client ? "Total receivables" : "Total payables"}
+              label={client ? "Total receivables" : "Billed"}
               value={rollup.billable}
             />
             <Figure
-              label={client ? "Receivables due" : "Payable dues"}
+              label={client ? "Receivables due" : "Dues"}
               value={rollup.due}
               tone="amber"
             />

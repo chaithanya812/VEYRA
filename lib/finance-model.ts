@@ -297,7 +297,21 @@ export interface FinancialPlanSummary {
   /** Vendor side. */
   estimatedExpenses: number;
   disbursed: number;
-  totalPayables: number;
+  /**
+   * `Committed` — agreed less disbursed: the whole remaining commitment to
+   * every vendor on this project, whether or not the work is signed off.
+   * NOT clamped: disbursing more than was agreed happens on a real site, and
+   * a figure floored at zero hides the one row somebody needed to see.
+   */
+  committed: number;
+  /**
+   * `Billed` — the milestone amounts whose work has been signed off. This
+   * field used to be called `totalPayables`, a phrase frame `110234` used for
+   * `committed`; one label over two meanings was the bug. SETTLED 2026-09-04:
+   * keep both figures, name them apart. (HANDOFF-V8 §10.1.)
+   */
+  billed: number;
+  /** `Dues` — billed less disbursed: what is payable today. Unchanged. */
   payableDues: number;
   /** The two hero tiles (`105403`). Both derived, never stored. */
   cashFlow: number;
@@ -316,12 +330,22 @@ export function summarisePlan(input: {
   contracts: Pick<Contract, "id" | "amount" | "source">[];
   milestonesByContract: Map<string, Pick<Milestone, "amount" | "pct" | "work_done">[]>;
   paymentsByContract: Map<string, Pick<Payment, "amount">[]>;
+  /**
+   * Payments that carry this project but NO contract — an advance paid before
+   * the paperwork, or site spend against no schedule. They are real money that
+   * left or entered the project's bank, so they count toward `funds` and
+   * `disbursed` by DIRECTION. Omitting them is why the Financial Planning band
+   * used to read a cash flow the ledger printed directly underneath it
+   * contradicted, and why it disagreed with both the project Summary band and
+   * the Vendor Projects screen about the same rupee.
+   */
+  unattachedPayments?: readonly Pick<Payment, "direction" | "amount">[];
 }): FinancialPlanSummary {
   let funds = 0;
   let totalReceivables = 0;
   let estimatedExpenses = 0;
   let disbursed = 0;
-  let totalPayables = 0;
+  let billed = 0;
 
   for (const c of input.contracts) {
     const ms = input.milestonesByContract.get(c.id) ?? [];
@@ -334,15 +358,20 @@ export function summarisePlan(input: {
     } else {
       estimatedExpenses += r.contractAmount;
       disbursed += r.settled;
-      totalPayables += r.billable;
+      billed += r.billable;
     }
+  }
+
+  for (const p of input.unattachedPayments ?? []) {
+    if (p.direction === "inflow") funds += num(p.amount);
+    else disbursed += num(p.amount);
   }
 
   funds = round2(funds);
   totalReceivables = round2(totalReceivables);
   estimatedExpenses = round2(estimatedExpenses);
   disbursed = round2(disbursed);
-  totalPayables = round2(totalPayables);
+  billed = round2(billed);
 
   return {
     projectValue: num(input.projectValue),
@@ -351,8 +380,9 @@ export function summarisePlan(input: {
     receivableDues: round2(totalReceivables - funds),
     estimatedExpenses,
     disbursed,
-    totalPayables,
-    payableDues: round2(totalPayables - disbursed),
+    committed: round2(estimatedExpenses - disbursed),
+    billed,
+    payableDues: round2(billed - disbursed),
     // Cash in hand on this project: what came in, less what went out.
     cashFlow: round2(funds - disbursed),
     // What the project is expected to be worth when everyone has been paid.

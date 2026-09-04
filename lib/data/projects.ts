@@ -188,8 +188,17 @@ export interface ProjectFinancials {
   totalDisbursed: number;
   totalReceivables: number;
   receivableDues: number;
-  totalPayables: number;
-  payableDues: number;
+  /** Σ vendor contract values — what this project is expected to cost. */
+  estimatedExpenses: number;
+  /**
+   * `Committed` — agreed less disbursed (HANDOFF-V8 §10.1, settled
+   * 2026-09-04). This band used to call the first figure `totalPayables` and
+   * the second `payableDues`, which are the names Financial Planning uses for
+   * two DIFFERENT quantities (signed-off work, and signed-off work less
+   * disbursed). Same words, three meanings, across three screens on one
+   * project. Renamed, not recomputed: the arithmetic here was always this.
+   */
+  committed: number;
   cashFlow: number;
   pnl: number;
 }
@@ -289,7 +298,7 @@ export async function getProjectWorkspace(
   const fundsReceived = sum(payments.filter((p) => p.direction === "inflow"));
   const totalDisbursed = sum(payments.filter((p) => p.direction === "outflow"));
   const totalReceivables = sum(contracts.filter((c) => c.source === "client"));
-  const totalPayables = sum(contracts.filter((c) => c.source !== "client"));
+  const estimatedExpenses = sum(contracts.filter((c) => c.source !== "client"));
 
   return {
     project,
@@ -305,10 +314,14 @@ export async function getProjectWorkspace(
       // What the client still owes, and what we still owe — never below zero
       // by construction, because over-collection is a credit, not a debt.
       receivableDues: Math.max(0, totalReceivables - fundsReceived),
-      totalPayables,
-      payableDues: Math.max(0, totalPayables - totalDisbursed),
+      estimatedExpenses,
+      // NOT clamped, unlike receivableDues above: over-collecting from a client
+      // is a credit, but paying a vendor more than was agreed is a real event
+      // on a real site and the one row somebody needs to see. Vendor Projects
+      // has always shown it unclamped; this band now agrees with it.
+      committed: estimatedExpenses - totalDisbursed,
       cashFlow: fundsReceived - totalDisbursed,
-      pnl: n(project.project_value) - totalPayables,
+      pnl: n(project.project_value) - estimatedExpenses,
     },
     sitePhotos: (photosRes.data ?? []) as unknown as ProjectWorkspaceData["sitePhotos"],
     documents: (assetsRes.data ?? []) as unknown as ProjectWorkspaceData["documents"],

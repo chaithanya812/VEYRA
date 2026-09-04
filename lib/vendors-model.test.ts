@@ -117,7 +117,7 @@ describe("vendorProjects", () => {
       agreed: 27000,
       disbursed: 13500,
       billed: 13500,
-      outstanding: 13500,
+      committed: 13500,
       dues: 0,
     });
   });
@@ -131,7 +131,7 @@ describe("vendorProjects", () => {
       paymentsByProject: new Map([["p1", [{ amount: 1000 }]]]),
       projectNames: names,
     });
-    expect(rows[0].outstanding).toBe(-1000);
+    expect(rows[0].committed).toBe(-1000);
     expect(rows[0].dues).toBe(-1000);
     expect(rows[0].contractCount).toBe(0);
   });
@@ -162,7 +162,7 @@ describe("vendorProjects", () => {
     });
     expect(rows[0].billed).toBe(40);
     expect(rows[0].dues).toBe(40);
-    expect(rows[0].outstanding).toBe(100);
+    expect(rows[0].committed).toBe(100);
   });
 
   it("adds several contracts on one project into a single row", () => {
@@ -214,7 +214,7 @@ describe("vendorProjectTotals", () => {
     expect(t.estimatedExpenses).toBe(745000);
     expect(t.disbursed).toBe(14500);
     expect(t.dues).toBe(6100);
-    expect(t.outstanding).toBe(730500);
+    expect(t.committed).toBe(730500);
     expect(t.projectCount).toBe(1);
   });
 
@@ -224,7 +224,7 @@ describe("vendorProjectTotals", () => {
       estimatedExpenses: 0,
       disbursed: 0,
       billed: 0,
-      outstanding: 0,
+      committed: 0,
       dues: 0,
       projectCount: 0,
     });
