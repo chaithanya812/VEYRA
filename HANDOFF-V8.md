@@ -247,7 +247,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **753 tests in 43 files** · **verify 186/186** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **761 tests in 43 files** · **verify 186/186** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -322,7 +322,16 @@ mcp__Claude_Browser__navigate / computer / find / javascript_tool
   `javascript_tool` with `document.querySelector(...)` is the reliable read. Twice in Phase 10 a
   screenshot showed an unticked checkbox that the DOM reported as `checked: true`.
 - A stale dev server from another session will answer on 3010. If fetches behave oddly, confirm
-  whose server it is before debugging your own code.
+  whose server it is before debugging your own code. If one is already there, `preview_start
+  { name: "veyra" }` fails with a port-in-use error and you cannot stop another chat's server —
+  use `preview_start { url: "http://localhost:3010/..." }` instead.
+- **The pane stalls on "Loading…" after a repeat navigation in the same tab** — first load renders,
+  the second (a reload, or a GET-form submit) can sit on the Suspense fallback forever while the
+  server is returning complete HTML in ~2s and the network log shows `200 OK`. Seen three times in
+  Phase 11. **Open a FRESH TAB before concluding you have found a streaming bug**; a first load of
+  the exact same URL renders fine. Discriminate it properly — server fetch, network status, fresh
+  tab — because the DOM genuinely reading `Loading…` is stronger evidence than a bad screenshot and
+  deserves more than a shrug.
 
 ### 7.4 When every route suddenly 404s
 
@@ -349,7 +358,7 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 | Unit | What | Notes |
 |---|---|---|
 | ~~1~~ | ~~The `Total Payables` rename + the per-project matrix model~~ | **DONE.** Shipped `Committed`/`Billed` per §10.1; `lib/payments-dashboard-model.ts` is the matrix Unit 2 consumes. Also corrected contract-less payments — see the commit. |
-| 2 | `/finance/payments` — the Payments Dashboard with drill-through | depends on Unit 1. `paymentsMatrix` / `summariseMatrix` / `filterMatrix` / `describeFilter` already exist and are tested — **build the screen on them, do not write a second model.** No `can()` guard is owed yet; this unit adds the first server action, so it owes one. |
+| ~~2~~ | ~~`/finance/payments` — the Payments Dashboard with drill-through~~ | **DONE.** Read-only by design — no server action; the route is gated by `can("billing.payment.view")` as the page's first statement. Band = Σ visible rows. |
 | 3 | `/finance/petty` — Petty Finance, extending `expense_claims` | independent |
 | 4 | `/finance/receivables` — Account Receivables | needs migration **0041** if Written Off is built. **⚠ Settle §10.8 (`Total Receivables` collision) BEFORE dispatching this.** |
 
@@ -360,7 +369,7 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 | ~~1~~ | ~~Wire the six Reports permission groups~~ | **DONE — committed `b61e791`** |
 | 2 | Saved views · column chooser · CSV export | needs migration **0041+** |
 | 3 | Skeleton loading + designed empty states on every list | |
-| 4 | Accessibility floor + full red-discipline audit | last, so it audits finished screens |
+| 4 | Accessibility floor + full red-discipline audit | last, so it audits finished screens. **Known defect to fix here:** `components/ui/permission-limited.tsx` renders `${label} (${group})` and DROPS `parent`, so `billing.payment.view` refuses with "It needs the View (Finance) permission" — the word *Payments* is lost, and `billing.invoice.view` would read "View (Invoice)". Cosmetic, but it makes the refusal hard to act on, and it is wrong on **every** gated screen. Found in Phase 11 Unit 2; not fixed there because it changes copy app-wide. |
 
 ---
 
