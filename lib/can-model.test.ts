@@ -6,8 +6,10 @@ import {
   capabilityTree,
   enableAllKeys,
   isCapability,
+  parseCapability,
   resolveActor,
   resolveRole,
+  searchCapabilities,
   resolveTier,
   TIER_CAPABILITIES,
   type GrantRow,
@@ -274,6 +276,43 @@ describe("the tier floor", () => {
       if (set === "all") continue;
       for (const key of set) expect(isCapability(key)).toBe(true);
     }
+  });
+});
+
+describe("parseCapability", () => {
+  it("splits a known capability into its three columns", () => {
+    expect(parseCapability("procurement.po.approve")).toEqual({
+      module: "procurement",
+      entity: "po",
+      action: "approve",
+    });
+  });
+
+  it("refuses anything the registry does not know", () => {
+    // The editor writes grants from this. A capability the registry has never
+    // heard of would sit in `permissions` forever while `can()` ignored it —
+    // a setting that appears to have been saved and controls nothing.
+    for (const bad of ["", "a.b.c", "procurement.po.aprove", "procurement.po", "x"]) {
+      expect(parseCapability(bad)).toBeNull();
+    }
+  });
+});
+
+describe("searchCapabilities", () => {
+  it("returns everything for an empty query", () => {
+    expect(searchCapabilities("  ")).toHaveLength(CAPABILITIES.length);
+  });
+
+  it("matches on label, group, parent and key, case-insensitively", () => {
+    expect(searchCapabilities("approve/reject po").map((c) => c.key)).toContain(
+      "procurement.po.approve",
+    );
+    expect(searchCapabilities("VENDORS").length).toBeGreaterThan(0);
+    expect(searchCapabilities("hr.leave").map((c) => c.key)).toContain("hr.leave.approve");
+  });
+
+  it("returns nothing for a query that matches nothing", () => {
+    expect(searchCapabilities("zzzznotathing")).toEqual([]);
   });
 });
 

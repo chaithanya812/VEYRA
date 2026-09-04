@@ -346,9 +346,13 @@ Two things production is missing. Fix them with the owner, not silently:
 
 Do not settle these silently.
 
-1. **`Total Payables` means two different things.** `agreed − disbursed` on the vendor screen
-   (frame `110234`), `billed` in `finance-model.ts::summarisePlan`. Both screens agree on *Dues*.
-   Part 4 Unit 1 has to settle it — the recommendation there is the frame's reading.
+1. ~~**`Total Payables` means two different things.**~~ **SETTLED by the owner, 2026-09-04:
+   neither word wins — keep both figures and rename them.** `agreed − disbursed` (frame `110234`,
+   the vendor screen) and `billed` (`finance-model.ts::summarisePlan`) are both real and both
+   wanted; the bug was one label over two meanings. Ship them as two explicitly different columns —
+   **Committed** for `agreed − disbursed`, **Billed** for `billed` — so no screen silently
+   redefines the other's number and nothing has to be recomputed. *Dues* is unchanged; both screens
+   already agree on it. Phase 11 Unit 1 implements this rather than choosing.
 2. **Vendor Documents.** `project_files.project_id` is NOT NULL and a vendor's GST certificate
    belongs to no project. Relaxing the column or adding a fifth attachment table are both real
    choices; the card currently says so instead of one being made quietly.

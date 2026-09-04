@@ -2085,6 +2085,28 @@ async function main() {
       !!crossRole.error,
       crossRole.error?.code ?? "cross-org role accepted",
     );
+
+    // ── The role description cap (0040) ───────────────────────────────────
+    // Frame `110413` counts `0/155`. A limit only the browser knows is not a
+    // limit, and this column is written by a server action.
+    const longDesc = await sb.from("roles").insert({
+      org_id: A.id, name: "Verify Long Desc", is_system: false, permissions: {},
+      description: "x".repeat(156),
+    });
+    check(
+      "a role description cannot exceed 155 characters",
+      !!longDesc.error,
+      longDesc.error?.code ?? "over-length description accepted",
+    );
+    const okDesc = await sb.from("roles").insert({
+      org_id: A.id, name: "Verify OK Desc", is_system: false, permissions: {},
+      description: "x".repeat(155),
+    });
+    check(
+      "exactly 155 characters is accepted",
+      !okDesc.error,
+      okDesc.error?.message ?? "ok",
+    );
   }
 
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.

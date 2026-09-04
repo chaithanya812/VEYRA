@@ -143,6 +143,31 @@ export function capabilityDef(key: string): CapabilityDef | null {
   return CAPABILITY_INDEX.get(key) ?? null;
 }
 
+/**
+ * Split a capability into the three columns `permissions` stores it in.
+ *
+ * Returns null for anything the registry does not know, so a caller cannot
+ * write a grant for a capability that does not exist — the table would happily
+ * hold it and `can()` would ignore it forever, which is the worst kind of
+ * setting: one that appears to have been saved.
+ */
+export function parseCapability(
+  key: string,
+): { module: string; entity: string; action: string } | null {
+  if (!isCapability(key)) return null;
+  const [module, entity, action] = key.split(".");
+  return { module, entity, action };
+}
+
+/** Free-text search over the tree, matching label, group, parent or key. */
+export function searchCapabilities(query: string): CapabilityDef[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...CAPABILITIES];
+  return CAPABILITIES.filter((c) =>
+    [c.label, c.group, c.parent, c.key].some((f) => f.toLowerCase().includes(q)),
+  );
+}
+
 /** The registry grouped for Edit Role — group → parent → leaves, order kept. */
 export function capabilityTree(): {
   group: string;
