@@ -122,6 +122,11 @@ export const TENANT_TABLES = [
   // calendar. See 0034's header.
   "wfh_requests",
   "holidays",
+  // Saved views (0043). Scoped to a tenant AND to a person — one person's
+  // saved filters are not another's — with a composite `(member_id, org_id)`
+  // FK, which is the only way Postgres can say "same tenant". Stores the
+  // QUESTION (a canonical query string), never the answer.
+  "saved_views",
 ] as const;
 
 export type TenantTable = (typeof TENANT_TABLES)[number];

@@ -2,6 +2,9 @@
 import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
+import { deleteSavedView, saveView } from "@/lib/data/saved-views";
+import { recordUsage } from "@/lib/data/subscription";
+import { findSavedViewScreen } from "@/lib/saved-views-model";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
@@ -168,4 +171,100 @@ export async function recordPaymentAction(
     revalidatePath(`/finance/${parsed.data.contract_id}`);
   }
   return {};
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * SAVED VIEWS · COLUMN CHOOSER · CSV EXPORT — HANDOFF-V8 Part 4 Unit 2
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * ⚠ THE PERMISSION DECISION, STATED RATHER THAN ASSUMED.
+ *
+ * These three actions are GATED, not added to the §5a self-service list.
+ *
+ * The self-service exemptions exist so a member is never locked out of their
+ * OWN records — their attendance, their leave, their expense claim. A saved
+ * view is not one of those: it is a preference on a screen the person can only
+ * reach if that screen's own `can()` is already true. Gating it therefore
+ * locks NOBODY out who can see the screen, while making sure a member refused
+ * `/finance/payments` cannot save, delete or meter a view of it. That is
+ * strictly the safer of the two readings, and it needs no change to the closed
+ * exemption list.
+ *
+ * ⚠ THE GUARD IS A LITERAL, AND IT IS THE FIRST STATEMENT. Reading the screen
+ * out of the form first, in order to look its capability up, would put a parse
+ * BEFORE the permission check — which leaks which inputs are valid to somebody
+ * with no right to ask, and `lib/can-coverage.test.ts` rightly fails it. So
+ * the capability is written out here, and `lib/saved-views-model.test.ts`
+ * asserts every screen in the registry declares exactly this key. A screen
+ * registered under a different capability fails the suite loudly instead of
+ * shipping under-gated on this one.
+ */
+
+export type SavedViewState = { error?: string; ok?: boolean } | undefined;
+
+/** The capability every registered saved-view screen is gated on. */
+const SAVED_VIEW_CAPABILITY = "billing.payment.view";
+
+export async function saveViewAction(
+  _prev: SavedViewState,
+  formData: FormData,
+): Promise<SavedViewState> {
+  const denied = await requireCan("billing.payment.view");
+  if (denied) return denied;
+
+  const screen = findSavedViewScreen(String(formData.get("screen") ?? ""));
+  if (!screen || screen.capability !== SAVED_VIEW_CAPABILITY) {
+    return { error: "Unknown screen." };
+  }
+  const r = await saveView({
+    screen,
+    name: String(formData.get("name") ?? ""),
+    rawQuery: String(formData.get("q") ?? ""),
+  });
+  if (r.error) return { error: r.error };
+  revalidatePath(screen.path);
+  return { ok: true };
+}
+
+export async function deleteViewAction(
+  _prev: SavedViewState,
+  formData: FormData,
+): Promise<SavedViewState> {
+  const denied = await requireCan("billing.payment.view");
+  if (denied) return denied;
+
+  const screen = findSavedViewScreen(String(formData.get("screen") ?? ""));
+  if (!screen || screen.capability !== SAVED_VIEW_CAPABILITY) {
+    return { error: "Unknown screen." };
+  }
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { error: "Nothing to delete." };
+  const r = await deleteSavedView(screen, id);
+  if (r.error) return { error: r.error };
+  revalidatePath(screen.path);
+  return { ok: true };
+}
+
+/**
+ * Meter one CSV export.
+ *
+ * The rows are serialised in the browser from what the server already sent, so
+ * this action moves NO data — it exists so the export cannot become a second
+ * read path that bypasses `can()`. A member refused the screen is refused here
+ * too, and the `exports` usage metric (`lib/subscription-model.ts`, previously
+ * only partly wired) finally gets a real caller.
+ */
+export async function meterExportAction(
+  screenKey: string,
+  rows: number,
+): Promise<{ error?: string }> {
+  const denied = await requireCan("billing.payment.view");
+  if (denied) return { error: denied.error };
+
+  const screen = findSavedViewScreen(screenKey);
+  if (!screen || screen.capability !== SAVED_VIEW_CAPABILITY) {
+    return { error: "Unknown screen." };
+  }
+  if (!Number.isFinite(rows) || rows <= 0) return {};
+  return recordUsage("exports", 1, screen.key);
 }

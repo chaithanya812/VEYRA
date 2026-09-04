@@ -2144,6 +2144,115 @@ async function main() {
   );
   }
 
+  {
+  // ── Saved views (0043) ──────────────────────────────────────────
+  // A saved view is scoped to a TENANT and to a PERSON. There is no
+  // project-isolation assertion here because the table is not project-scoped:
+  // a view is a saved query string for a company-wide screen. Its second axis
+  // is the OWNER, so that is what is asserted instead.
+  //
+  // ⚠ Every row below carries every key (`query` is exercised once, alone,
+  // through a single-row insert) — a batch that omits a key on some rows makes
+  // PostgREST send an explicit NULL and defeats the column default (§11).
+  const svSeed = await sb.from("saved_views").insert([
+    { org_id: A.id, member_id: memA.id, screen: "finance.payments", name: "Overdue only", query: "dues=1" },
+    { org_id: A.id, member_id: memA.id, screen: "finance.receivables", name: "90+ bucket", query: "bucket=90plus" },
+  ]);
+  const svSeedB = await sb.from("saved_views").insert([
+    { org_id: B.id, member_id: memB.id, screen: "finance.payments", name: "Overdue only", query: "dues=1" },
+  ]);
+  const aViews = await sb.from("saved_views").select("id, name, query").eq("org_id", A.id);
+  const bViews = await sb.from("saved_views").select("id, name").eq("org_id", B.id);
+  check(
+    "saved views are org-scoped, and two tenants may use the same view name",
+    !svSeed.error && !svSeedB.error &&
+      (aViews.data ?? []).length === 2 && (bViews.data ?? []).length === 1,
+    `seed=${svSeed.error?.message ?? "ok"} A=${(aViews.data ?? []).length} B=${(bViews.data ?? []).length}`,
+  );
+
+  // The composite FK from 0035's rule. A plain `references org_members(id)`
+  // would accept this row, and tenant A would own a view belonging to B's
+  // member — which is exactly the isolation hole RLS-off has to close in the
+  // schema, because nothing else will.
+  const crossOwner = await sb.from("saved_views").insert({
+    org_id: A.id, member_id: memB.id, screen: "finance.payments", name: "Smuggled", query: "",
+  });
+  // ⚠ The CODE, not merely "an error". Before 0043 is applied every insert
+  // here fails with PGRST205 ("no such table"), which would make this and the
+  // three constraint checks below pass while examining nothing — the exact
+  // failure §11 calls the worst outcome available. Naming the constraint code
+  // keeps them honestly RED until the migration lands.
+  check(
+    "a saved view cannot be owned by another tenant's member",
+    crossOwner.error?.code === "23503",
+    crossOwner.error?.code ?? "cross-org owner accepted",
+  );
+
+  // Saving a name you already used REPLACES that view; two chips with one
+  // label would be unusable. Case-insensitive, like the holidays index.
+  const dupView = await sb.from("saved_views").insert({
+    org_id: A.id, member_id: memA.id, screen: "finance.payments", name: "OVERDUE ONLY", query: "dues=1&q=x",
+  });
+  check(
+    "a view name is unique per owner per screen, case-insensitively",
+    dupView.error?.code === "23505",
+    dupView.error?.code ?? "duplicate accepted",
+  );
+
+  // …but the SAME name on a different screen is a different view, and so is
+  // the same name owned by a different person in the same tenant.
+  const { data: otherMember } = await sb.from("org_members").insert({
+    org_id: A.id, user_id: crypto.randomUUID(), role: "member", display_name: "A View Owner",
+  }).select("id").single();
+  const sameNameOtherOwner = await sb.from("saved_views").insert({
+    org_id: A.id, member_id: otherMember.id, screen: "finance.payments", name: "Overdue only", query: "dues=1",
+  });
+  check(
+    "two people in one tenant may each keep their own view of the same name",
+    !sameNameOtherOwner.error,
+    sameNameOtherOwner.error?.message ?? "ok",
+  );
+
+  // Single-row and deliberately WITHOUT `query` — the only way a column
+  // default is reachable. An empty query means "the unfiltered screen", which
+  // is a perfectly reasonable view to save; it must not arrive as NULL.
+  const noQuery = await sb.from("saved_views").insert({
+    org_id: A.id, member_id: otherMember.id, screen: "finance.receivables", name: "Everything",
+  });
+  const defaulted = await sb.from("saved_views")
+    .select("query").eq("org_id", A.id).eq("member_id", otherMember.id)
+    .eq("screen", "finance.receivables");
+  check(
+    "an omitted query falls to the empty-string default, not to NULL",
+    !noQuery.error && (defaulted.data ?? []).length === 1 && defaulted.data[0].query === "",
+    `${noQuery.error?.message ?? "ok"} got ${JSON.stringify(defaulted.data?.[0]?.query)}`,
+  );
+
+  // The 40-character cap lib/saved-views-model.ts::validateViewName enforces,
+  // stated in the schema too — a limit only the browser knows is not a limit.
+  const longName = await sb.from("saved_views").insert({
+    org_id: A.id, member_id: memA.id, screen: "finance.payments", name: "x".repeat(41), query: "",
+  });
+  check(
+    "a saved view name cannot exceed 40 characters",
+    longName.error?.code === "23514",
+    longName.error?.code ?? "over-length name accepted",
+  );
+
+  // A view belongs to a person. Removing them takes their views with them —
+  // CASCADE, not SET NULL, because a view with no owner is a row nothing can
+  // ever list, apply or delete.
+  await sb.from("org_members").delete().eq("id", otherMember.id);
+  const orphanViews = await sb.from("saved_views").select("id").eq("member_id", otherMember.id);
+  check(
+    "removing a member cascades to their saved views",
+    // `!orphanViews.error` matters: without it a missing table reads as zero
+    // orphans and this passes having read nothing at all.
+    !orphanViews.error && (orphanViews.data ?? []).length === 0,
+    `${orphanViews.error?.code ?? "ok"} rows=${(orphanViews.data ?? []).length}`,
+  );
+  }
+
   // ── Permissions + audit (0035) ────────────────────────────────────────────
   // The security boundary. With RLS off these assertions are the only thing
   // standing between "we have permissions" and "we have a permissions screen".

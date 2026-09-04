@@ -137,7 +137,7 @@ accounting export · the public tokenised vendor-onboarding form.
 
 ## 3. Where the build is
 
-**Phases 0–10 are complete, plus Phase 12 Unit 1.** Phase 11 and Phase 12 Units 2–4 remain (§8).
+**Phases 0–11 are complete, plus Phase 12 Units 1–2.** Only Phase 12 Units 3 and 4 remain (§8).
 
 Every route below is built and working. **Do not rebuild any of it.**
 
@@ -148,6 +148,7 @@ Every route below is built and working. **Do not rebuild any of it.**
 | Project modules | `/documents` (+ viewer) · `/plan` · `/finance` (+ **Audit** tab) · `/payments` · `/site` · `/labour` · `/procurement` · `/report` |
 | Company-wide | `/procurement` · `/rfq` · `/orders` · `/inventory` · `/finance` · `/vendors` · `/items` · `/design` · `/production` · `/site` · `/approvals` · `/reports` (9 reports, all gated) |
 | **HR (Phase 10)** | `/hr/attendance` (Attendance · Leaves · WFH · Holidays) · `/hr/attendance/admin` (Approvals · Report) |
+| **Accounting (Phase 11)** | **`/finance/payments`** (matrix + saved views + column chooser + CSV) · **`/finance/petty`** (Dashboard · My Expense · My Fund) · **`/finance/receivables`** (four buckets + write-off/restore) |
 | Admin | `/settings` · `/settings/users` (real Manager column) · **`/settings/roles` (Edit Role)** · `/billing` · `/communication` |
 
 **Phase 10, just finished**, in four sentences. HR attendance, leave, WFH and holidays are live, with
@@ -160,12 +161,12 @@ roles the spine checks. Phase 12 Unit 1 wired all six Reports capabilities to re
 
 ## 4. Migration ledger
 
-**Applied: `0001–0042`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`;
+**Applied: `0001–0043`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`;
 **0041 added `kind` / `reversal_of` / `vendor_id` to `expense_claims` for Petty Finance**;
 **0042 added `written_off_at` / `written_off_by` / `write_off_reason` to `milestones`** — both are
 columns on an existing table, deliberately NOT a second ledger.)
 
-**Next free number: `0043+`.** Nothing is reserved.
+**Next free number: `0044+`.** Nothing is reserved.
 
 > ⚠ Part 4 Unit 2 (saved views) still says "migration 0040" — V7 was written before 0040 existed,
 > and 0041/0042 have since been consumed. **It means `0043`.**
@@ -250,7 +251,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **832 tests in 45 files** · **verify 201/201** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **864 tests in 46 files** · **verify 208/208** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -374,7 +375,7 @@ and the project Summary band.
 | Unit | What | Notes |
 |---|---|---|
 | ~~1~~ | ~~Wire the six Reports permission groups~~ | **DONE — committed `b61e791`** |
-| 2 | Saved views · column chooser · CSV export | needs migration **0041+** |
+| ~~2~~ | ~~Saved views · column chooser · CSV export~~ | **DONE. Migration 0043 applied.** Adopted on `/finance/payments` and `/finance/receivables` only — **`/finance/petty` and `/reports` are NOT done** (petty is mixed-permission, `/reports` has no URL filters yet). A saved view is a named query string; the chosen columns ride in it. |
 | 3 | Skeleton loading + designed empty states on every list | |
 | 4 | Accessibility floor + full red-discipline audit | last, so it audits finished screens. **Known defect to fix here:** `components/ui/permission-limited.tsx` renders `${label} (${group})` and DROPS `parent`, so `billing.payment.view` refuses with "It needs the View (Finance) permission" — the word *Payments* is lost, and `billing.invoice.view` would read "View (Invoice)". Cosmetic, but it makes the refusal hard to act on, and it is wrong on **every** gated screen. Found in Phase 11 Unit 2; not fixed there because it changes copy app-wide. |
 
@@ -505,6 +506,19 @@ its number so existing `§10.8` references still resolve.)*
   `next build` passes, every request throws. Vocabulary belongs in the pure model.
 - **Client components resolve their tab from the SERVER, not from an effect.** Every tabbed screen
   takes an `initialTab` prop read from `searchParams`.
+- **An uncontrolled form control does NOT re-read the URL on a client-side navigation — `key` it.**
+  `defaultChecked` / `defaultValue` apply **on mount only**. A hard page load is always fine, so this
+  is invisible to `fetch`, to `next build` and to every gate. But arriving by a soft navigation — a
+  `<Link>`, a saved-view chip, a bucket tile — re-renders the form *without remounting it*, so the
+  controls keep the PREVIOUS url's state while the table shows the new one. On `/finance/payments`
+  this meant landing on a saved view carrying `dues=1` showed the filter applied in the chip with its
+  checkbox **unticked**, and the next press of Filter silently dropped it — a filter destroyed by an
+  ordinary click. Fix: `key` the form on the resolved state
+  (`key={`${stages.join(",")}|${q}|${duesOnly}`}`) so it remounts whenever the URL changes.
+  All three finance screens now do this. **This is the same family as the `revalidatePath`
+  spring-back: state lands, the control disagrees, the next interaction destroys it — and only a
+  CLICK AFTER A SOFT NAVIGATION finds either.** Clicking the control on a freshly loaded page is not
+  enough.
 - **`revalidatePath` does NOT re-render a client component.** It invalidates the cache; the
   component still holds the props it was rendered with. After a successful mutation from a client
   component, call `router.refresh()` — otherwise the write lands and the control springs back, which

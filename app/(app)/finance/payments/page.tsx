@@ -21,6 +21,16 @@ import {
   type PaymentsMatrixRow,
 } from "@/lib/payments-dashboard-model";
 import { PROJECT_STAGES, STAGE_LABELS } from "@/lib/projects-model";
+import { ColumnChooser } from "@/components/ui/column-chooser";
+import { SavedViews } from "@/components/ui/saved-views";
+import { ExportCsvButton } from "@/components/reports/export-csv-button";
+import { listSavedViews } from "@/lib/data/saved-views";
+import { meterExportAction } from "@/app/(app)/finance/actions";
+import {
+  csvFilename,
+  findSavedViewScreen,
+  parseColumns,
+} from "@/lib/saved-views-model";
 import { cn, inr } from "@/lib/utils";
 
 /**
@@ -51,7 +61,12 @@ const TONE_CELL: Record<CellTone, string> = {
 export default async function PaymentsDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ stage?: string | string[]; q?: string; dues?: string }>;
+  searchParams: Promise<{
+    stage?: string | string[];
+    q?: string;
+    dues?: string;
+    cols?: string | string[];
+  }>;
 }) {
   // The guard sits before the read. Fetching every project's money and then
   // hiding it would still have read it.
@@ -91,6 +106,40 @@ export default async function PaymentsDashboardPage({
   // Σ of the VISIBLE rows, never the unfiltered set.
   const band = summariseMatrix(rows);
 
+  // ── Saved views · column chooser · CSV (Part 4 Unit 2) ──────────────────
+  // All three read the SAME `searchParams` the filter above does, on the
+  // server. A saved view is that query string with a name; the chosen columns
+  // are one more param in it; and the export serialises the rows this render
+  // produced — so the file cannot disagree with the screen.
+  const screen = findSavedViewScreen("finance.payments")!;
+  const visibleKeys = parseColumns(screen, sp.cols);
+  const columns = MATRIX_COLUMNS.filter((c) => visibleKeys.includes(c.key));
+  // Only reachable inside the `can("billing.payment.view")` branch above, and
+  // it filters on the acting member — one person's saved filters are not
+  // another's.
+  const saved = await listSavedViews(screen);
+
+  // The filter, as the chooser must carry it through: choosing columns must
+  // never quietly widen the rows you are looking at.
+  const filterEntries: [string, string][] = [
+    ...stages.map((s) => ["stage", s] as [string, string]),
+    ...(q ? ([["q", q]] as [string, string][]) : []),
+    ...(duesOnly ? ([["dues", "1"]] as [string, string][]) : []),
+  ];
+
+  // Project / Client / Stage lead every row because they are the row's
+  // identity, not one of its figures — they are the sticky header on screen and
+  // are not in the chooser. Every money cell is `inr()`, the same Indian
+  // grouping the table shows, so the CSV reads exactly like the screen.
+  const csvHeaders = ["Project", "Client", "Stage", ...columns.map((c) => c.label)];
+  const csvRows = rows.map((r) => [
+    r.projectName,
+    r.clientName,
+    r.stage ? stageLabel(r.stage) : "—",
+    ...columns.map((c) => inr(r[c.key])),
+  ]);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
   return (
     <div className="mx-auto max-w-[1400px]">
       <PageHeader
@@ -108,13 +157,43 @@ export default async function PaymentsDashboardPage({
             >
               <Upload className="size-4" /> Import Payments
             </Button>
+            <ColumnChooser
+              screen={screen}
+              visible={visibleKeys}
+              filterEntries={filterEntries}
+            />
+            <ExportCsvButton
+              filename={csvFilename(screen, today, Boolean(chip))}
+              headers={csvHeaders}
+              rows={csvRows}
+              filterChip={chip}
+              disabled={rows.length === 0}
+              onExported={meterExportAction.bind(null, screen.key)}
+            />
           </div>
         }
       />
 
+      <SavedViews screen={screen} views={saved.views} readError={saved.error} />
+
       {/* Filter bar — a GET form, so the URL IS the state and the server renders
-          the table the URL asks for. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3">
+          the table the URL asks for.
+
+          ⚠ THE `key` IS LOAD-BEARING. These are uncontrolled inputs, so
+          `defaultChecked` / `defaultValue` apply ON MOUNT ONLY. A hard load was
+          always fine, but arriving by a CLIENT-SIDE navigation — which is what a
+          saved-view chip is — re-renders this form without remounting it, so the
+          controls kept the previous URL's state while the table showed the new
+          one. Landing on a saved view carrying `dues=1` then showed the filter
+          applied in the chip and its checkbox UNTICKED, and the next press of
+          Filter silently dropped it. Keying the form on the resolved state
+          remounts it whenever the URL changes, so the controls cannot disagree
+          with the query string that rendered them. */}
+      <form
+        method="get"
+        key={`${stages.join(",")}|${q}|${duesOnly}|${visibleKeys.join(",")}`}
+        className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3"
+      >
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <legend className="mb-1 w-full text-[13px] font-medium text-[var(--color-ink-secondary)]">
             Project stage
@@ -154,6 +233,11 @@ export default async function PaymentsDashboardPage({
             />
             Dues outstanding only
           </label>
+          {/* The chosen columns ride through a re-filter. Without this, every
+              press of Filter would silently restore the full column set. */}
+          {visibleKeys.length !== screen.columns.length && (
+            <input type="hidden" name="cols" value={visibleKeys.join(",")} />
+          )}
           <Button type="submit" variant="secondary">
             <Filter className="size-4" /> Filter
           </Button>
@@ -253,7 +337,7 @@ export default async function PaymentsDashboardPage({
                     <th className="sticky left-0 top-0 z-30 min-w-[240px] border-b border-r border-[var(--color-border)] bg-[var(--color-surface-sunken)] px-4 py-3 font-medium">
                       Project
                     </th>
-                    {MATRIX_COLUMNS.map((c) => (
+                    {columns.map((c) => (
                       <th
                         key={c.key}
                         title={columnTitle(c)}
@@ -270,7 +354,7 @@ export default async function PaymentsDashboardPage({
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <MatrixRow key={r.projectId} row={r} />
+                    <MatrixRow key={r.projectId} row={r} columns={columns} />
                   ))}
                 </tbody>
               </table>
@@ -336,7 +420,13 @@ function BandGroup({
   );
 }
 
-function MatrixRow({ row }: { row: PaymentsMatrixRow }) {
+function MatrixRow({
+  row,
+  columns,
+}: {
+  row: PaymentsMatrixRow;
+  columns: readonly (typeof MATRIX_COLUMNS)[number][];
+}) {
   return (
     <tr className="group">
       <th
@@ -356,7 +446,7 @@ function MatrixRow({ row }: { row: PaymentsMatrixRow }) {
         </p>
       </th>
 
-      {MATRIX_COLUMNS.map((c) => {
+      {columns.map((c) => {
         const value = row[c.key];
         return (
           <td

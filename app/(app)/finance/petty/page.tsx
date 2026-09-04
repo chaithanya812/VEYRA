@@ -203,7 +203,17 @@ export default async function PettyFinancePage({
           <aside className="space-y-4">
             <MonthStepper month={month} monthHref={monthHref} />
 
-            <form method="get" className="flex items-center gap-2">
+            {/* ⚠ THE `key` IS LOAD-BEARING — see /finance/payments. Every tab,
+                month and side control on this screen is a LINK, so arriving
+                here is a client-side navigation that re-renders this form
+                without remounting it; `defaultValue` applies on mount only, so
+                the box would keep the previous month's search term while the
+                ledger showed the new month. */}
+            <form
+              method="get"
+              key={`${tab}|${month.year}-${month.month}|${side}|${search}`}
+              className="flex items-center gap-2"
+            >
               <input type="hidden" name="tab" value={tab} />
               <input type="hidden" name="y" value={month.year} />
               <input type="hidden" name="m" value={month.month} />

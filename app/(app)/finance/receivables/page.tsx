@@ -17,6 +17,11 @@ import {
   type ReceivableRow,
 } from "@/lib/receivables-model";
 import { cn, inr } from "@/lib/utils";
+import { SavedViews } from "@/components/ui/saved-views";
+import { ExportCsvButton } from "@/components/reports/export-csv-button";
+import { listSavedViews } from "@/lib/data/saved-views";
+import { meterExportAction } from "@/app/(app)/finance/actions";
+import { csvFilename, findSavedViewScreen } from "@/lib/saved-views-model";
 import { RestoreControl, WriteOffControl } from "./receivables-controls";
 
 /**
@@ -82,6 +87,39 @@ export default async function ReceivablesPage({
   const chip = describeReceivablesFilter({ bucket, q });
   const mayApprove = await can("billing.payment.approve");
 
+  // ── Saved views + CSV (Part 4 Unit 2) ────────────────────────────
+  // Both are reached only INSIDE the `can("billing.payment.view")` branch
+  // above, and the export serialises exactly the rows this render produced —
+  // filter and all. There is no column chooser here: the table's headers are
+  // hand-written, and the registry says so instead of pretending otherwise.
+  const screen = findSavedViewScreen("finance.receivables")!;
+  const saved = await listSavedViews(screen);
+  const csvHeaders = [
+    "Project Name",
+    "Client",
+    "Sales Owner",
+    "Milestone (%)",
+    "Due Date",
+    "Amount",
+    "Pending",
+    "Received",
+    "Status",
+  ];
+  // `—` for a milestone with no due date, exactly as the table shows it. The
+  // export must never be a more confident answer than the screen.
+  const csvRows = rows.map((r) => [
+    r.projectName,
+    r.clientName,
+    r.salesOwner,
+    r.milestoneLabel,
+    r.dueDate ?? "—",
+    inr(r.amount),
+    inr(r.pending),
+    inr(r.received),
+    r.writtenOff ? "Written off" : r.signedOff ? "Billed" : "Not billed",
+  ]);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
   const href = (b: string | null) => {
     const params = new URLSearchParams();
     if (b) params.set("bucket", b);
@@ -96,15 +134,38 @@ export default async function ReceivablesPage({
         title="Account Receivables"
         subtitle={`${all.length} client milestone${all.length === 1 ? "" : "s"} across ${ledger.projectCount} project${ledger.projectCount === 1 ? "" : "s"} · read straight off each project's payment schedule, never re-entered`}
         actions={
-          <span className="hidden text-[13px] text-[var(--color-ink-secondary)] sm:inline">
-            Auto refreshes after 24 hours
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-[13px] text-[var(--color-ink-secondary)] sm:inline">
+              Auto refreshes after 24 hours
+            </span>
+            <ExportCsvButton
+              filename={csvFilename(screen, today, Boolean(chip))}
+              headers={csvHeaders}
+              rows={csvRows}
+              filterChip={chip}
+              disabled={rows.length === 0}
+              onExported={meterExportAction.bind(null, screen.key)}
+            />
+          </div>
         }
       />
 
+      <SavedViews screen={screen} views={saved.views} readError={saved.error} />
+
       {/* Filter — a GET form, so the URL IS the state and the server renders
-          the table the URL asks for. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
+          the table the URL asks for.
+
+          ⚠ THE `key` IS LOAD-BEARING — see the same comment on
+          /finance/payments. `defaultValue` applies ON MOUNT ONLY, and a saved-
+          view chip or a bucket tile is a CLIENT-SIDE navigation that re-renders
+          this form without remounting it, leaving the search box showing the
+          previous URL's text while the table shows the new one. The next press
+          of Filter would then submit the stale term. */}
+      <form
+        method="get"
+        key={`${bucket ?? ""}|${q}`}
+        className="mb-4 flex flex-wrap items-end gap-3"
+      >
         {bucket && <input type="hidden" name="bucket" value={bucket} />}
         <Input
           name="q"
