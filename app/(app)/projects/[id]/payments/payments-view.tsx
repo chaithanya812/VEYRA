@@ -128,7 +128,12 @@ export function PaymentsView({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <Figure label="Funds received" value={s.funds} tone="green" />
               <Figure label="Disbursed" value={s.disbursed} />
-              <Figure label="Receivable dues" value={s.receivableDues} tone="amber" />
+              <Figure
+                label="Receivable dues"
+                value={s.receivableDues}
+                tone="amber"
+                hint="Billed less received"
+              />
               <Figure
                 label="Committed"
                 value={s.committed}

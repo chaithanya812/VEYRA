@@ -86,11 +86,31 @@ export function FinanceView({
           <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-secondary)]">
             Inflow · what the client owes
           </h2>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/*
+            `Contracted` and `Billed` used to share one label, "Total
+            receivables", and meant two different things here and on the project
+            Summary band. Settled 2026-09-04 (§10.8), exactly as the payables
+            side below: keep both figures, name them apart, print what each is.
+          */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <Figure label="Project value" value={s.projectValue} />
+            <Figure
+              label="Contracted"
+              value={s.contracted}
+              hint="Σ client contracts"
+            />
+            <Figure
+              label="Billed"
+              value={s.receivableBilled}
+              hint="Client work signed off"
+            />
             <Figure label="Funds received" value={s.funds} tone="green" />
-            <Figure label="Total receivables" value={s.totalReceivables} />
-            <Figure label="Receivable dues" value={s.receivableDues} tone="amber" />
+            <Figure
+              label="Receivable dues"
+              value={s.receivableDues}
+              tone="amber"
+              hint="Billed less received"
+            />
           </div>
 
           <h2 className="mb-3 mt-5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-secondary)]">

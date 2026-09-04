@@ -160,15 +160,15 @@ roles the spine checks. Phase 12 Unit 1 wired all six Reports capabilities to re
 
 ## 4. Migration ledger
 
-**Applied: `0001–0041`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`;
-**0041 added `kind` / `reversal_of` / `vendor_id` to `expense_claims` for Petty Finance** — three
-columns on the existing expense ledger, deliberately NOT a second table.)
+**Applied: `0001–0042`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`;
+**0041 added `kind` / `reversal_of` / `vendor_id` to `expense_claims` for Petty Finance**;
+**0042 added `written_off_at` / `written_off_by` / `write_off_reason` to `milestones`** — both are
+columns on an existing table, deliberately NOT a second ledger.)
 
-**Next free number: `0042+`.** Nothing is reserved.
+**Next free number: `0043+`.** Nothing is reserved.
 
-> ⚠ Two units below say "migration 0040" because V7 was written before 0040 existed, and they were
-> then re-pointed at 0041 — which Unit 3 has now consumed. **They mean `0042`.**
-> Part 3 Unit 4 (Written Off) and Part 4 Unit 2 (saved views).
+> ⚠ Part 4 Unit 2 (saved views) still says "migration 0040" — V7 was written before 0040 existed,
+> and 0041/0042 have since been consumed. **It means `0043`.**
 
 **A new table is three edits, not one:** the migration, `lib/data/tables.ts`, and an org-isolation
 assertion in `scripts/verify.mjs`. Miss the second and TypeScript rejects `db.table("your_table")`
@@ -250,7 +250,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **789 tests in 44 files** · **verify 194/194** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **832 tests in 45 files** · **verify 201/201** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -363,7 +363,11 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 | ~~1~~ | ~~The `Total Payables` rename + the per-project matrix model~~ | **DONE.** Shipped `Committed`/`Billed` per §10.1; `lib/payments-dashboard-model.ts` is the matrix Unit 2 consumes. Also corrected contract-less payments — see the commit. |
 | ~~2~~ | ~~`/finance/payments` — the Payments Dashboard with drill-through~~ | **DONE.** Read-only by design — no server action; the route is gated by `can("billing.payment.view")` as the page's first statement. Band = Σ visible rows. |
 | ~~3~~ | ~~`/finance/petty` — Petty Finance, extending `expense_claims`~~ | **DONE.** Migration **0041 applied.** Three columns on `expense_claims`, not a second ledger. `recordPettyEntryAction` is self-service and ungated (§5a) because `member_id` comes from the acting context; reverse/decide carry `billing.payment.approve`. |
-| 4 | `/finance/receivables` — Account Receivables | needs migration **0042** if Written Off is built. **§10.8 is now SETTLED** — ship `Contracted` / `Billed` / `Dues`, symmetric with §10.1. Implement it; do not choose. |
+| ~~4~~ | ~~`/finance/receivables` — Account Receivables~~ | **DONE. Migration 0042 applied.** §10.8 shipped as `Contracted` / `Billed` / `Dues` across all four money screens. Write-off keeps the row and its amount; Restore is audited too. |
+
+**Phase 11 is complete.** All four units are committed and the money vocabulary is now consistent
+across `/finance/receivables`, `/finance/payments`, `/projects/[id]/finance`, `/projects/[id]/payments`
+and the project Summary band.
 
 ### Phase 12 — Reports & polish · **Part 4**
 
@@ -442,6 +446,15 @@ Two things production is missing. Fix them with the owner, not silently:
 *(§10.8 was here and is now SETTLED — it has moved up into "Settled — do not reopen" above, keeping
 its number so existing `§10.8` references still resolve.)*
 
+9. **`projects` has no sales owner.** Found doing Phase 11 Unit 4. Frame `110534` wants a Sales Owner
+   per receivable, but the only owner in the schema is `leads.sales_owner_id`, and a project created
+   without a lead has none — the demo project is exactly that case. The screen currently falls back
+   to whoever raised the client contract and **says so in the cell** ("raised the contract — this
+   project has no lead to take an owner from") rather than implying an ownership that does not
+   exist. A real `projects.sales_owner_id` is the honest fix, and it is a schema change plus a
+   backfill policy (**§11: do not invent history to fill a new column** — a project with no lead has
+   no owner to recover, so the backfill has to leave it null, not guess).
+
 ---
 
 ## 11. Mistakes already made — every unit brief cites this section
@@ -459,6 +472,15 @@ its number so existing `§10.8` references still resolve.)*
   the screen — do not quietly pick one.
 - **`db.mjs sql` renders a DATE through a JS `Date`, printing it one day early** in IST. Cast it:
   `select holiday_date::text`. Otherwise a correct screen looks like an off-by-one.
+- **`contracts.created_by` holds an AUTH USER id, not an `org_members.id`.** It only resolves by
+  joining `org_members.user_id`. Joining it straight onto `org_members.id` returns nothing and looks
+  like missing data. Found in Phase 11 Unit 4.
+- **`org_members` contains several tenants' rows and the demo names REPEAT across them** — there are
+  four "Rahul Verma"s. Picking an id by name alone gets you another tenant's member, the
+  `veyra_acting_member` cookie is then ignored, and the page silently renders as the default user, so
+  a permission test **passes while proving nothing**. Always filter by the demo `org_id`:
+  `where org_id = (select org_id from projects where id='c1d3…')`. This cost a false "the agent's
+  permission claim does not reproduce" in Phase 11 Unit 4 — the claim was right and the test was wrong.
 
 **Writes**
 - A PostgREST bulk insert sends an explicit NULL for a key that one row in the batch omits,

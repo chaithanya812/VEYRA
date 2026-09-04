@@ -81,7 +81,8 @@ describe("paymentsMatrix", () => {
   it("computes the inflow group from milestones and payments, not from names", () => {
     const r = rows[0];
     expect(r.projectValue).toBe(1800000);
-    expect(r.totalReceivables).toBe(1260000);
+    expect(r.contracted).toBe(1800000);
+    expect(r.receivableBilled).toBe(1260000);
     expect(r.fundsReceived).toBe(560000);
     expect(r.receivableDues).toBe(700000);
   });
@@ -118,7 +119,8 @@ describe("paymentsMatrix", () => {
     });
     expect(solo).toHaveLength(1);
     expect(solo[0].billed).toBe(0);
-    expect(solo[0].totalReceivables).toBe(0);
+    expect(solo[0].receivableBilled).toBe(0);
+    expect(solo[0].contracted).toBe(0);
   });
 });
 
@@ -144,7 +146,8 @@ describe("summariseMatrix equals the sum of the visible rows", () => {
   const fields = [
     "expectedPnl",
     "projectValue",
-    "totalReceivables",
+    "contracted",
+    "receivableBilled",
     "fundsReceived",
     "receivableDues",
     "estimatedExpenses",
@@ -210,7 +213,8 @@ describe("MATRIX_COLUMNS", () => {
   it("names every figure the frame's matrix carries, and nothing extra", () => {
     expect(MATRIX_COLUMNS.map((c) => c.key)).toEqual([
       "projectValue",
-      "totalReceivables",
+      "contracted",
+      "receivableBilled",
       "fundsReceived",
       "receivableDues",
       "estimatedExpenses",
@@ -235,24 +239,38 @@ describe("MATRIX_COLUMNS", () => {
     for (const c of MATRIX_COLUMNS) {
       expect(c.note.length).toBeGreaterThan(10);
     }
-    // The one collision the owner has NOT settled must be named on the screen,
-    // not quietly resolved (HANDOFF-V8 §10.8).
-    const rec = MATRIX_COLUMNS.find((c) => c.key === "totalReceivables");
-    expect(rec?.caution).toContain("§10.8");
-    expect(columnTitle(rec!)).toContain("§10.8");
-    // Only that one column carries a caution — a screen where every heading
-    // warns is a screen where no heading warns.
-    expect(MATRIX_COLUMNS.filter((c) => c.caution)).toHaveLength(1);
+    // The collision the owner SETTLED (HANDOFF-V8 §10.8) is named on the two
+    // columns it used to live across, so nobody re-merges them later.
+    const rec = MATRIX_COLUMNS.find((c) => c.key === "contracted");
+    expect(rec?.caution).toContain("Total Receivables");
+    expect(columnTitle(rec!)).toContain("Total Receivables");
+    const bil = MATRIX_COLUMNS.find((c) => c.key === "receivableBilled");
+    expect(bil?.caution).toContain("§10.8");
+    // Only those two carry a caution — a screen where every heading warns is a
+    // screen where no heading warns.
+    expect(MATRIX_COLUMNS.filter((c) => c.caution)).toHaveLength(2);
     // A tile hint is one line, never a paragraph.
     for (const c of MATRIX_COLUMNS) expect(c.note.length).toBeLessThan(100);
   });
 
-  it("uses the settled vocabulary and never the retired label", () => {
+  it("uses the settled vocabulary and never a retired label", () => {
     const labels = MATRIX_COLUMNS.map((c) => c.label);
     expect(labels).toContain("Committed");
-    expect(labels).toContain("Billed");
+    expect(labels).toContain("Contracted");
     expect(labels).toContain("Dues");
+    // Two `Billed` columns sit in one flat row, so each names its side. The
+    // WORD is unchanged — a third word for either quantity is what §10.1 and
+    // §10.8 both forbid.
+    expect(labels.filter((l) => l.startsWith("Billed"))).toEqual([
+      "Billed (Client)",
+      "Billed (Vendor)",
+    ]);
     expect(labels.some((l) => /payable/i.test(l))).toBe(false);
+    // The retired label is gone from every heading and every note.
+    for (const c of MATRIX_COLUMNS) {
+      expect(c.label).not.toBe("Total Receivables");
+      expect(c.note).not.toContain("Total Receivables");
+    }
   });
 });
 
@@ -272,7 +290,8 @@ describe("cellTone", () => {
   });
 
   it("greens money in, ambers money pending, leaves the rest alone", () => {
-    expect(cellTone("totalReceivables", 1260000)).toBe("positive");
+    expect(cellTone("receivableBilled", 1260000)).toBe("positive");
+    expect(cellTone("contracted", 1800000)).toBe("neutral");
     expect(cellTone("fundsReceived", 560000)).toBe("positive");
     expect(cellTone("receivableDues", 700000)).toBe("warning");
     expect(cellTone("dues", 46000)).toBe("warning");

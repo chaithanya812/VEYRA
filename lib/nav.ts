@@ -142,11 +142,14 @@ export const NAV: NavEntry[] = [
       // unable to claim back their own money.
       { label: "Petty Finance", href: "/finance/petty", icon: Wallet },
       { label: "Billing", href: "/billing", icon: Wallet },
+      // Account Receivables (§12.3). Built in Phase 11 Unit 4, so the `soon`
+      // chip is gone. Not role-hidden: the page itself refuses without
+      // `billing.payment.view` with an explanation, and a rail that dropped the
+      // entry would leave somebody unable to find out why.
       {
         label: "Account Receivables",
         href: "/finance/receivables",
         icon: BadgeIndianRupee,
-        soon: true,
       },
     ],
   },

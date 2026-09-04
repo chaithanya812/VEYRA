@@ -13,9 +13,20 @@
  *
  * The vocabulary is the one the owner settled on 2026-09-04 (HANDOFF-V8 §10.1):
  *
- *   Committed = agreed − disbursed   (the whole remaining commitment)
- *   Billed    = milestone work signed off
- *   Dues      = billed − disbursed   (payable today)
+ *   Committed  = agreed − disbursed   (the whole remaining commitment)
+ *   Billed     = milestone work signed off
+ *   Dues       = billed − disbursed   (payable today)
+ *
+ * and its receivables twin, settled the same day (§10.8):
+ *
+ *   Contracted = Σ client contracts   (the whole client commitment)
+ *   Billed     = client milestones signed off
+ *   Dues       = billed − received
+ *
+ * Both sides now read the same way, which is the point: `Contracted`/
+ * `Committed` is the whole commitment, `Billed` is what has been earned, `Dues`
+ * is what is payable now. The table labels the two `Billed` columns with the
+ * side they belong to, because they sit in one flat row.
  *
  * Grouping is on the real `project_id` FK (migration 0028), never on a name.
  * `lib/data/reports.ts` still honours the legacy `payments.project_label` as a
@@ -66,7 +77,10 @@ export interface PaymentsMatrixRow {
   /** Inflow group. */
   projectValue: number;
   fundsReceived: number;
-  totalReceivables: number;
+  /** `Contracted` — Σ client contract values (§10.8). */
+  contracted: number;
+  /** `Billed` — client milestones signed off (§10.8). */
+  receivableBilled: number;
   receivableDues: number;
 
   /** Outflow group. */
@@ -99,7 +113,8 @@ export interface PaymentsMatrixBand {
   expectedPnl: number;
   projectValue: number;
   /** Inflow group. */
-  totalReceivables: number;
+  contracted: number;
+  receivableBilled: number;
   fundsReceived: number;
   receivableDues: number;
   /** Outflow group. */
@@ -190,7 +205,8 @@ export function paymentsMatrix(input: {
       stage: project.stage ?? null,
       projectValue: s.projectValue,
       fundsReceived: s.funds,
-      totalReceivables: s.totalReceivables,
+      contracted: s.contracted,
+      receivableBilled: s.receivableBilled,
       receivableDues: s.receivableDues,
       estimatedExpenses: s.estimatedExpenses,
       disbursed: s.disbursed,
@@ -239,7 +255,8 @@ export function summariseMatrix(
     totalProjects: rows.length,
     expectedPnl: sum((r) => r.expectedPnl),
     projectValue: sum((r) => r.projectValue),
-    totalReceivables: sum((r) => r.totalReceivables),
+    contracted: sum((r) => r.contracted),
+    receivableBilled: sum((r) => r.receivableBilled),
     fundsReceived: sum((r) => r.fundsReceived),
     receivableDues: sum((r) => r.receivableDues),
     estimatedExpenses: sum((r) => r.estimatedExpenses),
@@ -319,7 +336,8 @@ export function describeFilter(filter: MatrixFilter = {}): string | null {
 export type MatrixColumnKey =
   | "projectValue"
   | "fundsReceived"
-  | "totalReceivables"
+  | "contracted"
+  | "receivableBilled"
   | "receivableDues"
   | "estimatedExpenses"
   | "disbursed"
@@ -340,11 +358,10 @@ export interface MatrixColumn {
    */
   note: string;
   /**
-   * A warning that belongs on the column but NOT in a summary tile, because it
-   * is a paragraph. Only `totalReceivables` carries one, and it must: the same
-   * two words mean a different quantity on the project Summary band, and that
-   * collision is not settled (HANDOFF-V8 §10.8). Naming it is the alternative
-   * to picking one quietly.
+   * A longer note for a column whose meaning used to be contested. `Contracted`
+   * and `Billed` carry one: they were BOTH called "Total Receivables" on two
+   * screens until the owner settled it (HANDOFF-V8 §10.8), and saying which is
+   * which on the column itself is what stops the collision coming back.
    */
   caution?: string;
 }
@@ -362,14 +379,22 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
     note: "The project's own recorded value.",
   },
   {
-    key: "totalReceivables",
-    label: "Total Receivables",
+    key: "contracted",
+    label: "Contracted",
     group: "Inflow",
-    note: "Client milestones signed off.",
+    note: "Sum of every client contract's value — the whole client commitment.",
     caution:
-      "⚠ The project Summary band shows the contracted client total under " +
-      "these same two words — both figures are real and the collision is NOT " +
-      "settled (HANDOFF-V8 §10.8).",
+      "Settled 2026-09-04: this and Billed (Client) are two different, both-real " +
+      "figures that used to share the words “Total Receivables”.",
+  },
+  {
+    key: "receivableBilled",
+    label: "Billed (Client)",
+    group: "Inflow",
+    note: "Client milestones signed off — what may be invoiced.",
+    caution:
+      "Settled 2026-09-04: Contracted is the whole commitment, this is what has " +
+      "been earned (HANDOFF-V8 §10.8).",
   },
   {
     key: "fundsReceived",
@@ -381,7 +406,7 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
     key: "receivableDues",
     label: "Receivable Dues",
     group: "Inflow",
-    note: "Total Receivables − Funds Received.",
+    note: "Billed (Client) − Funds Received.",
   },
   {
     key: "estimatedExpenses",
@@ -403,7 +428,7 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
   },
   {
     key: "billed",
-    label: "Billed",
+    label: "Billed (Vendor)",
     group: "Outflow",
     note: "Vendor milestones signed off — work you have accepted.",
   },
@@ -411,7 +436,7 @@ export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
     key: "dues",
     label: "Dues",
     group: "Outflow",
-    note: "Billed − Disbursed — payable today.",
+    note: "Billed (Vendor) − Disbursed — payable today.",
   },
   {
     key: "cashFlow",
@@ -431,7 +456,7 @@ export type CellTone = "neutral" | "positive" | "warning" | "negative";
 
 /** Money received, and the hero metric when it is healthy. */
 const POSITIVE_KEYS = new Set<MatrixColumnKey>([
-  "totalReceivables",
+  "receivableBilled",
   "fundsReceived",
   "expectedPnl",
 ]);

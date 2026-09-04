@@ -260,10 +260,10 @@ export interface ContractRollup {
 /**
  * One contract's money, in the four figures the frame shows.
  *
- * For a client contract these read Funds Received · Total Receivables ·
- * Receivables Due; for a vendor contract, Disbursed · Total Payables · Payable
- * Dues. They are the same arithmetic seen from opposite ends, which is why
- * there is one function and not two.
+ * For a client contract these read Funds Received · Billed · Receivable Dues;
+ * for a vendor contract, Disbursed · Billed · Payable Dues. They are the same
+ * arithmetic seen from opposite ends, which is why there is one function and
+ * not two.
  */
 export function rollupContract(
   contract: Pick<Contract, "amount">,
@@ -292,7 +292,21 @@ export interface FinancialPlanSummary {
   projectValue: number;
   /** Client side. */
   funds: number;
-  totalReceivables: number;
+  /**
+   * `Contracted` — Σ of every CLIENT contract's value: the whole commitment
+   * the client has signed up to, whether or not the work is signed off.
+   * SETTLED 2026-09-04 (HANDOFF-V8 §10.8): this figure and `receivableBilled`
+   * are both real and both wanted, and the bug was one label — "Total
+   * Receivables" — over the two of them. Deliberately symmetric with
+   * `estimatedExpenses`/`billed` on the vendor side.
+   */
+  contracted: number;
+  /**
+   * `Billed` — client milestone amounts whose work has been signed off: what
+   * may be invoiced today. This field used to be called `totalReceivables`.
+   */
+  receivableBilled: number;
+  /** `Receivable Dues` — billed less received. Unchanged by §10.8. */
   receivableDues: number;
   /** Vendor side. */
   estimatedExpenses: number;
@@ -342,7 +356,8 @@ export function summarisePlan(input: {
   unattachedPayments?: readonly Pick<Payment, "direction" | "amount">[];
 }): FinancialPlanSummary {
   let funds = 0;
-  let totalReceivables = 0;
+  let contracted = 0;
+  let receivableBilled = 0;
   let estimatedExpenses = 0;
   let disbursed = 0;
   let billed = 0;
@@ -354,7 +369,8 @@ export function summarisePlan(input: {
 
     if (sourceOf(c) === "client") {
       funds += r.settled;
-      totalReceivables += r.billable;
+      contracted += r.contractAmount;
+      receivableBilled += r.billable;
     } else {
       estimatedExpenses += r.contractAmount;
       disbursed += r.settled;
@@ -368,7 +384,8 @@ export function summarisePlan(input: {
   }
 
   funds = round2(funds);
-  totalReceivables = round2(totalReceivables);
+  contracted = round2(contracted);
+  receivableBilled = round2(receivableBilled);
   estimatedExpenses = round2(estimatedExpenses);
   disbursed = round2(disbursed);
   billed = round2(billed);
@@ -376,8 +393,9 @@ export function summarisePlan(input: {
   return {
     projectValue: num(input.projectValue),
     funds,
-    totalReceivables,
-    receivableDues: round2(totalReceivables - funds),
+    contracted,
+    receivableBilled,
+    receivableDues: round2(receivableBilled - funds),
     estimatedExpenses,
     disbursed,
     committed: round2(estimatedExpenses - disbursed),

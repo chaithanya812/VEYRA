@@ -186,7 +186,21 @@ export interface ProjectFinancials {
   projectValue: number;
   fundsReceived: number;
   totalDisbursed: number;
-  totalReceivables: number;
+  /**
+   * `Contracted` — Σ client contract values: the whole client commitment.
+   * HANDOFF-V8 §10.8, settled 2026-09-04. This band used to call it "Total
+   * receivables", which is what the project's Financial Planning screen calls
+   * the SIGNED-OFF total — one label, two numbers, on one project. Renamed,
+   * not recomputed: the arithmetic here was always Σ client contracts.
+   */
+  contracted: number;
+  /**
+   * `Billed` — client milestone amounts whose work is signed off. NEW to this
+   * band: it had no such figure, which is why its `receivableDues` disagreed
+   * with every other screen's by the whole unbilled remainder.
+   */
+  receivableBilled: number;
+  /** `Receivable dues` — billed less received, exactly as §10.8 defines it. */
   receivableDues: number;
   /** Σ vendor contract values — what this project is expected to cost. */
   estimatedExpenses: number;
@@ -272,7 +286,7 @@ export async function getProjectWorkspace(
     listProjectMilestones(id),
     listMembers(),
     db.table("payments").select("direction, amount").eq("project_id", id),
-    db.table("contracts").select("amount, source").eq("project_id", id),
+    db.table("contracts").select("id, amount, source").eq("project_id", id),
     db.table("site_photos").select("id, url, caption, client_visible, taken_on, created_at").eq("project_id", id).order("created_at", { ascending: false }),
     db.table("assets").select("id, name, created_at").eq("project_id", id).order("created_at", { ascending: false }),
     db.table("purchase_orders").select("*").eq("project_id", id).order("created_at", { ascending: false }),
@@ -284,9 +298,24 @@ export async function getProjectWorkspace(
     amount: number | string | null;
   }[];
   const contracts = (contractsRes.data ?? []) as unknown as {
+    id: string;
     amount: number | string | null;
     source: string;
   }[];
+
+  // `Billed` needs the SCHEDULE, not just the contract: it is the milestone
+  // amounts whose work is signed off. Without this read the band could only
+  // ever show the contracted total, which is the §10.8 collision itself.
+  const clientContractIds = contracts
+    .filter((c) => c.source === "client")
+    .map((c) => c.id);
+  const clientMsRes = clientContractIds.length
+    ? await db
+        .table("milestones")
+        .select("amount, work_done")
+        .in("contract_id", clientContractIds)
+    : { data: [], error: null };
+  if (clientMsRes.error) throw clientMsRes.error;
 
   const n = (v: number | string | null | undefined) => {
     const x = typeof v === "string" ? Number(v) : (v ?? 0);
@@ -297,8 +326,16 @@ export async function getProjectWorkspace(
 
   const fundsReceived = sum(payments.filter((p) => p.direction === "inflow"));
   const totalDisbursed = sum(payments.filter((p) => p.direction === "outflow"));
-  const totalReceivables = sum(contracts.filter((c) => c.source === "client"));
+  const contracted = sum(contracts.filter((c) => c.source === "client"));
   const estimatedExpenses = sum(contracts.filter((c) => c.source !== "client"));
+  const receivableBilled = (
+    (clientMsRes.data ?? []) as unknown as {
+      amount: number | string | null;
+      work_done: boolean;
+    }[]
+  )
+    .filter((m) => m.work_done)
+    .reduce((t, m) => t + n(m.amount), 0);
 
   return {
     project,
@@ -310,10 +347,14 @@ export async function getProjectWorkspace(
       projectValue: n(project.project_value),
       fundsReceived,
       totalDisbursed,
-      totalReceivables,
-      // What the client still owes, and what we still owe — never below zero
-      // by construction, because over-collection is a credit, not a debt.
-      receivableDues: Math.max(0, totalReceivables - fundsReceived),
+      contracted,
+      receivableBilled,
+      // What the client still owes — never below zero by construction, because
+      // over-collection is a credit, not a debt. Measured against BILLED, not
+      // against Contracted: money for work nobody has signed off is not yet
+      // due, and calling it due is what made this band read ₹12,40,000 where
+      // Financial Planning read ₹7,00,000 on the same project (§10.8).
+      receivableDues: Math.max(0, receivableBilled - fundsReceived),
       estimatedExpenses,
       // NOT clamped, unlike receivableDues above: over-collecting from a client
       // is a credit, but paying a vendor more than was agreed is a real event

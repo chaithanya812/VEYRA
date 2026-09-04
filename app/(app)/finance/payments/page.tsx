@@ -213,9 +213,9 @@ export default async function PaymentsDashboardPage({
 
       <BandGroup
         title="Inflow"
-        subtitle="Money the client owes and has paid"
+        subtitle="What the client committed, what has been earned, and what has been paid"
         band={band}
-        keys={["totalReceivables", "fundsReceived", "receivableDues"]}
+        keys={["contracted", "receivableBilled", "fundsReceived", "receivableDues"]}
       />
       <BandGroup
         title="Outflow"
@@ -279,15 +279,16 @@ export default async function PaymentsDashboardPage({
         )}
       </div>
 
-      {/* The collision the owner has NOT settled, said out loud rather than
-          resolved quietly (HANDOFF-V8 §10.8). */}
+      {/* The collision the owner SETTLED on 2026-09-04 (HANDOFF-V8 §10.8),
+          shipped rather than narrated: both figures, named apart. */}
       <p className="mt-4 max-w-3xl text-[13px] text-[var(--color-ink-secondary)]">
         <span className="font-medium text-[var(--color-ink)]">
-          Total Receivables here counts client milestones signed off.
+          Contracted is the whole client commitment; Billed (Client) is what has
+          been signed off.
         </span>{" "}
-        The project Summary band shows the contracted client total under the same
-        two words. Both figures are real and which one “total receivables” should
-        mean is not settled — hover any column heading to see what it counts.
+        Both used to be called “Total Receivables”, on two screens, meaning two
+        different numbers. Receivable Dues is Billed − Funds Received, and reads
+        the same on every screen. Hover any column heading to see what it counts.
       </p>
     </div>
   );

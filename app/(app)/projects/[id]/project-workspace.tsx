@@ -283,13 +283,35 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
 
           {showMoney ? (
             <>
+              {/*
+                `Contracted` and `Billed` used to be one figure here, labelled
+                "Total receivables", which is the phrase Financial Planning uses
+                for the signed-off total — so this band read a due of ₹12,40,000
+                where that screen read ₹7,00,000 on the same project. Settled
+                2026-09-04 (HANDOFF-V8 §10.8): both figures ship, each says what
+                it is made of, and Dues is billed less received on every screen.
+              */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <Figure label="Funds received" value={inr(f.fundsReceived)} tone="green" />
                 <Figure label="Total disbursed" value={inr(f.totalDisbursed)} tone="red" />
-                <Figure label="Total receivables" value={inr(f.totalReceivables)} />
-                <Figure label="Receivable dues" value={inr(f.receivableDues)} tone="amber" />
+                <Figure
+                  label="Contracted"
+                  value={inr(f.contracted)}
+                  hint="Σ client contracts"
+                />
+                <Figure
+                  label="Billed"
+                  value={inr(f.receivableBilled)}
+                  hint="Client work signed off"
+                />
+                <Figure
+                  label="Receivable dues"
+                  value={inr(f.receivableDues)}
+                  tone="amber"
+                  hint="Billed less received"
+                />
                 <Figure label="Estimated expenses" value={inr(f.estimatedExpenses)} />
-                <Figure label="Committed" value={inr(f.committed)} tone="amber" />
+                <Figure label="Committed" value={inr(f.committed)} tone="amber" hint="Agreed less disbursed" />
               </div>
               <div className="mt-3">
                 <TileGrid>
@@ -634,10 +656,13 @@ function Figure({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string;
   value: string;
   tone?: "green" | "red" | "amber";
+  /** The two numbers a difference came from, printed beside it (§11). */
+  hint?: string;
 }) {
   return (
     <div className="rounded-md bg-[var(--color-surface-sunken)] px-3 py-2">
@@ -653,6 +678,11 @@ function Figure({
       >
         {value}
       </p>
+      {hint && (
+        <p className="mt-0.5 text-[11px] text-[var(--color-ink-disabled)]">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }

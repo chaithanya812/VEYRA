@@ -190,10 +190,39 @@ describe("summarisePlan", () => {
 
   it("keeps the client side and the vendor side apart", () => {
     expect(summary.funds).toBe(1974400);
-    expect(summary.totalReceivables).toBe(2000000);
+    expect(summary.receivableBilled).toBe(2000000);
     expect(summary.receivableDues).toBe(25600);
     expect(summary.billed).toBe(469481.23);
     expect(summary.disbursed).toBe(179535.4);
+  });
+
+  // HANDOFF-V8 §10.8, settled 2026-09-04: the receivables twin of §10.1.
+  // `Contracted` is the whole client commitment; `Billed` is what has been
+  // signed off. Here they happen to agree because the single client milestone
+  // covers 100% of the contract and is done — so the test also proves they are
+  // read from DIFFERENT sources rather than one being the other's alias.
+  it("reports Contracted and Billed as separate client figures", () => {
+    expect(summary.contracted).toBe(2000000);
+    expect(summary.receivableBilled).toBe(2000000);
+
+    const halfDone = summarisePlan({
+      projectValue: 2000000,
+      contracts: [{ id: "in", amount: 2000000, source: "client" }],
+      milestonesByContract: new Map([
+        [
+          "in",
+          [
+            { pct: 40, amount: 800000, work_done: true },
+            { pct: 60, amount: 1200000, work_done: false },
+          ],
+        ],
+      ]),
+      paymentsByContract: new Map([["in", [{ amount: 300000 }]]]),
+    });
+    expect(halfDone.contracted).toBe(2000000);
+    expect(halfDone.receivableBilled).toBe(800000);
+    expect(halfDone.receivableDues).toBe(500000);
+    expect(halfDone.contracted).not.toBe(halfDone.receivableBilled);
   });
 
   // HANDOFF-V8 §10.1, settled 2026-09-04: `Committed` and `Billed` are two

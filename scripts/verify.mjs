@@ -1363,6 +1363,110 @@ async function main() {
     `billable=${billable.length} unbilled=${unbilled.length}`,
   );
 
+  // ── Account Receivables: writing one off (§12.3, migration 0042) ────────
+  // Receivables got COLUMNS on `milestones`, not a table: `110534` ages the
+  // payment schedule the Financial Planning screen already wrote. These
+  // assertions are what stop somebody adding a receivables ledger later, and
+  // what prove the three 0042 columns behave the way a write-off must.
+  // Selecting a column that does not exist empties the WHOLE read silently
+  // (HANDOFF-V8 §11), so the error is captured and reported AS ITSELF rather
+  // than surfacing as "this tenant has no milestones".
+  const { data: aMilestones, error: aMilestonesErr } = await sb
+    .from("milestones").select("id, amount, written_off_at")
+    .eq("org_id", A.id).eq("contract_id", inflowC.id).order("seq");
+  const woTarget = (aMilestones ?? [])[1] ?? null;
+  check(
+    "0042's write-off columns exist and every milestone starts un-written-off",
+    (aMilestones ?? []).length === 2
+      && (aMilestones ?? []).every((m) => "written_off_at" in m && m.written_off_at === null),
+    aMilestonesErr?.message || `got ${(aMilestones ?? []).length} milestones`,
+  );
+
+  // A write-off with no reason is not discouraged, it is IMPOSSIBLE.
+  const reasonless = woTarget
+    ? await sb.from("milestones")
+        .update({ written_off_at: new Date().toISOString(), written_off_by: memA.id })
+        .eq("id", woTarget.id)
+    : { error: null };
+  check(
+    "a write-off without a reason cannot exist (0042 CHECK)",
+    !!reasonless.error,
+    reasonless.error?.code || "a reasonless write-off was accepted",
+  );
+
+  // The composite FK, per 0035's rule: only your own tenant's member can be
+  // recorded as the person who gave up on your money.
+  const crossOrgWriter = woTarget
+    ? await sb.from("milestones")
+        .update({
+          written_off_at: new Date().toISOString(),
+          written_off_by: memB.id,
+          write_off_reason: "Cross-tenant attempt",
+        })
+        .eq("id", woTarget.id)
+    : { error: null };
+  check(
+    "a write-off cannot name another tenant's member (composite FK)",
+    !!crossOrgWriter.error,
+    crossOrgWriter.error?.code || "a cross-tenant write-off was accepted",
+  );
+
+  // The real thing. HARD RULE 4 in spirit: nothing is deleted and the amount is
+  // untouched — the firm has stopped expecting the money, that is all.
+  const wroteOff = woTarget
+    ? await sb.from("milestones")
+        .update({
+          written_off_at: "2026-06-25T09:00:00.000Z",
+          written_off_by: memA.id,
+          write_off_reason: "Client dispute settled at zero",
+        })
+        .eq("id", woTarget.id).select("amount, written_off_at, write_off_reason").single()
+    : { data: null, error: { message: "no milestone — the 0042 columns are missing" } };
+  check(
+    "writing a milestone off keeps its full value and records who, when and why",
+    !wroteOff.error
+      && Number(wroteOff.data?.amount) === Number(woTarget?.amount)
+      && !!wroteOff.data?.written_off_at
+      && wroteOff.data?.write_off_reason === "Client dispute settled at zero",
+    wroteOff.error?.message || `amount ${wroteOff.data?.amount}`,
+  );
+
+  // Org isolation on the new columns: B cannot see, and cannot reach, A's.
+  const bWrittenOff = await sb
+    .from("milestones").select("id").eq("org_id", B.id).not("written_off_at", "is", null);
+  check(
+    "one tenant's written-off milestones are invisible to another",
+    (bWrittenOff.data ?? []).length === 0,
+    `got ${(bWrittenOff.data ?? []).length}`,
+  );
+
+  // PROJECT isolation. A milestone reaches a project only through its contract,
+  // so a second project's schedule must never appear under the first's.
+  const { data: otherProjContract } = await sb.from("contracts").insert({
+    org_id: A.id, project_id: projA2.id, name: "Other project client agreement",
+    amount: 500000, source: "client",
+  }).select("id").single();
+  await sb.from("milestones").insert([
+    { org_id: A.id, contract_id: otherProjContract.id, seq: 1, name: "Only", pct: 100, amount: 500000, tentative_due: "2026-05-01", work_done: false, actual_due: null },
+  ]);
+  const onPayProjSchedule = await sb
+    .from("milestones").select("id").eq("org_id", A.id).eq("contract_id", inflowC.id);
+  const onOtherSchedule = await sb
+    .from("milestones").select("id").eq("org_id", A.id).eq("contract_id", otherProjContract.id);
+  check(
+    "one project's payment schedule is invisible to another project",
+    (onPayProjSchedule.data ?? []).length === 2 && (onOtherSchedule.data ?? []).length === 1,
+    `p1=${(onPayProjSchedule.data ?? []).length} p2=${(onOtherSchedule.data ?? []).length}`,
+  );
+
+  // HARD RULE 6: no stored written-off TOTAL anywhere. The tile is Σ of rows.
+  const woTotalCol = await sb.from("milestones").select("written_off_total").limit(1);
+  check(
+    "milestones has no `written_off_total` column — the tile is always derived",
+    !!woTotalCol.error,
+    woTotalCol.error ? "absent" : "a stored written-off total exists",
+  );
+
   // Categories are ROWS, not a comma-joined string — `105325` shows a vendor
   // carrying several trades, and a string cannot be filtered on.
   await sb.from("contract_categories").insert([
