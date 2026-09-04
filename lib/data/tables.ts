@@ -29,6 +29,7 @@ export const TENANT_TABLES = [
   "rfq_bid_lines",
   "numbering_series",
   "permissions",
+  "audit_events",
   "interactions",
   // DEAD as of PLAN-V4 6.1: the board reads lead_statuses, and the editor that
   // wrote this table is gone. Kept registered because the rows still exist —

@@ -1933,6 +1933,160 @@ async function main() {
   );
   }
 
+  // ── Permissions + audit (0035) ────────────────────────────────────────────
+  // The security boundary. With RLS off these assertions are the only thing
+  // standing between "we have permissions" and "we have a permissions screen".
+  {
+    // audit_events is a LEDGER: org-scoped, and it survives its actor.
+    const { data: auditor } = await sb.from("org_members").insert({
+      org_id: A.id, user_id: crypto.randomUUID(), role: "manager", display_name: "An Auditor",
+    }).select("id").single();
+
+    await sb.from("audit_events").insert([
+      { org_id: A.id, actor_member_id: auditor.id, actor_name: "An Auditor",
+        entity: "purchase_order", entity_id: crypto.randomUUID(), action: "approve",
+        before: { status: "pending" }, after: { status: "approved" } },
+    ]);
+    await sb.from("audit_events").insert([
+      { org_id: B.id, actor_member_id: null, actor_name: "Someone Else",
+        entity: "purchase_order", entity_id: crypto.randomUUID(), action: "approve",
+        before: null, after: null },
+    ]);
+
+    const aAudit = await sb.from("audit_events").select("id, before, after").eq("org_id", A.id);
+    const bAudit = await sb.from("audit_events").select("id").eq("org_id", B.id);
+    check(
+      "audit events are org-scoped",
+      (aAudit.data ?? []).length === 1 && (bAudit.data ?? []).length === 1,
+      `A=${(aAudit.data ?? []).length} B=${(bAudit.data ?? []).length}`,
+    );
+    check(
+      "an audit row keeps before AND after as structured jsonb, not a text diff",
+      (aAudit.data ?? [])[0]?.before?.status === "pending" &&
+        (aAudit.data ?? [])[0]?.after?.status === "approved",
+      JSON.stringify((aAudit.data ?? [])[0]?.after ?? null),
+    );
+
+    // Deleting the actor must NOT delete what the actor did — otherwise
+    // removing a person quietly erases the record of their decisions.
+    await sb.from("org_members").delete().eq("id", auditor.id);
+    const survived = await sb
+      .from("audit_events").select("id, actor_member_id, actor_name").eq("org_id", A.id);
+    check(
+      "an audit event survives its actor's deletion, keeping the name",
+      (survived.data ?? []).length === 1 &&
+        survived.data[0].actor_member_id === null &&
+        survived.data[0].actor_name === "An Auditor",
+      `rows=${(survived.data ?? []).length} actor=${survived.data?.[0]?.actor_member_id ?? "null"}`,
+    );
+
+    // ── Role inheritance ───────────────────────────────────────────────────
+    const { data: parentRole } = await sb.from("roles").insert({
+      org_id: A.id, name: "Verify Parent", is_system: false, permissions: {},
+    }).select("id").single();
+    const { data: childRole } = await sb.from("roles").insert({
+      org_id: A.id, name: "Verify Child", is_system: false, permissions: {},
+      inherits_from: parentRole.id,
+    }).select("id").single();
+
+    const selfInherit = await sb
+      .from("roles").update({ inherits_from: childRole.id }).eq("id", childRole.id);
+    check(
+      "a role cannot inherit from itself",
+      !!selfInherit.error,
+      selfInherit.error?.code ?? "self-inheritance accepted",
+    );
+
+    // The third capability segment, and one grant per capability.
+    await sb.from("permissions").insert({
+      org_id: A.id, role_id: parentRole.id,
+      module: "procurement", entity: "po", action: "approve", scope: "org",
+    });
+    const dupGrant = await sb.from("permissions").insert({
+      org_id: A.id, role_id: parentRole.id,
+      module: "procurement", entity: "po", action: "approve", scope: "own",
+    });
+    check(
+      "the same capability cannot be granted to one role twice",
+      !!dupGrant.error,
+      dupGrant.error?.code ?? "duplicate grant accepted",
+    );
+    // ...but the SAME action on a different entity is a different capability.
+    const siblingGrant = await sb.from("permissions").insert({
+      org_id: A.id, role_id: parentRole.id,
+      module: "procurement", entity: "mr", action: "approve", scope: "org",
+    });
+    check(
+      "approving a PO and approving an MR are different grants",
+      !siblingGrant.error,
+      siblingGrant.error?.message ?? "ok",
+    );
+
+    // Deleting a parent role ORPHANS its children; it must not cascade-delete
+    // roles that people are actively assigned to.
+    await sb.from("roles").delete().eq("id", parentRole.id);
+    const orphaned = await sb.from("roles").select("id, inherits_from").eq("id", childRole.id);
+    check(
+      "deleting a parent role orphans its child rather than deleting it",
+      (orphaned.data ?? []).length === 1 && orphaned.data[0].inherits_from === null,
+      `rows=${(orphaned.data ?? []).length}`,
+    );
+
+    // ── The same-org FK holes Units 3 and 4 found ──────────────────────────
+    // Each of these would have been ACCEPTED before 0035.
+    const { data: mA } = await sb.from("org_members").insert({
+      org_id: A.id, user_id: crypto.randomUUID(), role: "member", display_name: "Org A Person",
+    }).select("id").single();
+    const { data: mB } = await sb.from("org_members").insert({
+      org_id: B.id, user_id: crypto.randomUUID(), role: "manager", display_name: "Org B Manager",
+    }).select("id").single();
+
+    const crossManager = await sb
+      .from("org_members").update({ manager_id: mB.id }).eq("id", mA.id);
+    check(
+      "a member cannot report to a manager in another tenant",
+      !!crossManager.error,
+      crossManager.error?.code ?? "cross-org manager accepted",
+    );
+
+    const { data: crossLeave } = await sb.from("leave_requests").insert({
+      org_id: A.id, member_id: mA.id, leave_type: "casual",
+      from_date: "2026-10-01", to_date: "2026-10-01", days: 1, status: "pending",
+    }).select("id").single();
+    const crossDecide = await sb
+      .from("leave_requests").update({ decided_by: mB.id, status: "approved" })
+      .eq("id", crossLeave.id);
+    check(
+      "leave cannot be decided by a manager in another tenant",
+      !!crossDecide.error,
+      crossDecide.error?.code ?? "cross-org decider accepted",
+    );
+
+    const { data: crossWfh } = await sb.from("wfh_requests").insert({
+      org_id: A.id, member_id: mA.id, from_date: "2026-10-02", to_date: "2026-10-02", days: 1,
+    }).select("id").single();
+    const crossWfhDecide = await sb
+      .from("wfh_requests").update({ decided_by: mB.id, status: "approved" })
+      .eq("id", crossWfh.id);
+    check(
+      "WFH cannot be decided by a manager in another tenant",
+      !!crossWfhDecide.error,
+      crossWfhDecide.error?.code ?? "cross-org decider accepted",
+    );
+
+    // A member may only hold a role from their OWN tenant.
+    const { data: roleB } = await sb.from("roles").insert({
+      org_id: B.id, name: "Org B Role", is_system: false, permissions: {},
+    }).select("id").single();
+    const crossRole = await sb
+      .from("org_members").update({ role_id: roleB.id }).eq("id", mA.id);
+    check(
+      "a member cannot hold a role belonging to another tenant",
+      !!crossRole.error,
+      crossRole.error?.code ?? "cross-org role accepted",
+    );
+  }
+
   // (4) Auth admin path (used by tenant provisioning). Create + delete a user.
   const email = `verify-${Date.now()}@veyra.test`;
   const { data: created, error: cErr } = await sb.auth.admin.createUser({
