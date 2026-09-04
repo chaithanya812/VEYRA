@@ -1474,6 +1474,113 @@ async function main() {
     `got ${(bLedger.data ?? []).length}`,
   );
 
+  // ── Petty Finance (PLAN-V4 §12.2, migration 0041) ───────────────────────
+  // Petty Finance EXTENDS `expense_claims`; it did not get a table. These
+  // assertions are what stop somebody adding a second petty ledger later, and
+  // what prove the three 0041 columns behave the way `110521` needs.
+  const { data: pettyRows, error: pettyErr } = await sb.from("expense_claims").insert([
+    // Uniform keys across the batch, every one of them: a PostgREST batch sends
+    // an explicit NULL for a key one row omits, which defeats the `kind`
+    // default and trips its NOT NULL (HANDOFF-V8 §11).
+    { org_id: A.id, member_id: memA.id, project_id: payProj.id, spent_on: "2026-08-04", amount: 20000, category: "other",     kind: "fund",    status: "approved" },
+    { org_id: A.id, member_id: memA.id, project_id: payProj.id, spent_on: "2026-08-06", amount: 5400,  category: "materials", kind: "expense", status: "approved" },
+    { org_id: A.id, member_id: memA.id, project_id: projA2.id,  spent_on: "2026-08-07", amount: 1200,  category: "transport", kind: "expense", status: "approved" },
+    { org_id: B.id, member_id: memB.id, project_id: null,       spent_on: "2026-08-08", amount: 77777, category: "other",     kind: "expense", status: "approved" },
+  ]).select("id, kind, project_id, org_id, amount");
+  check(
+    "0041's kind column accepts expense and fund",
+    !pettyErr && (pettyRows ?? []).length === 4,
+    pettyErr?.message || `got ${(pettyRows ?? []).length}`,
+  );
+
+  const badKind = await sb.from("expense_claims").insert({
+    org_id: A.id, member_id: memA.id, spent_on: "2026-08-09", amount: 1, category: "other", kind: "advance",
+  });
+  check(
+    "a petty entry is either an expense or a fund — nothing else",
+    !!badKind.error,
+    badKind.error?.code || "an unknown kind was accepted",
+  );
+
+  const aPetty = (pettyRows ?? []).filter((r) => r.org_id === A.id);
+  const bPettySeen = await sb
+    .from("expense_claims").select("id").eq("org_id", B.id).eq("member_id", memA.id);
+  check(
+    "one tenant's petty ledger is invisible to another",
+    aPetty.length === 3 && (bPettySeen.data ?? []).length === 0,
+    `A=${aPetty.length} B-on-A's-member=${(bPettySeen.data ?? []).length}`,
+  );
+
+  const onPayProj = await sb
+    .from("expense_claims").select("id, amount")
+    .eq("org_id", A.id).eq("project_id", payProj.id);
+  const onProjA2 = await sb
+    .from("expense_claims").select("id").eq("org_id", A.id).eq("project_id", projA2.id);
+  check(
+    "one project's petty spend is invisible to another project",
+    (onPayProj.data ?? []).length === 2 && (onProjA2.data ?? []).length === 1,
+    `p1=${(onPayProj.data ?? []).length} p2=${(onProjA2.data ?? []).length}`,
+  );
+
+  // A reversal is a ROW (HARD RULE 4). Both halves stay; the pair nets to zero.
+  // Guarded rather than assumed: if 0041 has not been applied the insert above
+  // failed, and a thrown TypeError here would take the remaining ~90 checks
+  // down with it and report as an unrelated crash.
+  const original = aPetty.find((r) => Number(r.amount) === 5400) ?? null;
+  const pettyReversalRes = original
+    ? await sb.from("expense_claims").insert({
+        org_id: A.id, member_id: memA.id, project_id: payProj.id, spent_on: "2026-08-06",
+        amount: -5400, category: "materials", kind: "expense", status: "approved",
+        reversal_of: original.id,
+      }).select("id, amount").single()
+    : { data: null, error: { message: "no original — the kind insert failed" } };
+  const pair = original
+    ? await sb
+        .from("expense_claims").select("amount")
+        .eq("org_id", A.id).or(`id.eq.${original.id},reversal_of.eq.${original.id}`)
+    : { data: [] };
+  const pettyNet = (pair.data ?? []).reduce((a, r) => a + Number(r.amount), 0);
+  check(
+    "a petty reversal is a row, and the pair nets to zero",
+    !pettyReversalRes.error && (pair.data ?? []).length === 2 && pettyNet === 0,
+    pettyReversalRes.error?.message || `${(pair.data ?? []).length} rows, net ${pettyNet}`,
+  );
+
+  // 0041's composite FK: a reversal may only ever point inside its own tenant.
+  const crossOrgReversal = original
+    ? await sb.from("expense_claims").insert({
+        org_id: B.id, member_id: memB.id, spent_on: "2026-08-06", amount: -5400,
+        category: "materials", kind: "expense", reversal_of: original.id,
+      })
+    : { error: null };
+  check(
+    "a reversal cannot point at another tenant's entry (composite FK)",
+    !!crossOrgReversal.error,
+    crossOrgReversal.error?.code || "a cross-tenant reversal was accepted",
+  );
+
+  // Transaction date is typed; recorded date is stamped. Two columns, and the
+  // screen shows both — deriving one from the other would be a quiet lie.
+  const pettyDates = original
+    ? await sb.from("expense_claims").select("spent_on, created_at").eq("id", original.id).single()
+    : { data: null };
+  check(
+    "a petty entry's transaction date is typed while its recorded date is stamped",
+    !!pettyDates.data
+      && pettyDates.data.spent_on === "2026-08-06"
+      && pettyDates.data.created_at.slice(0, 10) !== "2026-08-06",
+    pettyDates.data
+      ? `spent_on ${pettyDates.data.spent_on}, recorded ${pettyDates.data.created_at.slice(0, 10)}`
+      : "no row to read",
+  );
+
+  // No stored balance, ever (HARD RULE 6). The balance is funds − expenses.
+  const balanceCol = await sb.from("expense_claims").select("balance").limit(1);
+  check(
+    "expense_claims has no `balance` column — a balance is always derived",
+    !!balanceCol.error,
+    balanceCol.error?.code || "a balance column exists",
+  );
 
   // ── Inventory warehouses & stock documents (PLAN-V4 §10.2, migration 0033) ──
   // The owner's split — Company Warehouses | Project Warehouses — asserted at

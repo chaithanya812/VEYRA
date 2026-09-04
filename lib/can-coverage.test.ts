@@ -32,6 +32,10 @@ const SELF_SERVICE = new Set([
   "cancelLeaveAction",
   "applyLeaveAction",
   "submitExpenseAction",
+  // Petty Finance (`110521`). `member_id` is taken from the acting context and
+  // never from the form, so the only row it can write is the caller's own —
+  // the same argument as `submitExpenseAction`, which it sits beside.
+  "recordPettyEntryAction",
   "startVisitAction",
   "endVisitAction",
   "setActingMemberAction",

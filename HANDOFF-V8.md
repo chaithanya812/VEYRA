@@ -160,12 +160,15 @@ roles the spine checks. Phase 12 Unit 1 wired all six Reports capabilities to re
 
 ## 4. Migration ledger
 
-**Applied: `0001–0040`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`.)
+**Applied: `0001–0041`.** (0034/0035 filled V7's reserved gaps; 0040 added `roles.description`;
+**0041 added `kind` / `reversal_of` / `vendor_id` to `expense_claims` for Petty Finance** — three
+columns on the existing expense ledger, deliberately NOT a second table.)
 
-**Next free number: `0041+`.** Nothing is reserved.
+**Next free number: `0042+`.** Nothing is reserved.
 
-> ⚠ Two units below say "migration 0040" because V7 was written before 0040 existed.
-> **They mean 0041.** Part 3 Unit 4 (Written Off) and Part 4 Unit 2 (saved views).
+> ⚠ Two units below say "migration 0040" because V7 was written before 0040 existed, and they were
+> then re-pointed at 0041 — which Unit 3 has now consumed. **They mean `0042`.**
+> Part 3 Unit 4 (Written Off) and Part 4 Unit 2 (saved views).
 
 **A new table is three edits, not one:** the migration, `lib/data/tables.ts`, and an org-isolation
 assertion in `scripts/verify.mjs`. Miss the second and TypeScript rejects `db.table("your_table")`
@@ -247,7 +250,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **761 tests in 43 files** · **verify 186/186** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **789 tests in 44 files** · **verify 194/194** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -359,8 +362,8 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 |---|---|---|
 | ~~1~~ | ~~The `Total Payables` rename + the per-project matrix model~~ | **DONE.** Shipped `Committed`/`Billed` per §10.1; `lib/payments-dashboard-model.ts` is the matrix Unit 2 consumes. Also corrected contract-less payments — see the commit. |
 | ~~2~~ | ~~`/finance/payments` — the Payments Dashboard with drill-through~~ | **DONE.** Read-only by design — no server action; the route is gated by `can("billing.payment.view")` as the page's first statement. Band = Σ visible rows. |
-| 3 | `/finance/petty` — Petty Finance, extending `expense_claims` | independent |
-| 4 | `/finance/receivables` — Account Receivables | needs migration **0041** if Written Off is built. **⚠ Settle §10.8 (`Total Receivables` collision) BEFORE dispatching this.** |
+| ~~3~~ | ~~`/finance/petty` — Petty Finance, extending `expense_claims`~~ | **DONE.** Migration **0041 applied.** Three columns on `expense_claims`, not a second ledger. `recordPettyEntryAction` is self-service and ungated (§5a) because `member_id` comes from the acting context; reverse/decide carry `billing.payment.approve`. |
+| 4 | `/finance/receivables` — Account Receivables | needs migration **0042** if Written Off is built. **⚠ Settle §10.8 (`Total Receivables` collision) BEFORE dispatching this.** |
 
 ### Phase 12 — Reports & polish · **Part 4**
 

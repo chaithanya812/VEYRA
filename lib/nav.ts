@@ -136,6 +136,11 @@ export const NAV: NavEntry[] = [
       // receivables and payables on one row each, with a drill-through into the
       // project it came from.
       { label: "Payments Dashboard", href: "/finance/payments", icon: BadgeIndianRupee },
+      // Petty Finance (§12.2). Not role-hidden: the Dashboard tab refuses
+      // without `billing.payment.view`, but every member reaches My Expense
+      // and My Fund from here, and a rail that hid the entry would leave them
+      // unable to claim back their own money.
+      { label: "Petty Finance", href: "/finance/petty", icon: Wallet },
       { label: "Billing", href: "/billing", icon: Wallet },
       {
         label: "Account Receivables",
