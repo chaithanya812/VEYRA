@@ -1,16 +1,9 @@
 "use client";
 
 import { useActionState, useCallback, useState } from "react";
+import { AuditTimeline, type AuditEntry } from "@/components/ui/audit-timeline";
 import Link from "next/link";
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  FileText,
-  IndianRupee,
-  Plus,
-  Trash2,
-  Wallet,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, FileText, History, IndianRupee, Plus, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
@@ -26,7 +19,6 @@ import { MultiValueCell } from "@/components/ui/patterns";
 import {
   StatTile,
   TabBar,
-  TileGrid,
   FormError,
   SubmitButton,
   type TabDef,
@@ -58,16 +50,20 @@ const TABS: TabDef[] = [
   { id: "inflow", label: "Inflow", icon: <ArrowDownRight className="size-4" /> },
   { id: "outflow", label: "Outflow", icon: <ArrowUpRight className="size-4" /> },
   { id: "documents", label: "Documents", icon: <FileText className="size-4" /> },
+  { id: "audit", label: "Audit", icon: <History className="size-4" /> },
 ];
 
 export function FinanceView({
   projectId,
   plan,
   initialTab,
+  audit,
 }: {
   projectId: string;
   plan: ProjectFinancialPlan;
   initialTab: string;
+  /** `audit_events` for this project's contracts and milestones (0035). */
+  audit: AuditEntry[];
 }) {
   const [tab, setTab] = useState(
     TABS.some((t) => t.id === initialTab) ? initialTab : "inflow",
@@ -108,7 +104,15 @@ export function FinanceView({
           </div>
         </Card>
 
-        <TileGrid>
+        {/*
+          NOT TileGrid here. That grid is lg:grid-cols-4, written for the
+          dashboard's four tiles; this band has TWO, inside an already narrow
+          minmax(0,2fr) column. Four columns for two tiles left each figure
+          about 45px of a 140px number, so "Cash flow ₹5,60,000" rendered as
+          "₹5,6" — a truncated rupee figure on the finance screen, which is the
+          one place a half-shown number is indistinguishable from a real one.
+        */}
+        <div className="grid grid-cols-2 gap-3">
           <StatTile
             hero
             label="Cash flow"
@@ -124,12 +128,12 @@ export function FinanceView({
             tone={s.expectedPnl < 0 ? "negative" : "info"}
             icon={<IndianRupee className="size-4" />}
           />
-        </TileGrid>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <TabBar tabs={TABS} active={tab} onSelect={select} />
-        {tab !== "documents" && (
+        {tab !== "documents" && tab !== "audit" && (
           <AddContractDialog
             projectId={projectId}
             source={tab === "outflow" ? "vendor" : "client"}
@@ -158,6 +162,16 @@ export function FinanceView({
       )}
 
       {tab === "documents" && <DocumentList projectId={projectId} plan={plan} />}
+
+      {tab === "audit" && (
+        <Card className="p-4">
+          <AuditTimeline
+            entries={audit}
+            emptyTitle="No recorded changes yet"
+            emptyDescription="Marking a milestone's work done, or deleting a contract, is recorded here with who did it and what moved. The ledger starts from when it was switched on — it does not reconstruct earlier history."
+          />
+        </Card>
+      )}
     </>
   );
 }

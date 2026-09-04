@@ -221,6 +221,32 @@ export async function auditFor(entity: string, entityId: string): Promise<AuditR
   return (data ?? []) as unknown as AuditRow[];
 }
 
+/**
+ * The history of MANY entities at once — one screen's worth of rows rather than
+ * one record's.
+ *
+ * Financial Planning needs this because a project's money history is spread
+ * over its contracts and their milestones, and asking per-row would be a query
+ * per milestone. An empty id list short-circuits: `in("entity_id", [])` is a
+ * query that can only return nothing, so it is not worth making.
+ */
+export async function auditForEntities(
+  entity: string,
+  ids: string[],
+): Promise<AuditRow[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("audit_events")
+    .select(AUDIT_COLUMNS)
+    .eq("entity", entity)
+    .in("entity_id", unique)
+    .order("at", { ascending: false });
+  if (error) throw new Error(`audit read failed: ${error.message}`);
+  return (data ?? []) as unknown as AuditRow[];
+}
+
 /** The tenant's recent activity, newest first. */
 export async function recentAudit(limit = 50): Promise<AuditRow[]> {
   const { db } = await withOrg();

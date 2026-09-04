@@ -1,4 +1,5 @@
 import "server-only";
+import { recordAudit } from "./permissions";
 import { withOrg } from "./with-org";
 import {
   CONTRACT_SOURCES,
@@ -166,10 +167,41 @@ export async function toggleMilestoneWorkDone(
   done: boolean,
 ): Promise<{ error?: string }> {
   const { db } = await withOrg();
+  // Read the milestone first: marking work done is what makes an amount BILLABLE,
+  // so this is the single most consequential toggle on the finance screen, and
+  // the ledger has to be able to say which milestone and for how much.
+  const { data: before } = await db
+    .table("milestones")
+    .select("id, name, amount, work_done, contract_id")
+    .eq("id", milestoneId)
+    .maybeSingle();
+  const prev = before as unknown as {
+    name: string | null;
+    amount: number | null;
+    work_done: boolean | null;
+    contract_id: string | null;
+  } | null;
+
   const { error } = await db
     .table("milestones")
     .updateById(milestoneId, { work_done: done });
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+
+  if (prev && prev.work_done !== done) {
+    await recordAudit({
+      entity: "milestone",
+      entityId: milestoneId,
+      action: done ? "mark_work_done" : "unmark_work_done",
+      before: { work_done: prev.work_done ?? false },
+      after: {
+        work_done: done,
+        name: prev.name,
+        amount: prev.amount,
+        contract_id: prev.contract_id,
+      },
+    });
+  }
+  return {};
 }
 
 export async function recordPayment(input: {
@@ -486,12 +518,29 @@ export async function deleteContract(id: string): Promise<{ error?: string }> {
     };
   }
 
+  // Captured BEFORE the delete: after it there is no row left to describe, and
+  // "a contract was deleted" without saying WHICH one is not an audit entry.
+  const { data: doomed } = await db
+    .table("contracts")
+    .select("id, name, amount, vendor_id, project_id")
+    .eq("id", id)
+    .maybeSingle();
+
   const { data: ms } = await db.table("milestones").select("id").eq("contract_id", id);
   for (const m of (ms ?? []) as unknown as { id: string }[]) {
     await db.table("milestones").deleteById(m.id);
   }
   const { error } = await db.table("contracts").deleteById(id);
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+
+  await recordAudit({
+    entity: "contract",
+    entityId: id,
+    action: "delete",
+    before: doomed ?? null,
+    after: null,
+  });
+  return {};
 }
 
 /**

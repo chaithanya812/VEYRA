@@ -1,4 +1,5 @@
 import "server-only";
+import { guardMeteredCreate, recordUsage } from "./subscription";
 import { withOrg } from "./with-org";
 import { nameKey, codeKey } from "@/lib/utils";
 import {
@@ -121,6 +122,10 @@ export interface ItemInput {
 export async function createItem(
   input: ItemInput,
 ): Promise<{ id: string } | { error: string }> {
+  // Gate BEFORE the write: a create that lands over the limit makes the
+  // ledger disagree with the data it is supposed to be counting.
+  const gate = await guardMeteredCreate("items");
+  if (gate.error) return { error: gate.error };
   const { db, ctx } = await withOrg();
   const key = nameKey(input.name);
   const code = codeKey(input.code);
@@ -160,7 +165,9 @@ export async function createItem(
     created_by: ctx.userId,
   });
   if (error) return { error: error.message };
-  return { id: (data?.[0] as { id: string }).id };
+  const newId = (data?.[0] as { id: string }).id;
+  await recordUsage("items", 1, newId);
+  return { id: newId };
 }
 
 export async function updateItem(

@@ -512,45 +512,97 @@ function VersionList({
 /* ── Audits ───────────────────────────────────────────────────────────────── */
 
 /**
- * The frame's third tab. What is shown here is **derived from rows that exist**
- * — the file's creation and each version upload, with who and when. It is not
- * yet a full audit log: status changes are not recorded anywhere, because
- * `audit_events` is migration 0035 (PLAN-V4 §11.4). Saying so beats an empty
- * tab that implies a history nobody is keeping.
+ * The frame's third tab, now reading the real ledger (0035).
+ *
+ * TWO kinds of entry, and the difference is kept visible rather than blended.
+ * RECORDED events come from `audit_events` — somebody did a thing and the
+ * ledger says who, when, and which field moved. DERIVED entries are inferred
+ * from rows that happen to exist (a version row implies an upload). Merging
+ * them silently would let the tab imply a history was being kept before it was,
+ * which is exactly the promise an audit trail must not make.
+ *
+ * Field changes render as `was → now` because the whole reason `before` and
+ * `after` are stored as jsonb is so a reader can see WHICH field moved.
  */
 function AuditList({ detail }: { detail: ProjectFileDetail }) {
-  const events = [
+  const recorded = detail.audit.map((e) => ({
+    at: e.at,
+    who: e.actor_name ?? "Someone",
+    what: describeAudit(e),
+    recorded: true,
+  }));
+
+  const derived = [
     ...detail.versions.map((v) => ({
       at: v.created_at,
       who: detail.uploaderNames[v.id] ?? "Someone",
       what: `Uploaded ${versionLabel(v)}${v.note ? ` — ${v.note}` : ""}`,
+      recorded: false,
     })),
     {
       at: detail.file.created_at,
       who: "—",
       what: `File added to ${detail.folder?.name ?? "the project root"}`,
+      recorded: false,
     },
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  ];
+
+  const events = [...recorded, ...derived].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ul className="min-h-0 flex-1 overflow-y-auto p-3">
         {events.map((e, i) => (
           <li key={i} className="flex gap-3 border-b border-[var(--color-border)] py-2.5 last:border-0">
-            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--color-ink-disabled)]" />
+            <span
+              className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
+                e.recorded
+                  ? "bg-[var(--color-ink-secondary)]"
+                  : "bg-[var(--color-ink-disabled)]"
+              }`}
+            />
             <span>
               <span className="block text-[13px] text-[var(--color-ink)]">{e.what}</span>
               <span className="block text-[11px] tabular text-[var(--color-ink-secondary)]">
                 {e.who} · {fmtDate(e.at)}
+                {!e.recorded && " · derived"}
               </span>
             </span>
           </li>
         ))}
       </ul>
       <p className="border-t border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-ink-secondary)]">
-        Uploads and versions, from the rows we keep. Status changes join this
-        list when the audit ledger lands.
+        {detail.audit.length} recorded {detail.audit.length === 1 ? "event" : "events"}.
+        Entries marked <em>derived</em> are inferred from uploads and versions,
+        not from the ledger — the ledger starts from when it was switched on.
       </p>
     </Card>
   );
+}
+
+/** Human wording for one audit row, naming the fields that actually moved. */
+function describeAudit(e: ProjectFileDetail["audit"][number]): string {
+  const after = (e.after ?? {}) as Record<string, unknown>;
+  const before = (e.before ?? {}) as Record<string, unknown>;
+  const keys = Object.keys(after);
+  if (e.action !== "update" || keys.length === 0) {
+    return `${e.action.charAt(0).toUpperCase()}${e.action.slice(1)}d this file`;
+  }
+  return keys
+    .map((k) => `${AUDIT_FIELD_LABELS[k] ?? k}: ${show(before[k])} → ${show(after[k])}`)
+    .join(" · ");
+}
+
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  name: "Name",
+  description: "Description",
+  internal_status: "Internal status",
+  client_approval: "Client approval",
+  folder_id: "Folder",
+};
+
+/** An absent value reads as "empty", never as a bare blank the eye skips. */
+function show(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "empty";
+  return String(v);
 }

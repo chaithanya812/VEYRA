@@ -1,4 +1,5 @@
 import "server-only";
+import { guardMeteredCreate, recordUsage } from "./subscription";
 import { withOrg } from "./with-org";
 import { listMembers, type Member } from "./team";
 import { listProjectMilestones } from "./project-milestones";
@@ -112,6 +113,10 @@ export async function createProject(input: {
   pincode?: string | null;
   address?: string | null;
 }): Promise<{ id: string } | { error: string }> {
+  // Gate BEFORE the write: a create that lands over the limit makes the
+  // ledger disagree with the data it is supposed to be counting.
+  const gate = await guardMeteredCreate("projects");
+  if (gate.error) return { error: gate.error };
   const { db, ctx } = await withOrg();
 
   const { data, error } = await db.table("projects").insert({
@@ -137,6 +142,7 @@ export async function createProject(input: {
     note: "Project created",
     created_by: ctx.userId,
   });
+  await recordUsage("projects", 1, id);
   return { id };
 }
 

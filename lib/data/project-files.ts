@@ -1,4 +1,5 @@
 import "server-only";
+import { auditFor, recordAudit, type AuditRow } from "./permissions";
 import { withOrg } from "./with-org";
 import { listMembers, type Member } from "./team";
 import {
@@ -379,13 +380,24 @@ export async function updateFile(
   },
 ): Promise<{ error?: string }> {
   const { db } = await withOrg();
+  // The audited columns are selected here, not just `id, project_id`, because
+  // the BEFORE half of an audit event has to be read before the write — after
+  // it, the old values are gone and the ledger could only record what it
+  // changed to, which is the half a reader already has on screen.
   const { data: existing } = await db
     .table("project_files")
-    .select("id, project_id")
+    .select("id, project_id, name, description, internal_status, client_approval, folder_id")
     .eq("id", id)
     .maybeSingle();
   if (!existing) return { error: "That file is not in this workspace." };
-  const row = existing as unknown as { project_id: string };
+  const row = existing as unknown as {
+    project_id: string;
+    name: string;
+    description: string | null;
+    internal_status: string | null;
+    client_approval: string | null;
+    folder_id: string | null;
+  };
 
   if (patch.folder_id !== undefined) {
     const check = await assertFolderBelongsToProject(patch.folder_id, row.project_id);
@@ -397,7 +409,31 @@ export async function updateFile(
     ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
     updated_at: new Date().toISOString(),
   });
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+
+  // Record only the fields that actually MOVED. An event listing every column
+  // on every save buries the one change somebody is looking for.
+  const before: Record<string, unknown> = {};
+  const after: Record<string, unknown> = {};
+  for (const [k, next] of Object.entries(patch)) {
+    if (next === undefined) continue;
+    const prev = (row as unknown as Record<string, unknown>)[k];
+    const nextVal = k === "name" && typeof next === "string" ? next.trim() : next;
+    if (prev !== nextVal) {
+      before[k] = prev ?? null;
+      after[k] = nextVal ?? null;
+    }
+  }
+  if (Object.keys(after).length > 0) {
+    await recordAudit({
+      entity: "project_file",
+      entityId: id,
+      action: "update",
+      before,
+      after,
+    });
+  }
+  return {};
 }
 
 /** Delete a file and every version's object. Storage is cleaned, not orphaned. */
@@ -633,6 +669,12 @@ export interface ProjectFileDetail {
   comments: EntityComment[];
   members: Member[];
   uploaderNames: Record<string, string>;
+  /**
+   * The real audit ledger for this file (0035). Kept SEPARATE from the version
+   * list rather than pre-merged, so the viewer can say which entries are
+   * recorded events and which are derived from rows that happen to exist.
+   */
+  audit: AuditRow[];
 }
 
 /**
@@ -673,7 +715,7 @@ export async function getProjectFileDetail(
   const file = fileRow as unknown as ProjectFile;
   if (file.project_id !== projectId) return null;
 
-  const [versionsRes, comments, members, folderRes] = await Promise.all([
+  const [versionsRes, comments, members, folderRes, audit] = await Promise.all([
     db
       .table("project_file_versions")
       .select("*")
@@ -684,6 +726,10 @@ export async function getProjectFileDetail(
     file.folder_id
       ? db.table("project_folders").select("*").eq("id", file.folder_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    // An unreadable audit ledger must not take the whole viewer down with it:
+    // the file is still worth showing. The tab says the history is unavailable
+    // rather than rendering an empty list that reads as "nothing happened".
+    auditFor("project_file", fileId).catch(() => []),
   ]);
 
   const versions = (versionsRes.data ?? []) as unknown as ProjectFileVersion[];
@@ -710,5 +756,6 @@ export async function getProjectFileDetail(
     comments,
     members,
     uploaderNames,
+    audit,
   };
 }

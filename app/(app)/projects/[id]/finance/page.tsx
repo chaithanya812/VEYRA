@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getProject } from "@/lib/data/projects";
 import { getProjectFinancialPlan } from "@/lib/data/finance";
+import { auditForEntities } from "@/lib/data/permissions";
 import { PageHeader } from "@/components/ui/primitives";
 import { FinanceView } from "./finance-view";
 
@@ -31,6 +32,21 @@ export default async function ProjectFinancePage({
     Number(result.project.project_value) || 0,
   );
 
+  // A project's money history is spread across its contracts AND their
+  // milestones, so both id sets are collected here and read in two queries
+  // rather than one per row.
+  const contracts = [...plan.inflow, ...plan.outflow];
+  const [contractAudit, milestoneAudit] = await Promise.all([
+    auditForEntities("contract", contracts.map((c) => c.contract.id)),
+    auditForEntities(
+      "milestone",
+      contracts.flatMap((c) => c.milestones.map((m) => m.id)),
+    ),
+  ]);
+  const audit = [...contractAudit, ...milestoneAudit].sort((a, b) =>
+    b.at.localeCompare(a.at),
+  );
+
   return (
     <div className="mx-auto max-w-6xl">
       <Link
@@ -45,7 +61,7 @@ export default async function ProjectFinancePage({
         subtitle={`${result.project.name} · contracts, schedules and cash`}
       />
 
-      <FinanceView projectId={id} plan={plan} initialTab={tab ?? "inflow"} />
+      <FinanceView projectId={id} plan={plan} initialTab={tab ?? "inflow"} audit={audit} />
     </div>
   );
 }

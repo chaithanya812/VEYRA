@@ -1,4 +1,5 @@
 import "server-only";
+import { guardMeteredCreate, recordUsage } from "./subscription";
 import { withOrg } from "./with-org";
 import {
   type Asset,
@@ -102,6 +103,10 @@ export async function createAsset(input: {
   url?: string | null;
   note?: string | null;
 }): Promise<{ id: string } | { error: string }> {
+  // Gate BEFORE the write: a create that lands over the limit makes the
+  // ledger disagree with the data it is supposed to be counting.
+  const gate = await guardMeteredCreate("designs");
+  if (gate.error) return { error: gate.error };
   const { db, ctx } = await withOrg();
 
   const { data, error } = await db.table("assets").insert({
@@ -115,6 +120,7 @@ export async function createAsset(input: {
   if (error) return { error: error.message };
 
   const id = (data?.[0] as { id: string }).id;
+  await recordUsage("designs", 1, id);
   return { id };
 }
 
