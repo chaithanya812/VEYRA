@@ -4,11 +4,18 @@ import {
   canConfigureOrg,
   canManageTeam,
   completionPct,
+  eligibleManagers,
   expenseSummary,
+  isActiveMember,
   isClosedTask,
   leaveBalance,
   leaveDays,
+  managerChain,
+  memberStatusLabel,
+  memberStatusTone,
   openSession,
+  reportCounts,
+  wouldCycle,
   optionLabel,
   optionTone,
   roleRank,
@@ -21,6 +28,7 @@ import {
   type ExpenseClaim,
   type LeaveRequest,
   type Member,
+  type ReportingNode,
   type Task,
   type WorkspaceOption,
   type WorkSession,
@@ -346,5 +354,133 @@ describe("week boundary", () => {
   it("treats Sunday as the end of its week, not the start of the next", () => {
     const start = startOfWeek(new Date("2026-06-28T10:00:00"));
     expect(start.getDate()).toBe(22);
+  });
+});
+
+describe("membership status", () => {
+  it("treats only 'active' as active, and an unknown status as not", () => {
+    expect(isActiveMember("active")).toBe(true);
+    expect(isActiveMember("invited")).toBe(false);
+    expect(isActiveMember("disabled")).toBe(false);
+    expect(isActiveMember(null)).toBe(false);
+    expect(isActiveMember("suspended")).toBe(false);
+  });
+
+  it("labels 'disabled' as Deactivated but keeps Invited its own word", () => {
+    expect(memberStatusLabel("disabled")).toBe("Deactivated");
+    expect(memberStatusLabel("invited")).toBe("Invited");
+  });
+
+  it("shows an unrecognised status as itself rather than inventing a label", () => {
+    expect(memberStatusLabel("suspended")).toBe("suspended");
+    expect(memberStatusTone("suspended")).toBe("neutral");
+  });
+
+  it("never tones a membership state red", () => {
+    for (const s of ["active", "invited", "disabled"]) {
+      expect(memberStatusTone(s)).not.toBe("red");
+    }
+  });
+});
+
+/* ── The reporting line ───────────────────────────────────────────────────── */
+
+/** owner ← manager ← two staff. The shape /settings/users shows by default. */
+const TREE: ReportingNode[] = [
+  { id: "owner", manager_id: null },
+  { id: "mgr", manager_id: "owner" },
+  { id: "staff1", manager_id: "mgr" },
+  { id: "staff2", manager_id: "mgr" },
+  { id: "loner", manager_id: null },
+];
+
+describe("managerChain", () => {
+  it("walks upwards, nearest manager first", () => {
+    expect(managerChain(TREE, "staff1").map((m) => m.id)).toEqual(["mgr", "owner"]);
+  });
+
+  it("is empty for somebody at the top", () => {
+    expect(managerChain(TREE, "owner")).toEqual([]);
+  });
+
+  it("ends the chain at a manager who no longer exists", () => {
+    const orphan: ReportingNode[] = [{ id: "a", manager_id: "gone" }];
+    expect(managerChain(orphan, "a")).toEqual([]);
+  });
+
+  it("terminates on an already-cyclic graph instead of hanging", () => {
+    const loop: ReportingNode[] = [
+      { id: "a", manager_id: "b" },
+      { id: "b", manager_id: "a" },
+    ];
+    expect(managerChain(loop, "a").map((m) => m.id)).toEqual(["b"]);
+  });
+});
+
+describe("wouldCycle", () => {
+  it("clearing a manager is always allowed", () => {
+    expect(wouldCycle(TREE, "staff1", null)).toBe(false);
+  });
+
+  it("refuses a member managing themselves", () => {
+    expect(wouldCycle(TREE, "mgr", "mgr")).toBe(true);
+  });
+
+  it("refuses the two-step loop (A manages B manages A)", () => {
+    expect(wouldCycle(TREE, "mgr", "staff1")).toBe(true);
+  });
+
+  it("refuses a longer loop through an intermediate manager", () => {
+    // owner reporting to staff1 closes owner → mgr → staff1 → owner.
+    expect(wouldCycle(TREE, "owner", "staff1")).toBe(true);
+  });
+
+  it("allows a sideways move that does not close a loop", () => {
+    expect(wouldCycle(TREE, "loner", "mgr")).toBe(false);
+    expect(wouldCycle(TREE, "staff1", "owner")).toBe(false);
+  });
+
+  it("fails closed on a graph that is already cyclic", () => {
+    const corrupt: ReportingNode[] = [
+      { id: "a", manager_id: "b" },
+      { id: "b", manager_id: "a" },
+      { id: "c", manager_id: null },
+    ];
+    expect(wouldCycle(corrupt, "c", "a")).toBe(true);
+  });
+
+  it("does not trip on a manager who is not in the list", () => {
+    expect(wouldCycle(TREE, "loner", "unknown")).toBe(false);
+  });
+});
+
+describe("eligibleManagers", () => {
+  it("offers everybody who cannot close a loop, never the member themselves", () => {
+    expect(eligibleManagers(TREE, "mgr").map((m) => m.id)).toEqual(["owner", "loner"]);
+  });
+
+  it("offers everybody else to somebody with no reports", () => {
+    expect(eligibleManagers(TREE, "loner").map((m) => m.id)).toEqual([
+      "owner",
+      "mgr",
+      "staff1",
+      "staff2",
+    ]);
+  });
+});
+
+describe("reportCounts", () => {
+  it("counts direct reports only, and keeps the zeros", () => {
+    expect(reportCounts(TREE)).toEqual({
+      owner: 1,
+      mgr: 2,
+      staff1: 0,
+      staff2: 0,
+      loner: 0,
+    });
+  });
+
+  it("ignores a pointer at somebody outside the list", () => {
+    expect(reportCounts([{ id: "a", manager_id: "gone" }])).toEqual({ a: 0 });
   });
 });

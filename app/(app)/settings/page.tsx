@@ -6,6 +6,7 @@ import {
   Hash,
   ShieldCheck,
   SlidersHorizontal,
+  UserCog,
   Users,
   FileText,
   type LucideIcon,
@@ -32,6 +33,13 @@ const LIVE_CARDS: ConfigCard[] = [
       "Document prefixes, Indian FY segments and zero-padding for quotations, RFQs, POs, GRNs and invoices.",
     icon: Hash,
     href: "/settings/numbering",
+  },
+  {
+    title: "Users",
+    description:
+      "Who has a seat, who is deactivated, and who reports to whom — the reporting line that decides whose leave lands on whose desk.",
+    icon: UserCog,
+    href: "/settings/users",
   },
   {
     title: "Roles & permissions",

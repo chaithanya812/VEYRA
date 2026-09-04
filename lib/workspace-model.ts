@@ -82,6 +82,52 @@ export function groupByRole<T extends { role: string }>(
   })).filter((g) => g.people.length > 0);
 }
 
+/**
+ * Membership states, as 0001 declares them: `active | invited | disabled`.
+ *
+ * The Users screen shows two tabs, Active and Deactivated — but "deactivated"
+ * is the TAB, not the state. `invited` is a third thing (a seat handed out
+ * that nobody has taken up), and a row that says "Invited" under a
+ * Deactivated tab is the "same word, two meanings" mistake, so the chip keeps
+ * saying what the row actually is.
+ */
+export const MEMBER_STATUSES = ["active", "invited", "disabled"] as const;
+export type MemberStatus = (typeof MEMBER_STATUSES)[number];
+
+export const MEMBER_STATUS_LABELS: Record<MemberStatus, string> = {
+  active: "Active",
+  invited: "Invited",
+  disabled: "Deactivated",
+};
+
+/** Grey/amber/green only. A deactivated colleague is not an alert. */
+export const MEMBER_STATUS_TONE: Record<MemberStatus, Tone> = {
+  active: "green",
+  invited: "amber",
+  disabled: "neutral",
+};
+
+/** Only `active` is active. Anything unrecognised is NOT — fail closed. */
+export function isActiveMember(status: string | null | undefined): boolean {
+  return status === "active";
+}
+
+/** Label for a stored status, falling back to the slug rather than inventing one. */
+export function memberStatusLabel(status: string | null | undefined): string {
+  const s = String(status ?? "");
+  return (MEMBER_STATUSES as readonly string[]).includes(s)
+    ? MEMBER_STATUS_LABELS[s as MemberStatus]
+    : s || "Unknown";
+}
+
+/** Chip tone for a stored status (unrecognised → neutral). */
+export function memberStatusTone(status: string | null | undefined): Tone {
+  const s = String(status ?? "");
+  return (MEMBER_STATUSES as readonly string[]).includes(s)
+    ? MEMBER_STATUS_TONE[s as MemberStatus]
+    : "neutral";
+}
+
 /* ── Fixed lifecycle states ───────────────────────────────────────────────── */
 
 export const TASK_STATUSES = [
@@ -644,4 +690,113 @@ export function startOfWeek(now: Date = new Date()): Date {
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const dow = (d.getDay() + 6) % 7; // Mon = 0
   return new Date(d.getTime() - dow * 86_400_000);
+}
+
+/* ── The reporting line (org_members.manager_id) ──────────────────────────── */
+
+/**
+ * The minimum a row needs to take part in the hierarchy. Deliberately NOT
+ * `Member`: `verify.mjs`-style fixtures, the picker and the approval queue all
+ * hold different row shapes, and the graph only ever needs these two fields.
+ */
+export interface ReportingNode {
+  id: string;
+  manager_id: string | null;
+}
+
+/**
+ * `manager_id` is a self-reference on ONE table with no depth limit, so the
+ * graph it describes is only a tree by convention. Nothing in Postgres stops
+ * A → B → A, and the moment that exists every consumer that walks upwards —
+ * the approvals queue, an org chart, an escalation path — spins forever.
+ *
+ * So the guard is here, in a pure function with tests, rather than in a form
+ * handler or (worse) in JSX. Every walker below is written to TERMINATE on a
+ * corrupt graph rather than trust that the writer held.
+ */
+
+/**
+ * The people above `memberId`, nearest manager first.
+ *
+ * Stops the moment it revisits somebody, so a graph that is already cyclic
+ * (seeded badly, or written before this guard existed) returns the loop once
+ * instead of hanging. Missing managers simply end the chain — a pointer at a
+ * member who is gone is a short line, not an exception.
+ */
+export function managerChain<T extends ReportingNode>(
+  members: T[],
+  memberId: string,
+): T[] {
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const chain: T[] = [];
+  const seen = new Set<string>([memberId]);
+  let cursor = byId.get(memberId)?.manager_id ?? null;
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const next = byId.get(cursor);
+    if (!next) break;
+    chain.push(next);
+    cursor = next.manager_id;
+  }
+  return chain;
+}
+
+/**
+ * Would setting `memberId`'s manager to `managerId` create a loop?
+ *
+ *  - Clearing the manager (`null`) never can — say so first, so "remove my
+ *    manager" is never refused by a graph walk it has no business running.
+ *  - Managing yourself is the one-node cycle, and the commonest mis-click.
+ *  - Otherwise walk UP from the proposed manager: if the walk reaches
+ *    `memberId`, the new edge closes the loop.
+ *
+ * **Fails closed.** If the walk revisits a node without reaching `memberId`,
+ * the stored graph is ALREADY cyclic; this returns true rather than hanging a
+ * new person off a broken branch. A refusal is recoverable, a hang is not.
+ */
+export function wouldCycle(
+  members: ReportingNode[],
+  memberId: string,
+  managerId: string | null,
+): boolean {
+  if (!managerId) return false;
+  if (managerId === memberId) return true;
+
+  const byId = new Map(members.map((m) => [m.id, m]));
+  const seen = new Set<string>();
+  let cursor: string | null = managerId;
+  while (cursor) {
+    if (cursor === memberId) return true;
+    if (seen.has(cursor)) return true; // pre-existing loop — refuse
+    seen.add(cursor);
+    cursor = byId.get(cursor)?.manager_id ?? null;
+  }
+  return false;
+}
+
+/**
+ * Who may be offered as `memberId`'s manager: everybody except themselves and
+ * anybody whose own line already runs through them.
+ *
+ * The picker is built from THIS, so the option that would be refused is never
+ * offered in the first place — and the writer runs `wouldCycle` again anyway,
+ * because a disabled option is a courtesy, not a control.
+ */
+export function eligibleManagers<T extends ReportingNode>(
+  members: T[],
+  memberId: string,
+): T[] {
+  return members.filter(
+    (m) => m.id !== memberId && !wouldCycle(members, memberId, m.id),
+  );
+}
+
+/** How many people report DIRECTLY to each member (id → count, zeros included). */
+export function reportCounts(members: ReportingNode[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const m of members) counts[m.id] = 0;
+  for (const m of members) {
+    if (m.manager_id && m.manager_id in counts) counts[m.manager_id] += 1;
+  }
+  return counts;
 }

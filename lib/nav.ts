@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   Truck,
+  UserCog,
   Users,
   Wallet,
   Factory,
@@ -159,7 +160,11 @@ export const NAV: NavEntry[] = [
     label: "Admin",
     icon: Settings,
     items: [
-      { label: "Users & Roles", href: "/settings/roles", icon: ShieldCheck },
+      // Two entries, not one "Users & Roles": people and permissions are
+      // separate screens now that the reporting line is a real column, and a
+      // single label that lands on only one of them hides the other.
+      { label: "Users", href: "/settings/users", icon: UserCog },
+      { label: "Roles & permissions", href: "/settings/roles", icon: ShieldCheck },
       { label: "Approvals", href: "/approvals", icon: CheckCircle2 },
       { label: "Reports", href: "/reports", icon: BarChart3 },
       { label: "Settings", href: "/settings", icon: Settings },

@@ -518,6 +518,36 @@ async function main() {
     .select("id")
     .single();
 
+  // ── The reporting line (org_members.manager_id, 0023 / Phase 10 Unit 4) ───
+  // `manager_id` is a self-reference on ONE table. Two things about it are
+  // worth pinning down, because /settings/users writes it.
+  const { data: bossA } = await sb
+    .from("org_members")
+    .insert({ org_id: A.id, user_id: crypto.randomUUID(), role: "manager", display_name: "A Boss" })
+    .select("id")
+    .single();
+  const reportsTo = await sb
+    .from("org_members").update({ manager_id: bossA.id }).eq("id", memA.id).select("manager_id");
+  check(
+    "a member may report to another member of the same org",
+    !reportsTo.error && reportsTo.data?.[0]?.manager_id === bossA.id,
+    reportsTo.error?.message ?? `got ${reportsTo.data?.[0]?.manager_id}`,
+  );
+
+  // No `on delete` clause on the self-FK, so Postgres refuses to remove a
+  // manager while somebody still points at them. The middle of a hierarchy
+  // cannot vanish and leave the people under it dangling — which is why
+  // `setMemberStatus` DEACTIVATES rather than deletes, and refuses even that
+  // while direct reports remain.
+  const removeBoss = await sb.from("org_members").delete().eq("id", bossA.id);
+  const bossStill = await sb.from("org_members").select("id").eq("id", bossA.id);
+  check(
+    "a manager with direct reports cannot be deleted out from under them",
+    !!removeBoss.error && (bossStill.data ?? []).length === 1,
+    removeBoss.error?.code ?? "delete accepted",
+  );
+  await sb.from("org_members").update({ manager_id: null }).eq("id", memA.id);
+
   await sb.from("tasks").insert([
     { org_id: A.id, title: "A task", assignee_id: memA.id, status: "created", due_at: new Date(Date.now() - 86400000).toISOString() },
     { org_id: A.id, title: "A done", assignee_id: memA.id, status: "done" },
