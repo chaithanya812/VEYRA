@@ -131,6 +131,11 @@ export const NAV: NavEntry[] = [
     icon: Landmark,
     items: [
       { label: "Finance", href: "/finance", icon: Landmark },
+      // The company-wide money matrix (PLAN-V4 §12.1). It sits above Billing
+      // because it is the screen a principal opens first: every project's
+      // receivables and payables on one row each, with a drill-through into the
+      // project it came from.
+      { label: "Payments Dashboard", href: "/finance/payments", icon: BadgeIndianRupee },
       { label: "Billing", href: "/billing", icon: Wallet },
       {
         label: "Account Receivables",

@@ -23,6 +23,12 @@ import {
   type Payment,
   type PaymentDirection,
 } from "@/lib/finance-model";
+import type {
+  MatrixContract,
+  MatrixMilestone,
+  MatrixPayment,
+  MatrixProject,
+} from "@/lib/payments-dashboard-model";
 import { listOptions } from "./workspace";
 import { listMembers } from "./team";
 import {
@@ -893,4 +899,84 @@ export async function reverseLedgerEntry(
     created_by: ctx.userId,
   });
   return error ? { error: error.message } : {};
+}
+
+/* ── The company-wide Payments Dashboard (frame 110458, Part 3 Unit 2) ─────── */
+
+/**
+ * Everything `lib/payments-dashboard-model.ts::paymentsMatrix` needs, and
+ * nothing more.
+ *
+ * This function computes NO money. It reads four tables through `withOrg()` and
+ * hands the raw rows to the model, which hands every project's slice to
+ * `summarisePlan` — the same function the project's own Financial Planning band
+ * calls. That is deliberate: the drill-through arrow on this table is one click
+ * wide, so a second money model here would put a disagreement about the same
+ * rupee one click apart.
+ *
+ * Every `.error` is checked. Selecting a column that does not exist empties the
+ * WHOLE read silently, and an unchecked error is a lie with a plausible shape
+ * (HANDOFF-V8 §11) — on a finance dashboard it reads as "this company has no
+ * money", which is a very convincing lie.
+ */
+export async function paymentsDashboardData(): Promise<{
+  projects: MatrixProject[];
+  contracts: MatrixContract[];
+  milestonesByContract: Map<string, MatrixMilestone[]>;
+  payments: MatrixPayment[];
+}> {
+  const { db } = await withOrg();
+
+  const [projRes, conRes, payRes] = await Promise.all([
+    db
+      .table("projects")
+      .select("id, name, client_name, stage, project_value")
+      .order("created_at", { ascending: false }),
+    db.table("contracts").select("id, amount, source, project_id"),
+    db.table("payments").select("direction, amount, contract_id, project_id"),
+  ]);
+  if (projRes.error) throw projRes.error;
+  if (conRes.error) throw conRes.error;
+  if (payRes.error) throw payRes.error;
+
+  const rawProjects = (projRes.data ?? []) as unknown as {
+    id: string;
+    name: string | null;
+    client_name: string | null;
+    stage: string | null;
+    project_value: number | string | null;
+  }[];
+  const contracts = (conRes.data ?? []) as unknown as MatrixContract[];
+  const payments = (payRes.data ?? []) as unknown as MatrixPayment[];
+
+  const ids = contracts.map((c) => c.id);
+  const msRes = ids.length
+    ? await db
+        .table("milestones")
+        .select("contract_id, amount, pct, work_done")
+        .in("contract_id", ids)
+    : { data: [], error: null };
+  if (msRes.error) throw msRes.error;
+
+  const milestonesByContract = new Map<string, MatrixMilestone[]>();
+  for (const m of (msRes.data ?? []) as unknown as (MatrixMilestone & {
+    contract_id: string;
+  })[]) {
+    const list = milestonesByContract.get(m.contract_id) ?? [];
+    list.push({ amount: m.amount, pct: m.pct, work_done: m.work_done });
+    milestonesByContract.set(m.contract_id, list);
+  }
+
+  return {
+    projects: rawProjects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      clientName: p.client_name,
+      projectValue: p.project_value,
+      stage: p.stage,
+    })),
+    contracts,
+    milestonesByContract,
+    payments,
+  };
 }

@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 
 import {
+  cellTone,
+  columnTitle,
   describeFilter,
   filterMatrix,
+  MATRIX_COLUMNS,
   paymentsMatrix,
   summariseMatrix,
   type MatrixContract,
@@ -200,5 +203,89 @@ describe("describeFilter", () => {
     expect(describeFilter({ q: "malviya", duesOnly: true })).toBe(
       "Search: malviya · Dues outstanding",
     );
+  });
+});
+
+describe("MATRIX_COLUMNS", () => {
+  it("names every figure the frame's matrix carries, and nothing extra", () => {
+    expect(MATRIX_COLUMNS.map((c) => c.key)).toEqual([
+      "projectValue",
+      "totalReceivables",
+      "fundsReceived",
+      "receivableDues",
+      "estimatedExpenses",
+      "disbursed",
+      "committed",
+      "billed",
+      "dues",
+      "cashFlow",
+      "expectedPnl",
+    ]);
+  });
+
+  it("every column key is a real numeric field on a row", () => {
+    const r = rows[0];
+    for (const c of MATRIX_COLUMNS) {
+      expect(typeof r[c.key]).toBe("number");
+    }
+    expect(MATRIX_COLUMNS.length).toBeGreaterThanOrEqual(11);
+  });
+
+  it("every column carries the note that says what it counts", () => {
+    for (const c of MATRIX_COLUMNS) {
+      expect(c.note.length).toBeGreaterThan(10);
+    }
+    // The one collision the owner has NOT settled must be named on the screen,
+    // not quietly resolved (HANDOFF-V8 §10.8).
+    const rec = MATRIX_COLUMNS.find((c) => c.key === "totalReceivables");
+    expect(rec?.caution).toContain("§10.8");
+    expect(columnTitle(rec!)).toContain("§10.8");
+    // Only that one column carries a caution — a screen where every heading
+    // warns is a screen where no heading warns.
+    expect(MATRIX_COLUMNS.filter((c) => c.caution)).toHaveLength(1);
+    // A tile hint is one line, never a paragraph.
+    for (const c of MATRIX_COLUMNS) expect(c.note.length).toBeLessThan(100);
+  });
+
+  it("uses the settled vocabulary and never the retired label", () => {
+    const labels = MATRIX_COLUMNS.map((c) => c.label);
+    expect(labels).toContain("Committed");
+    expect(labels).toContain("Billed");
+    expect(labels).toContain("Dues");
+    expect(labels.some((l) => /payable/i.test(l))).toBe(false);
+  });
+});
+
+describe("cellTone", () => {
+  it("paints red only for a genuine negative", () => {
+    expect(cellTone("cashFlow", -1)).toBe("negative");
+    expect(cellTone("committed", -1000)).toBe("negative");
+    expect(cellTone("expectedPnl", -5)).toBe("negative");
+    expect(cellTone("fundsReceived", -1)).toBe("negative");
+  });
+
+  it("never paints a whole row red on the demo project's real figures", () => {
+    const r = rows[0];
+    const tones = MATRIX_COLUMNS.map((c) => cellTone(c.key, r[c.key]));
+    expect(tones).not.toContain("negative");
+    expect(tones.filter((t) => t === "warning")).toHaveLength(2); // both dues
+  });
+
+  it("greens money in, ambers money pending, leaves the rest alone", () => {
+    expect(cellTone("totalReceivables", 1260000)).toBe("positive");
+    expect(cellTone("fundsReceived", 560000)).toBe("positive");
+    expect(cellTone("receivableDues", 700000)).toBe("warning");
+    expect(cellTone("dues", 46000)).toBe("warning");
+    expect(cellTone("estimatedExpenses", 240000)).toBe("neutral");
+    expect(cellTone("disbursed", 50000)).toBe("neutral");
+    expect(cellTone("committed", 190000)).toBe("neutral");
+    expect(cellTone("billed", 96000)).toBe("neutral");
+    expect(cellTone("projectValue", 1800000)).toBe("neutral");
+  });
+
+  it("does not tint a zero — nothing has been received and nothing is pending", () => {
+    expect(cellTone("fundsReceived", 0)).toBe("neutral");
+    expect(cellTone("dues", 0)).toBe("neutral");
+    expect(cellTone("expectedPnl", 0)).toBe("neutral");
   });
 });

@@ -306,3 +306,150 @@ export function describeFilter(filter: MatrixFilter = {}): string | null {
   if (filter.duesOnly) parts.push("Dues outstanding");
   return parts.length ? parts.join(" · ") : null;
 }
+
+/* ── The screen's vocabulary (Part 3 Unit 2) ──────────────────────────────── */
+
+/**
+ * ⚠ This lives in the MODEL, not in the screen. A `"use client"` module's
+ * exported const is a client reference on the server: `tsc` passes, the build
+ * passes, and every request throws (HANDOFF-V8 §11). Column names, the note
+ * under each one and the tint rule are all vocabulary, so they live here where
+ * a test can read them.
+ */
+export type MatrixColumnKey =
+  | "projectValue"
+  | "fundsReceived"
+  | "totalReceivables"
+  | "receivableDues"
+  | "estimatedExpenses"
+  | "disbursed"
+  | "committed"
+  | "billed"
+  | "dues"
+  | "cashFlow"
+  | "expectedPnl";
+
+export interface MatrixColumn {
+  key: MatrixColumnKey;
+  label: string;
+  group: "Project" | "Inflow" | "Outflow" | "Result";
+  /**
+   * What the figure actually counts, in one short line. Every derived figure
+   * travels with the two numbers it came from — a column header that only names
+   * a word is how two screens end up meaning different things by it.
+   */
+  note: string;
+  /**
+   * A warning that belongs on the column but NOT in a summary tile, because it
+   * is a paragraph. Only `totalReceivables` carries one, and it must: the same
+   * two words mean a different quantity on the project Summary band, and that
+   * collision is not settled (HANDOFF-V8 §10.8). Naming it is the alternative
+   * to picking one quietly.
+   */
+  caution?: string;
+}
+
+/** The full text for a column's `title` — its note, plus any caution. */
+export function columnTitle(c: MatrixColumn): string {
+  return c.caution ? `${c.note} ${c.caution}` : c.note;
+}
+
+export const MATRIX_COLUMNS: readonly MatrixColumn[] = [
+  {
+    key: "projectValue",
+    label: "Project Value",
+    group: "Project",
+    note: "The project's own recorded value.",
+  },
+  {
+    key: "totalReceivables",
+    label: "Total Receivables",
+    group: "Inflow",
+    note: "Client milestones signed off.",
+    caution:
+      "⚠ The project Summary band shows the contracted client total under " +
+      "these same two words — both figures are real and the collision is NOT " +
+      "settled (HANDOFF-V8 §10.8).",
+  },
+  {
+    key: "fundsReceived",
+    label: "Funds Received",
+    group: "Inflow",
+    note: "Client payments actually received, including any not attached to a contract.",
+  },
+  {
+    key: "receivableDues",
+    label: "Receivable Dues",
+    group: "Inflow",
+    note: "Total Receivables − Funds Received.",
+  },
+  {
+    key: "estimatedExpenses",
+    label: "Est. Expenses",
+    group: "Outflow",
+    note: "Sum of every vendor contract's value.",
+  },
+  {
+    key: "disbursed",
+    label: "Disbursed",
+    group: "Outflow",
+    note: "Money actually paid out, including spend attached to no contract.",
+  },
+  {
+    key: "committed",
+    label: "Committed",
+    group: "Outflow",
+    note: "Est. Expenses − Disbursed — what you still owe over the life of the job.",
+  },
+  {
+    key: "billed",
+    label: "Billed",
+    group: "Outflow",
+    note: "Vendor milestones signed off — work you have accepted.",
+  },
+  {
+    key: "dues",
+    label: "Dues",
+    group: "Outflow",
+    note: "Billed − Disbursed — payable today.",
+  },
+  {
+    key: "cashFlow",
+    label: "Cash Flow",
+    group: "Result",
+    note: "Funds Received − Disbursed.",
+  },
+  {
+    key: "expectedPnl",
+    label: "Expected P&L",
+    group: "Result",
+    note: "Project Value − Est. Expenses.",
+  },
+];
+
+export type CellTone = "neutral" | "positive" | "warning" | "negative";
+
+/** Money received, and the hero metric when it is healthy. */
+const POSITIVE_KEYS = new Set<MatrixColumnKey>([
+  "totalReceivables",
+  "fundsReceived",
+  "expectedPnl",
+]);
+/** Money still owed in either direction — pending, not wrong. */
+const PENDING_KEYS = new Set<MatrixColumnKey>(["receivableDues", "dues"]);
+
+/**
+ * The tint for one cell.
+ *
+ * §2 rule 7 gives red a closed list of five jobs, and "a big number" is not one
+ * of them. Red here means one thing only: the figure is NEGATIVE, which on this
+ * table is always a genuine alert — over-disbursed against a contract, or cash
+ * gone out faster than it came in. Everything else is green for money in, amber
+ * for money still pending, and plain ink for the rest.
+ */
+export function cellTone(key: MatrixColumnKey, value: number): CellTone {
+  if (value < 0) return "negative";
+  if (POSITIVE_KEYS.has(key)) return value > 0 ? "positive" : "neutral";
+  if (PENDING_KEYS.has(key)) return value > 0 ? "warning" : "neutral";
+  return "neutral";
+}
