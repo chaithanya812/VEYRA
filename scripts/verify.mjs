@@ -1785,6 +1785,42 @@ async function main() {
     `${badWfhStatus.error?.code ?? "status accepted"} / ${backwardsWfh.error?.code ?? "range accepted"}`,
   );
 
+  // A DECISION IS A STATUS CHANGE PLUS AN ATTRIBUTION, NEVER A DELETE. The
+  // approvals screen writes the quartet in one update and the row survives —
+  // a denied request that vanished would take its reason with it, and the
+  // reason is the entire point of writing a denial down.
+  const pendingWfh = await sb
+    .from("wfh_requests")
+    .select("id")
+    .eq("org_id", A.id)
+    .eq("status", "pending")
+    .maybeSingle();
+  const decidedWfh = await sb
+    .from("wfh_requests")
+    .update({
+      status: "rejected",
+      decided_by: memA.id,
+      decided_at: new Date().toISOString(),
+      decision_note: "Client walkthrough that day",
+    })
+    .eq("id", pendingWfh.data?.id ?? "00000000-0000-0000-0000-000000000000")
+    .select("status, decided_by, decided_at, decision_note")
+    .maybeSingle();
+  const survivedWfh = await sb.from("wfh_requests").select("id").eq("org_id", A.id);
+  const d = decidedWfh.data ?? {};
+  check(
+    "a decision updates the row and attributes it — the request is never deleted",
+    !decidedWfh.error &&
+      d.status === "rejected" &&
+      !!d.decided_by &&
+      !!d.decided_at &&
+      !!d.decision_note &&
+      (survivedWfh.data ?? []).length === 2,
+    `${decidedWfh.error?.message ?? d.status} by=${d.decided_by ? "set" : "null"} at=${
+      d.decided_at ? "set" : "null"
+    } note=${d.decision_note ? "set" : "null"} rows=${(survivedWfh.data ?? []).length}`,
+  );
+
   // Holidays are TENANT-OWNED: a Hyderabad firm and a Gurugram firm do not
   // share a calendar, so the same date is free in both.
   // Every row carries `is_optional`. Omitting it on two rows of three made

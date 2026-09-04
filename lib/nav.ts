@@ -146,6 +146,11 @@ export const NAV: NavEntry[] = [
     icon: CalendarCheck,
     items: [
       { label: "Attendance", href: "/hr/attendance", icon: CalendarCheck },
+      // Role-gated rather than hidden: HR is "the same screens, plus the
+      // approver's controls" (PLAN-V4 §11), and the page itself refuses a
+      // non-manager with an explanation. A rail that quietly dropped the
+      // entry would leave a manager unable to find the queue at all.
+      { label: "Approvals", href: "/hr/attendance/admin", icon: CheckCircle2 },
     ],
   },
 

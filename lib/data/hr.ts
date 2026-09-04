@@ -1,8 +1,9 @@
 import "server-only";
 import { withOrg } from "./with-org";
-import { getActingContext } from "./team";
+import { getActingContext, listMembers } from "./team";
 import {
   DEFAULT_LEAVE_ALLOWANCE,
+  decideLeave,
   ensureDefaultOptions,
   listLeave,
   listOptions,
@@ -12,23 +13,33 @@ import {
 import { leaveDays, type LeaveRequest, type WorkspaceOption } from "@/lib/workspace-model";
 import {
   LEGACY_WFH_LEAVE_TYPE,
+  approvalQueue,
+  approvalReport,
   asMonthKey,
   attendanceRows,
   attendanceTotals,
+  decisionError,
   fyWindowOf,
   holidayCalendar,
   leaveKindOf,
   leaveTiles,
+  localDayOf,
   monthKeyOf,
   monthWindow,
   recentMonths,
   requestRows,
+  todayStatus,
+  visitRows,
+  type ApprovalQueue,
   type AttendanceDay,
   type AttendanceTotals,
+  type EmployeeReportRow,
   type Holiday,
   type HolidayRow,
   type LeaveTiles,
   type RequestRow,
+  type TodayStatus,
+  type VisitRow,
   type WfhRequest,
 } from "@/lib/hr-model";
 
@@ -234,5 +245,196 @@ export async function getMyAttendance(filter?: {
     holidayWindow: fy,
     holidays: holidayCalendar(holidays, fy.from, fy.to),
     legacyWfhCount: leave.filter((l: LeaveRequest) => leaveKindOf(l.leave_type) === "wfh").length,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * THE APPROVALS SIDE — `/hr/attendance/admin`, frame `110339`
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Approve or deny a work-from-home request. The exact mirror of `decideLeave`
+ * in lib/data/workspace.ts, over the table `wfh_requests` was deliberately
+ * shaped to mirror — same guard, same required reason, same quartet written in
+ * one update.
+ *
+ * A decision is a STATUS CHANGE PLUS AN ATTRIBUTION, never a delete: the row
+ * survives, `decided_by` and `decided_at` say who and when, and a denial
+ * carries the reason. Nothing here removes anything.
+ */
+export async function decideWfh(
+  id: string,
+  decision: "approved" | "rejected",
+  note?: string | null,
+): Promise<{ error?: string }> {
+  const acting = await getActingContext();
+  // TODO(§11.3): Unit 6 replaces this coarse role check with `can("hr",
+  // "approve", …)` from the permission spine Unit 5 builds. Until then the
+  // manager tier is the only guard, and it is the SAME guard `decideLeave`
+  // applies — one rule, not a second, weaker one on a newer table.
+  if (!acting.isManager) return { error: "Only a manager can decide WFH requests." };
+
+  const problem = decisionError(decision, note);
+  if (problem) return { error: problem };
+
+  const { db } = await withOrg();
+  const { error } = await db.table("wfh_requests").updateById(id, {
+    status: decision,
+    decided_by: acting.member.id,
+    decided_at: new Date().toISOString(),
+    decision_note: note?.trim() || null,
+  });
+  return error ? { error: error.message } : {};
+}
+
+/**
+ * The one decision entry point the approvals screen uses, over both tables.
+ *
+ * `wfh_requests` mirrors `leave_requests` precisely so this could be one code
+ * path; the only thing that differs is which writer runs, and both writers
+ * enforce the same two rules. `leave_requests` goes through the EXISTING
+ * `decideLeave` rather than a second update of my own — a second writer over
+ * the same table is a second set of rules waiting to drift.
+ */
+export async function decideRequest(
+  source: "leave_requests" | "wfh_requests",
+  id: string,
+  decision: "approved" | "rejected",
+  note?: string | null,
+): Promise<{ error?: string }> {
+  return source === "wfh_requests"
+    ? decideWfh(id, decision, note)
+    : decideLeave(id, decision, note);
+}
+
+export interface ApprovalAdminBoard {
+  /** Who is looking, and whether they may decide anything. */
+  actor: { id: string; name: string; role: string };
+  canApprove: boolean;
+  /** Resolved on the SERVER from `?tab=` / `?panel=` / `?member=`. */
+  tab: "leaves" | "wfh" | "visits";
+  panel: "approvals" | "report";
+  memberId: string;
+  members: { id: string; name: string; role: string }[];
+  today: TodayStatus;
+  /** Badge counts: pending decisions per tab; planned visits for the third. */
+  counts: { leaves: number; wfh: number; visits: number };
+  /** The active tab's rows, already split into pending and decided. */
+  queue: ApprovalQueue;
+  visits: VisitRow[];
+  /** The Report half — every request, aggregated per employee. */
+  report: EmployeeReportRow[];
+  /**
+   * Legacy `leave_type = 'wfh'` rows sitting in the WFH queue right now. A
+   * manager deciding one is deciding a `leave_requests` row, and the screen
+   * says so rather than folding it in (HANDOFF §10.5).
+   */
+  legacyPendingWfh: number;
+}
+
+/** Local midnight — the earliest stamp that can belong to today. */
+function startOfToday(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+}
+
+/**
+ * Everything `/hr/attendance/admin` needs, in one pass.
+ *
+ * The QUEUE IS NOT MONTH-SCOPED, unlike every other HR surface. A request for
+ * next month is pending now, and a queue narrowed to the current month would
+ * quietly drop exactly the requests a manager has not dealt with yet. The only
+ * filter the frame offers is `FILTER BY: [Select User ▾]`, and that is the only
+ * filter here.
+ *
+ * `Today's status` reads sessions from local midnight rather than the whole
+ * history: it is the one figure on this screen that is about right now.
+ */
+export async function getApprovalBoard(filter?: {
+  tab?: string;
+  panel?: string;
+  memberId?: string;
+  now?: Date;
+}): Promise<ApprovalAdminBoard> {
+  await ensureDefaultOptions();
+  const acting = await getActingContext();
+  const now = filter?.now ?? new Date();
+
+  const tab: ApprovalAdminBoard["tab"] =
+    filter?.tab === "wfh" || filter?.tab === "visits" ? filter.tab : "leaves";
+  const panel: ApprovalAdminBoard["panel"] = filter?.panel === "report" ? "report" : "approvals";
+
+  const [members, options, leave, wfh, visits, sessions] = await Promise.all([
+    listMembers(),
+    listOptions("leave_type"),
+    listLeave(),
+    listWfh(),
+    listVisits(),
+    listSessions({ since: startOfToday(now) }),
+  ]);
+
+  // `?member=` may only ever name somebody in this org — `members` is already
+  // org-scoped by withOrg, so an id from anywhere else filters to nothing
+  // rather than reaching across a tenant boundary.
+  const wanted = String(filter?.memberId ?? "").trim();
+  const memberId = members.some((m) => m.id === wanted) ? wanted : "";
+
+  const names: Record<string, string> = {};
+  for (const m of members) names[m.id] = m.name;
+
+  const typeLabels: Record<string, string> = {};
+  for (const o of options) typeLabels[o.value] = o.label;
+
+  // One list of rows, unwindowed. Every count, both tabs and the whole Report
+  // are readings of THIS list, so none of them can disagree with another.
+  const all: RequestRow[] = requestRows(leave, wfh, { from: "", to: "" }, typeLabels);
+
+  // The Leaves tab is "everything that is not WFH" — paid and unpaid together,
+  // which is what the frame's Leave Type column is for. WFH is its own tab
+  // because the frame approves it on its own axis.
+  const onTab = (r: RequestRow, want: "leaves" | "wfh") =>
+    want === "wfh" ? r.kind === "wfh" : r.kind !== "wfh";
+  const mine = (r: RequestRow) => !memberId || r.memberId === memberId;
+  const pendingOn = (want: "leaves" | "wfh") =>
+    all.filter((r) => r.status === "pending" && mine(r) && onTab(r, want)).length;
+
+  const queue = approvalQueue(
+    all.filter((r) => onTab(r, tab === "wfh" ? "wfh" : "leaves")),
+    names,
+    { memberId },
+  );
+
+  const visitList = visitRows(visits, names, { memberId });
+  const everyRow = approvalQueue(all, names, { memberId });
+
+  return {
+    actor: { id: acting.member.id, name: acting.member.name, role: acting.member.role },
+    canApprove: acting.isManager,
+    tab,
+    panel,
+    memberId,
+    members: members.map((m) => ({ id: m.id, name: m.name, role: m.role })),
+    today: todayStatus(
+      members.map((m) => m.id),
+      sessions,
+      leave,
+      wfh,
+      localDayOf(now.toISOString()),
+    ),
+    counts: {
+      leaves: pendingOn("leaves"),
+      wfh: pendingOn("wfh"),
+      // Visits have no pending state — `planned` is the nearest thing, and
+      // saying so is better than a badge that means something else here.
+      visits: visitList.filter((v) => v.status === "planned").length,
+    },
+    queue,
+    visits: visitList,
+    report: approvalReport(
+      [...everyRow.pending, ...everyRow.decided],
+      members.map((m) => ({ id: m.id, name: m.name })),
+    ),
+    // Counted over EVERY row, not the active tab's — the warning must not
+    // disappear because somebody is looking at the Leaves tab.
+    legacyPendingWfh: all.filter((r) => r.legacy && r.status === "pending" && mine(r)).length,
   };
 }

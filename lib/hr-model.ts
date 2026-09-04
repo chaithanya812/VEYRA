@@ -45,6 +45,7 @@ import {
   type ApprovalStatus,
   type FieldVisit,
   type LeaveRequest,
+  type VisitStatus,
   type WorkSession,
 } from "./workspace-model";
 
@@ -156,6 +157,23 @@ export function visitsOnDay(visits: FieldVisit[], day: Date): FieldVisit[] {
 }
 
 /**
+ * How long a field visit lasted, in hours — `null` while it is still running.
+ *
+ * `null`, not `0`, for the same reason an open work session contributes no
+ * hours: a visit that has started and not ended has no knowable length, and a
+ * zero would read as "they were there for no time at all". Callers that are
+ * summing (the attendance row) coalesce it to zero themselves, which makes the
+ * omission a decision at the call site rather than a silent default here.
+ */
+export function visitHoursOf(v: FieldVisit): number | null {
+  if (!v.started_at || !v.ended_at) return null;
+  const a = new Date(v.started_at).getTime();
+  const b = new Date(v.ended_at).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return Math.max(0, b - a) / 3_600_000;
+}
+
+/**
  * One row of the Attendance table. `sessions` and `visits` are already the
  * rows for a single day (see `sessionsOnDay` / `visitsOnDay`).
  *
@@ -175,13 +193,7 @@ export function attendanceDay(
     .sort();
 
   let visitHours = 0;
-  for (const v of visits) {
-    if (!v.started_at || !v.ended_at) continue; // an open visit adds nothing
-    const a = new Date(v.started_at).getTime();
-    const b = new Date(v.ended_at).getTime();
-    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-    visitHours += Math.max(0, b - a) / 3_600_000;
-  }
+  for (const v of visits) visitHours += visitHoursOf(v) ?? 0;
 
   return {
     date: localDayOf(stamps[0] ?? null),
@@ -558,6 +570,12 @@ export const REQUEST_STATUS_TONE: Record<ApprovalStatus, "neutral" | "amber" | "
 
 export interface RequestRow {
   id: string;
+  /**
+   * Whose request it is. "My" screens already know the answer and ignore it;
+   * the approvals queue in Unit 3 is a queue of OTHER people's requests, and a
+   * row that could not say whose it was would be unusable there.
+   */
+  memberId: string;
   kind: LeaveKind;
   /** Which table the row is stored in — the collision is visible, not hidden. */
   source: "leave_requests" | "wfh_requests";
@@ -578,6 +596,15 @@ export interface RequestRow {
   statusLabel: string;
   tone: "neutral" | "amber" | "green";
   appliedOn: string;
+  /**
+   * The decision quartet, carried on the row rather than looked up again by
+   * whoever renders it. A decision is a status change PLUS who made it and
+   * when — a status that cannot say who set it is not a decision, it is a
+   * value that changed.
+   */
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
 }
 
 /** Does `[a, b]` touch `[from, to]`? All four are `YYYY-MM-DD` strings. */
@@ -624,6 +651,7 @@ export function requestRows(
     const status = statusOf(l.status);
     rows.push({
       id: l.id,
+      memberId: l.member_id,
       kind,
       source: "leave_requests",
       legacy: kind === "wfh",
@@ -638,6 +666,9 @@ export function requestRows(
       statusLabel: REQUEST_STATUS_LABELS[status],
       tone: REQUEST_STATUS_TONE[status],
       appliedOn: l.created_at,
+      decidedBy: l.decided_by,
+      decidedAt: l.decided_at,
+      decisionNote: l.decision_note,
     });
   }
 
@@ -646,6 +677,7 @@ export function requestRows(
     const status = statusOf(w.status);
     rows.push({
       id: w.id,
+      memberId: w.member_id,
       kind: "wfh",
       source: "wfh_requests",
       legacy: false,
@@ -660,6 +692,9 @@ export function requestRows(
       statusLabel: REQUEST_STATUS_LABELS[status],
       tone: REQUEST_STATUS_TONE[status],
       appliedOn: w.created_at,
+      decidedBy: w.decided_by,
+      decidedAt: w.decided_at,
+      decisionNote: w.decision_note,
     });
   }
 
@@ -709,4 +744,390 @@ export function attendanceCsv(
     );
   }
   return lines.join("\n");
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * THE APPROVALS QUEUE — frame `110339` (Attendance Report / Approvals)
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * The manager's half of the same data. Four things this section is careful
+ * about, each of which is the reason a figure or a control here is honest:
+ *
+ * 1. **ONE QUEUE OVER TWO TABLES.** `wfh_requests` mirrors `leave_requests`
+ *    field for field precisely so approving them is one code path. So the
+ *    queue is built from `RequestRow`, which both tables already produce, and
+ *    the tabs are a FILTER on `kind` — not two implementations that will drift
+ *    the first time somebody changes the rules of a rejection.
+ *
+ * 2. **A DENIAL MUST CARRY A REASON, AND THE RULE LIVES HERE.** `mustExplain`
+ *    is a pure predicate the button, the server action and the data writer all
+ *    call, so the control that greys out and the write that refuses cannot
+ *    disagree about what is allowed.
+ *
+ * 3. **THE QUEUE IS NOT MONTH-SCOPED.** Every other HR surface is filtered to
+ *    a month; an approvals queue must not be. A request for next month is
+ *    pending NOW, and a queue that hid it until the month arrived would be a
+ *    queue that loses work.
+ *
+ * 4. **TODAY'S TILES COUNT PEOPLE, NOT REQUESTS.** One person on a three-day
+ *    leave is one person absent today, and `On Leave: 3` would be a lie with a
+ *    plausible shape. Every tile is the size of a Set of member ids.
+ */
+
+/**
+ * A pending decision, ready to render. `RequestRow` plus the two things a
+ * queue of OTHER people's requests needs: whose it is, and whether it can
+ * still be decided.
+ */
+export interface ApprovalRow extends RequestRow {
+  memberName: string;
+  /** Only a pending request can be decided. Approving twice is not a thing. */
+  decidable: boolean;
+  /** Resolved name of the decider — `null` while nobody has decided. */
+  decidedByName: string | null;
+}
+
+export interface ApprovalQueue {
+  /** Awaiting a decision, oldest APPLIED first — a queue, not a feed. */
+  pending: ApprovalRow[];
+  /** Already decided, newest decision first. */
+  decided: ApprovalRow[];
+}
+
+/** A name the screen can print for a member id that no longer resolves. */
+const UNKNOWN_MEMBER = "Former member";
+
+function toApprovalRow(r: RequestRow, names: Record<string, string>): ApprovalRow {
+  return {
+    ...r,
+    memberName: names[r.memberId] ?? UNKNOWN_MEMBER,
+    decidable: r.status === "pending",
+    decidedByName: r.decidedBy ? (names[r.decidedBy] ?? UNKNOWN_MEMBER) : null,
+  };
+}
+
+/**
+ * Split the requests into what still needs deciding and what has been decided.
+ *
+ * Pending is ordered OLDEST APPLIED FIRST. That is the one ordering choice in
+ * this file that is a policy rather than a convenience: a queue sorted newest
+ * first quietly buries the request that has been waiting longest, which is the
+ * only request in it that anybody is actually annoyed about. Decided rows go
+ * the other way — newest decision first, because that half is a log.
+ *
+ * `filter.memberId` is the frame's `FILTER BY: [Select User ▾]`. `filter.kind`
+ * is the tab. Both are applied here rather than in JSX so the badge counts and
+ * the table can never be counting different things.
+ */
+export function approvalQueue(
+  rows: RequestRow[],
+  names: Record<string, string>,
+  filter?: { memberId?: string; kind?: LeaveKind | "" },
+): ApprovalQueue {
+  const wantMember = String(filter?.memberId ?? "").trim();
+  const wantKind = String(filter?.kind ?? "").trim();
+
+  const kept = rows
+    .filter((r) => !wantMember || r.memberId === wantMember)
+    .filter((r) => !wantKind || r.kind === wantKind)
+    .map((r) => toApprovalRow(r, names));
+
+  return {
+    pending: kept
+      .filter((r) => r.decidable)
+      .sort((a, b) => String(a.appliedOn).localeCompare(String(b.appliedOn))),
+    decided: kept
+      .filter((r) => !r.decidable)
+      .sort((a, b) => String(b.decidedAt ?? "").localeCompare(String(a.decidedAt ?? ""))),
+  };
+}
+
+/**
+ * May this decision be written? A rejection without a reason is refused — the
+ * same discipline `decideLeave` already applies to leave, applied identically
+ * to WFH, and stated once so the disabled button and the refusing write agree.
+ *
+ * An approval may leave the note blank: "yes" needs no defence, and demanding
+ * one would teach people to type a full stop.
+ */
+export function mustExplain(decision: "approved" | "rejected"): boolean {
+  return decision === "rejected";
+}
+
+/** `null` when the decision is writable; otherwise why it is not. */
+export function decisionError(
+  decision: "approved" | "rejected",
+  note: string | null | undefined,
+): string | null {
+  if (mustExplain(decision) && !String(note ?? "").trim()) {
+    return "Add a reason when denying a request — a refusal nobody can explain is the one people argue about three months later.";
+  }
+  return null;
+}
+
+/* ── Today's status tiles ─────────────────────────────────────────────────── */
+
+export interface TodayStatus {
+  /** The day these four counts describe, `YYYY-MM-DD`. Stated, not assumed. */
+  date: string;
+  totalEmployees: number;
+  /** DISTINCT people with a check-in stamped today, open sessions included. */
+  checkedIn: number;
+  /** DISTINCT people on APPROVED leave that spans today. */
+  onLeave: number;
+  /** DISTINCT people on an APPROVED work-from-home day that spans today. */
+  workingFromHome: number;
+  /**
+   * How many of `workingFromHome` came from a legacy `leave_type = 'wfh'` row
+   * rather than `wfh_requests`. Non-zero means the screen must say so: the
+   * same word is stored in two tables and the owner has not decided which
+   * survives (HANDOFF §10.5).
+   */
+  wfhFromLegacy: number;
+}
+
+/**
+ * The frame's `Today's status` band.
+ *
+ * Only APPROVED absence counts. A pending leave request is not an absence — it
+ * is a question — and counting it would tell a manager somebody is away on a
+ * day they are sitting at their desk waiting for an answer.
+ *
+ * A legacy `leave_type = 'wfh'` row counts toward `workingFromHome` and never
+ * toward `onLeave`, the same rule `leaveTiles` applies, and the count of such
+ * rows travels alongside so the screen can name the split.
+ */
+export function todayStatus(
+  memberIds: string[],
+  sessions: WorkSession[],
+  leaves: LeaveRequest[],
+  wfh: WfhRequest[],
+  today: string,
+): TodayStatus {
+  const day = String(today ?? "");
+  const spans = (from: unknown, to: unknown) => {
+    const a = String(from ?? "");
+    const b = String(to ?? "") || a;
+    // String comparison — `YYYY-MM-DD` sorts chronologically, and no `Date` is
+    // built, so no timezone can move today's boundary by a day.
+    return !!a && !!day && a <= day && day <= b;
+  };
+
+  const checkedIn = new Set<string>();
+  for (const s of sessions) {
+    if (localDayOf(s.check_in) === day) checkedIn.add(s.member_id);
+  }
+
+  const onLeave = new Set<string>();
+  const wfhPeople = new Set<string>();
+  const legacyPeople = new Set<string>();
+
+  for (const l of leaves) {
+    if (l.status !== "approved" || !spans(l.from_date, l.to_date)) continue;
+    if (leaveKindOf(l.leave_type) === "wfh") {
+      wfhPeople.add(l.member_id);
+      legacyPeople.add(l.member_id);
+    } else {
+      onLeave.add(l.member_id);
+    }
+  }
+  for (const w of wfh) {
+    if (w.status !== "approved" || !spans(w.from_date, w.to_date)) continue;
+    wfhPeople.add(w.member_id);
+  }
+
+  return {
+    date: day,
+    totalEmployees: new Set(memberIds).size,
+    checkedIn: checkedIn.size,
+    onLeave: onLeave.size,
+    workingFromHome: wfhPeople.size,
+    wfhFromLegacy: legacyPeople.size,
+  };
+}
+
+/* ── The Report half of the toggle ────────────────────────────────────────── */
+
+export interface EmployeeReportRow {
+  memberId: string;
+  name: string;
+  /** Requests of every status — the denominator for everything beside it. */
+  requests: number;
+  pending: number;
+  paid: TilePair;
+  unpaid: TilePair;
+  wfh: TilePair;
+  /** Days granted across all three buckets. */
+  grantedDays: number;
+  /** Days still awaiting a decision across all three buckets. */
+  pendingDays: number;
+}
+
+/**
+ * The `Report` half of the centre toggle: the SAME rows, aggregated per
+ * employee. Not a second query and not a second set of rules — the report and
+ * the queue are two readings of one list, which is the only way they can be
+ * guaranteed to agree.
+ *
+ * EVERY member gets a row, including one with nothing to report. A report that
+ * listed only people with requests would make `Total Employees` and the row
+ * count disagree, and the reader would have to guess which of the two was
+ * answering their question.
+ *
+ * Sorted by pending descending, then by name — the queue's own priority, so
+ * the person a manager most needs to act on is at the top of both halves.
+ */
+export function approvalReport(
+  rows: ApprovalRow[],
+  members: { id: string; name: string }[],
+): EmployeeReportRow[] {
+  const blank = (): TilePair => ({ granted: 0, inProcess: 0 });
+  const byMember = new Map<string, EmployeeReportRow>();
+
+  for (const m of members) {
+    byMember.set(m.id, {
+      memberId: m.id,
+      name: m.name,
+      requests: 0,
+      pending: 0,
+      paid: blank(),
+      unpaid: blank(),
+      wfh: blank(),
+      grantedDays: 0,
+      pendingDays: 0,
+    });
+  }
+
+  for (const r of rows) {
+    let row = byMember.get(r.memberId);
+    if (!row) {
+      // A request from somebody no longer on the active roster still happened.
+      row = {
+        memberId: r.memberId,
+        name: r.memberName,
+        requests: 0,
+        pending: 0,
+        paid: blank(),
+        unpaid: blank(),
+        wfh: blank(),
+        grantedDays: 0,
+        pendingDays: 0,
+      };
+      byMember.set(r.memberId, row);
+    }
+
+    row.requests += 1;
+    const pair = r.kind === "paid" ? row.paid : r.kind === "unpaid" ? row.unpaid : row.wfh;
+    const days = Number.isFinite(Number(r.days)) ? Math.max(0, Number(r.days)) : 0;
+    if (r.status === "approved") {
+      pair.granted += days;
+      row.grantedDays += days;
+    } else if (r.status === "pending") {
+      row.pending += 1;
+      pair.inProcess += days;
+      row.pendingDays += days;
+    }
+  }
+
+  return [...byMember.values()]
+    .map((r) => ({
+      ...r,
+      paid: { granted: round2(r.paid.granted), inProcess: round2(r.paid.inProcess) },
+      unpaid: { granted: round2(r.unpaid.granted), inProcess: round2(r.unpaid.inProcess) },
+      wfh: { granted: round2(r.wfh.granted), inProcess: round2(r.wfh.inProcess) },
+      grantedDays: round2(r.grantedDays),
+      pendingDays: round2(r.pendingDays),
+    }))
+    .sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name));
+}
+
+/* ── The Visit Requests tab ───────────────────────────────────────────────── */
+
+/**
+ * `field_visits.status` is a LIFECYCLE, not an approval.
+ *
+ * The frame gives Visit Requests a tab beside Leave and WFH, and the words
+ * invite the assumption that all three are approved the same way. They are
+ * not. `leave_requests` and `wfh_requests` carry `pending|approved|rejected|
+ * cancelled` plus `decided_by / decided_at / decision_note`; `field_visits`
+ * carries `planned|in_progress|completed|cancelled` and NONE of that quartet.
+ *
+ * So a visit cannot be approved here without a schema change nobody has asked
+ * for: the status would move and no row could say who moved it or why, which
+ * is exactly the kind of unattributable state change the ledger rule exists to
+ * prevent. The tab therefore READS. The collision is named on the screen
+ * rather than resolved by writing 'approved' into a column that has no such
+ * word.
+ */
+export const VISIT_STATUS_LABELS: Record<VisitStatus, string> = {
+  planned: "Planned",
+  in_progress: "In progress",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const VISIT_STATUS_TONE: Record<VisitStatus, "neutral" | "amber" | "green"> = {
+  planned: "neutral",
+  in_progress: "amber",
+  completed: "green",
+  cancelled: "neutral",
+};
+
+export interface VisitRow {
+  id: string;
+  memberId: string;
+  memberName: string;
+  title: string;
+  purpose: string;
+  /** `YYYY-MM-DD` of the start, or `""` for a visit not yet started. */
+  day: string;
+  dayLabel: string;
+  /** Hours the visit lasted — `null` while it is still running. */
+  hours: number | null;
+  status: VisitStatus;
+  statusLabel: string;
+  tone: "neutral" | "amber" | "green";
+}
+
+function visitStatusOf(value: unknown): VisitStatus {
+  const s = String(value ?? "");
+  return (["planned", "in_progress", "completed", "cancelled"] as string[]).includes(s)
+    ? (s as VisitStatus)
+    : "planned";
+}
+
+/**
+ * The Visit Requests tab's rows, newest first, optionally one member's only.
+ *
+ * A visit with no `started_at` is kept, not dropped: a PLANNED visit is the
+ * only kind that would ever want a decision, and dropping it would empty the
+ * tab of the exact rows the frame put there.
+ */
+export function visitRows(
+  visits: FieldVisit[],
+  names: Record<string, string>,
+  filter?: { memberId?: string },
+): VisitRow[] {
+  const wantMember = String(filter?.memberId ?? "").trim();
+  return visits
+    .filter((v) => !wantMember || v.member_id === wantMember)
+    .map((v) => {
+      const status = visitStatusOf(v.status);
+      const day = localDayOf(v.started_at);
+      const hours = visitHoursOf(v);
+      return {
+        id: v.id,
+        memberId: v.member_id,
+        memberName: names[v.member_id] ?? UNKNOWN_MEMBER,
+        title: v.title?.trim() || "Untitled visit",
+        purpose: v.purpose,
+        day,
+        dayLabel: day ? formatPhotoDate(day) : "Not started",
+        hours: hours === null ? null : round2(hours),
+        status,
+        statusLabel: VISIT_STATUS_LABELS[status],
+        tone: VISIT_STATUS_TONE[status],
+      };
+    })
+    .sort((a, b) => (b.day || "").localeCompare(a.day || ""));
 }

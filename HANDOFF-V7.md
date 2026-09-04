@@ -295,6 +295,12 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 | 3 | `/hr/attendance/admin` — Approvals & Report | per-row Approve / Deny |
 | 4 | `/settings/users` — the real Manager column | `org_members.manager_id` already exists |
 | 5 | Migration 0035 + `can()` + audit spine | **⚠ DO NOT DELEGATE — build this yourself** |
+
+> **Carry into Unit 5, found in Unit 3:** `wfh_requests.decided_by` (and the same shape on
+> `leave_requests`) references `org_members(id)` with nothing that requires the decider to share the
+> row's `org_id`. The FK alone would accept an approver from another tenant; only `withOrg()` stops
+> it today. With RLS off that is the whole guard, so 0035 should add the constraint and
+> `verify.mjs` an assertion. It would fail today, which is why Unit 3 did not write it.
 | 6 | Wire `can()` into every server action | delegate in batches by module, after Unit 5 |
 | 7 | Audit log surfaces + metering | two buttons that already exist and do nothing |
 
@@ -361,6 +367,12 @@ Do not settle these silently.
    means two things — the §11 collision rule applies, so name it on the screen.
 
 ---
+
+6. **Are Visit Requests approvable?** The frame's Approvals screen implies yes, but `field_visits`
+   cannot express it: its `status` is a LIFECYCLE (`planned|in_progress|completed|cancelled`, with no
+   CHECK constraint) and it carries no `decided_by` / `decided_at` / `decision_note`. Approving one
+   would move a status no row could attribute. Unit 3 shipped it read-only and says so on screen.
+   Making it approvable is a schema change nobody has asked for — the owner's call, not an agent's.
 
 ## 11. Mistakes already made — every unit brief cites this section
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requestLeave } from "@/lib/data/workspace";
-import { requestWfh } from "@/lib/data/hr";
+import { decideRequest, requestWfh } from "@/lib/data/hr";
 import { LEGACY_WFH_LEAVE_TYPE } from "@/lib/hr-model";
 
 /**
@@ -67,4 +67,49 @@ export async function applyLeaveAction(
   if (r.error) return { error: r.error };
   revalidatePath("/hr/attendance");
   return { ok: true, id: r.id };
+}
+
+/* ── The approvals queue (`/hr/attendance/admin`, frame `110339`) ─────────── */
+
+const decideSchema = z.object({
+  source: z.enum(["leave_requests", "wfh_requests"]),
+  id: z.string().uuid("Invalid request"),
+  decision: z.enum(["approved", "rejected"]),
+  note: z.string().trim().max(2000, "Keep the reason under 2000 characters").optional(),
+});
+
+/**
+ * Approve or deny one request, over either table.
+ *
+ * ONE action, because `wfh_requests` mirrors `leave_requests` exactly so that
+ * approvals could be one code path. `source` says which table; every rule
+ * beyond that — the manager guard and the reason a denial must carry — lives
+ * in `lib/data/hr.ts::decideRequest` and, for leave, in the `decideLeave`
+ * writer that already existed. Nothing is re-implemented here.
+ *
+ * A decision is a status change plus `decided_by` / `decided_at`. There is no
+ * delete on this path and no `.delete()` anywhere near it: a denied request
+ * stays readable, with its reason, which is the whole point of writing one.
+ */
+export async function decideRequestAction(
+  _prev: HrFormState,
+  formData: FormData,
+): Promise<HrFormState> {
+  const parsed = decideSchema.safeParse({
+    source: formData.get("source"),
+    id: formData.get("id"),
+    decision: formData.get("decision"),
+    note: formData.get("note") ?? undefined,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const { source, id, decision, note } = parsed.data;
+  const r = await decideRequest(source, id, decision, note);
+  if (r.error) return { error: r.error };
+
+  revalidatePath("/hr/attendance/admin");
+  revalidatePath("/hr/attendance");
+  return { ok: true, id };
 }
