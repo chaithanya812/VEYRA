@@ -86,9 +86,10 @@ export default async function AttendanceApprovalsPage({
         <p className="text-[13px] text-[var(--color-ink-secondary)]">
           A decision is written as a status change plus who decided it and when —
           nothing is deleted, and a denial must carry a reason. Applying for
-          leave on somebody else&rsquo;s behalf is not built here yet: it writes
-          a request in another person&rsquo;s name, which needs the audit record
-          the permission spine has not landed.
+          leave on somebody else&rsquo;s behalf is still not built here: it
+          writes a request in another person&rsquo;s name, and while the audit
+          ledger now exists to record that, who may do it for whom is a policy
+          nobody has set.
         </p>
       </Card>
     </div>
