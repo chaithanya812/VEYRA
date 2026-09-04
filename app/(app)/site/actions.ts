@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -34,6 +35,8 @@ export async function addSiteLogAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const parsed = logSchema.safeParse({
     project_label: formData.get("project_label") || undefined,
     log_date: formData.get("log_date") || "",
@@ -70,6 +73,8 @@ export async function addPhotoAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const parsed = photoSchema.safeParse({
     project_label: formData.get("project_label") || undefined,
     caption: formData.get("caption") || undefined,
@@ -157,6 +162,8 @@ export async function addVarianceAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const parsed = varianceSchema.safeParse({
     project_label: formData.get("project_label") || undefined,
     item_name: formData.get("item_name"),

@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -45,6 +46,8 @@ export async function addContractAction(
   _prev: FinState,
   formData: FormData,
 ): Promise<FinState> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -66,6 +69,8 @@ export async function updateContractAction(
   _prev: FinState,
   formData: FormData,
 ): Promise<FinState> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing contract." };
@@ -89,6 +94,7 @@ export async function updateContractAction(
 }
 
 export async function deleteContractAction(formData: FormData): Promise<void> {
+  if (!(await can("billing.payment.create"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;
@@ -107,6 +113,8 @@ export async function saveScheduleAction(
   _prev: FinState,
   formData: FormData,
 ): Promise<FinState> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const contractId = str(formData.get("contract_id"));
   if (!projectId || !contractId) return { error: "Missing contract." };
@@ -148,6 +156,8 @@ export async function recordPaymentAction(
   _prev: FinState,
   formData: FormData,
 ): Promise<FinState> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const contractId = str(formData.get("contract_id"));
   if (!projectId || !contractId) return { error: "Missing contract." };

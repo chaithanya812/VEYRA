@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -28,6 +29,8 @@ export async function createProjectAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ): Promise<{ error?: string } | undefined> {
+  const denied = await requireCan("projects.project.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
     client_name: formData.get("client_name") || undefined,
@@ -69,6 +72,8 @@ export async function updateProjectStageAction(
   id: string,
   stage: string,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   if (!PROJECT_STAGES.includes(stage as ProjectStage)) {
     return { error: "Invalid stage" };
   }
@@ -83,6 +88,8 @@ export async function addProjectNoteAction(
   id: string,
   note: string,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const trimmed = note.trim();
   if (!trimmed) return { error: "Note cannot be empty" };
   const result = await addProjectNote(id, trimmed);

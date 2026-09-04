@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -47,6 +48,8 @@ export async function addAttendanceAction(
   _prev: LabourState,
   formData: FormData,
 ): Promise<LabourState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -84,6 +87,8 @@ export async function updateEntryAction(
   _prev: LabourState,
   formData: FormData,
 ): Promise<LabourState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing labour entry." };
@@ -111,6 +116,8 @@ export async function setLabourVisibilityAction(
   _prev: LabourState,
   formData: FormData,
 ): Promise<LabourState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -128,6 +135,7 @@ export async function setLabourVisibilityAction(
 }
 
 export async function deleteEntryAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;

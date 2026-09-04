@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -62,6 +63,8 @@ export async function createPurchaseOrderAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.po.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     name: formData.get("name") || undefined,
     vendor_id: formData.get("vendor_id") || undefined,
@@ -100,6 +103,7 @@ export async function createPurchaseOrderAction(
 
 /* ── State machines ───────────────────────────────────────────────────────── */
 export async function updateOrderStateAction(formData: FormData) {
+  if (!(await can("procurement.po.approve"))) return;
   const id = String(formData.get("id") ?? "");
   const state = String(formData.get("state"));
   if (!id || !(ORDER_STATES as readonly string[]).includes(state)) return;
@@ -110,6 +114,7 @@ export async function updateOrderStateAction(formData: FormData) {
 }
 
 export async function updatePaymentStateAction(formData: FormData) {
+  if (!(await can("procurement.po.approve"))) return;
   const id = String(formData.get("id") ?? "");
   const state = String(formData.get("state"));
   if (!id || !(PAYMENT_STATES as readonly string[]).includes(state)) return;
@@ -152,6 +157,8 @@ export async function recordReceiptAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.po.create");
+  if (denied) return denied;
   const parsed = receiptSchema.safeParse({
     poId: formData.get("poId") || undefined,
     mode: formData.get("mode") || undefined,

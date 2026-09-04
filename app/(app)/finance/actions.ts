@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -33,6 +34,8 @@ export async function createContractAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ): Promise<{ error?: string } | undefined> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
     project_label: formData.get("project_label") || undefined,
@@ -100,6 +103,8 @@ export async function toggleMilestoneAction(
   done: boolean,
   contractId: string,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const result = await toggleMilestoneWorkDone(milestoneId, done);
   if (result.error) return { error: result.error };
   revalidatePath(`/finance/${contractId}`);
@@ -122,6 +127,8 @@ const paymentSchema = z.object({
 export async function recordPaymentAction(
   formData: FormData,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const parsed = paymentSchema.safeParse({
     contract_id: formData.get("contract_id") || undefined,
     milestone_id: formData.get("milestone_id") || undefined,

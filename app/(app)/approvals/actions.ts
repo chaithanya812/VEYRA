@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -29,6 +30,8 @@ const createSchema = z.object({
 export async function createRequestAction(
   input: unknown,
 ): Promise<{ id?: string; error?: string }> {
+  const denied = await requireCan("procurement.mr.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -46,6 +49,8 @@ const decideSchema = z.object({
 export async function approveRequestAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("procurement.mr.approve");
+  if (denied) return denied;
   const parsed = decideSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -67,6 +72,8 @@ const rejectSchema = z.object({
 export async function rejectRequestAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("procurement.mr.approve");
+  if (denied) return denied;
   const parsed = rejectSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -89,6 +96,8 @@ const ruleSchema = z.object({
 export async function upsertRuleAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const parsed = ruleSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };

@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -97,6 +98,8 @@ export async function createItemAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("items.item.create");
+  if (denied) return denied;
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -115,6 +118,8 @@ export async function updateItemAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("items.item.create");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing item id" };
 
@@ -134,6 +139,7 @@ export async function updateItemAction(
 }
 
 export async function toggleActiveAction(formData: FormData) {
+  if (!(await can("items.item.create"))) return;
   const id = String(formData.get("id") ?? "");
   const next = String(formData.get("next")) === "true";
   if (!id) return;
@@ -154,6 +160,8 @@ export async function importItemsCsvAction(
   _prev: ImportState,
   formData: FormData,
 ): Promise<ImportState> {
+  const denied = await requireCan("items.item.create");
+  if (denied) return denied;
   const parsed = importSchema.safeParse({ csv: formData.get("csv") });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };

@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -36,6 +37,7 @@ export type FormState = { error?: string } | undefined;
 
 /* ── Catalogue search (powers the BOQ line combobox) ──────────────────────── */
 export async function searchItemsAction(query: string): Promise<ItemRef[]> {
+  if (!(await can("items.item.view"))) return [];
   if (!query || query.trim().length < 1) return [];
   return searchItems(query, 15);
 }
@@ -58,6 +60,8 @@ export async function createQuotationAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("quotations.quotation.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     title: formData.get("title") || undefined,
     leadId: formData.get("leadId") || undefined,
@@ -101,6 +105,7 @@ export async function createQuotationAction(
 }
 
 export async function updateMetaAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const seller_state = (formData.get("seller_state") as string) ?? null;
@@ -134,6 +139,7 @@ export async function updateMetaAction(formData: FormData) {
 }
 
 export async function setStatusAction(formData: FormData) {
+  if (!(await can("quotations.quotation.approve"))) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status"));
   if (!id || !QUOTE_STATUSES.includes(status as QuoteStatus)) return;
@@ -149,6 +155,7 @@ export async function setStatusAction(formData: FormData) {
  * navigate; the linkage lives in the schema, which is the point.
  */
 export async function raiseMaterialRequestAction(formData: FormData) {
+  if (!(await can("procurement.mr.create"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const result = await createMaterialRequestFromQuotation(id);
@@ -160,6 +167,7 @@ export async function raiseMaterialRequestAction(formData: FormData) {
 }
 
 export async function newVersionAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const result = await createNewVersion(id);
@@ -170,6 +178,7 @@ export async function newVersionAction(formData: FormData) {
 }
 
 export async function setShareAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   const enabled = String(formData.get("enabled")) === "true";
   if (!id) return;
@@ -179,6 +188,7 @@ export async function setShareAction(formData: FormData) {
 
 /* ── Sections ─────────────────────────────────────────────────────────────── */
 export async function addSectionAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const quotationId = String(formData.get("quotationId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
   if (!quotationId || !title) return;
@@ -187,6 +197,7 @@ export async function addSectionAction(formData: FormData) {
 }
 
 export async function renameSectionAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   const quotationId = String(formData.get("quotationId") ?? "");
   const title = String(formData.get("title") ?? "").trim();
@@ -196,6 +207,7 @@ export async function renameSectionAction(formData: FormData) {
 }
 
 export async function deleteSectionAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   const quotationId = String(formData.get("quotationId") ?? "");
   if (!id || !quotationId) return;
@@ -272,6 +284,8 @@ export async function addLineAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("quotations.quotation.create");
+  if (denied) return denied;
   const parsed = parseLine(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid line" };
@@ -303,6 +317,8 @@ export async function updateLineAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("quotations.quotation.create");
+  if (denied) return denied;
   const parsed = parseLine(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid line" };
@@ -332,6 +348,7 @@ export async function updateLineAction(
 }
 
 export async function deleteLineAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const id = String(formData.get("id") ?? "");
   const quotationId = String(formData.get("quotationId") ?? "");
   if (!id || !quotationId) return;
@@ -350,6 +367,8 @@ export async function saveAsTemplateAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("quotations.quotation.create");
+  if (denied) return denied;
   const parsed = templateSchema.safeParse({
     quotationId: formData.get("quotationId"),
     name: formData.get("name"),
@@ -369,6 +388,7 @@ export async function saveAsTemplateAction(
 }
 
 export async function newQuotationFromTemplateAction(formData: FormData) {
+  if (!(await can("quotations.quotation.create"))) return;
   const templateId = String(formData.get("templateId") ?? "");
   if (!templateId) return;
   const result = await instantiateTemplate(templateId);
@@ -379,6 +399,7 @@ export async function newQuotationFromTemplateAction(formData: FormData) {
 }
 
 export async function deleteTemplateAction(formData: FormData) {
+  if (!(await can("quotations.quotation.delete"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await deleteTemplate(id);

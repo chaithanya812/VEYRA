@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -41,6 +42,8 @@ export async function createFolderAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
   const r = await createFolder({ projectId, name: str(formData.get("name")) });
@@ -51,6 +54,8 @@ export async function renameFolderAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing folder." };
@@ -59,6 +64,7 @@ export async function renameFolderAction(
 }
 
 export async function deleteFolderAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;
@@ -70,6 +76,8 @@ export async function uploadFileAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -97,6 +105,8 @@ export async function updateFileAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing file." };
@@ -116,6 +126,7 @@ export async function updateFileAction(
 }
 
 export async function deleteFileAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;
@@ -135,6 +146,8 @@ export async function addFileCommentAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.view");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const fileId = str(formData.get("file_id"));
   if (!projectId || !fileId) return { error: "Missing file." };
@@ -158,6 +171,8 @@ export async function setCommentStatusAction(
   _prev: DocState,
   formData: FormData,
 ): Promise<DocState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const fileId = str(formData.get("file_id"));
   const id = str(formData.get("comment_id"));

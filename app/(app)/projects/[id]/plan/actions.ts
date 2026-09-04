@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -39,6 +40,8 @@ export async function addMilestoneAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -59,6 +62,8 @@ export async function updateMilestoneAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const id = str(formData.get("id"));
   const projectId = str(formData.get("project_id"));
   if (!id || !projectId) return { error: "Missing milestone." };
@@ -79,6 +84,7 @@ export async function updateMilestoneAction(
 }
 
 export async function deleteMilestoneAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const id = str(formData.get("id"));
   const projectId = str(formData.get("project_id"));
   if (!id || !projectId) return;
@@ -90,6 +96,8 @@ export async function applyTemplatesAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -114,6 +122,8 @@ export async function addScopeAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -131,6 +141,8 @@ export async function toggleDependencyAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const milestoneId = str(formData.get("milestone_id"));
   const dependsOnId = str(formData.get("depends_on_id"));
@@ -156,6 +168,8 @@ export async function addProjectTaskAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -176,6 +190,8 @@ export async function setProjectTaskStatusAction(
   _prev: PlanState,
   formData: FormData,
 ): Promise<PlanState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   const status = str(formData.get("status"));
@@ -189,6 +205,7 @@ export async function setProjectTaskStatusAction(
 }
 
 export async function deleteProjectTaskAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.task.delete"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;

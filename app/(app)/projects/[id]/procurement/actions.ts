@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -47,6 +48,8 @@ export async function createRequestAction(
   _prev: ProcState,
   formData: FormData,
 ): Promise<ProcState> {
+  const denied = await requireCan("procurement.mr.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -97,6 +100,8 @@ export async function setStageAction(
   _prev: ProcState,
   formData: FormData,
 ): Promise<ProcState> {
+  const denied = await requireCan("procurement.mr.approve");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -120,6 +125,7 @@ export async function setStageAction(
 }
 
 export async function deleteRequestAction(formData: FormData): Promise<void> {
+  if (!(await can("procurement.mr.delete"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;

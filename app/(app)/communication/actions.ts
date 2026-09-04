@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,6 +36,8 @@ const logSchema = z.object({
 export async function logInteractionAction(
   formData: FormData,
 ): Promise<InteractionFormResult> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const parsed = logSchema.safeParse({
     channel: formData.get("channel"),
     direction: formData.get("direction"),

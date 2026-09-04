@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -38,6 +39,8 @@ export async function createBomAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const rawLines = parseJsonArray(formData.get("lines_json"));
   if (rawLines === null) {
     return { error: "Invalid lines payload." };
@@ -106,6 +109,8 @@ export async function createCutlistAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const rawPanels = parseJsonArray(formData.get("panels_json"));
   if (rawPanels === null) {
     return { error: "Invalid panels payload." };

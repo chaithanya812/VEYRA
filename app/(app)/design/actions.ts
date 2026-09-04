@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -24,6 +25,8 @@ export async function createAssetAction(
   _prev: { error?: string } | undefined,
   formData: FormData,
 ): Promise<{ error?: string } | undefined> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind"),
@@ -55,6 +58,8 @@ export async function addCommentAction(
   xPct?: string,
   yPct?: string,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("projects.project.view");
+  if (denied) return denied;
   const trimmed = body.trim();
   if (!trimmed) return { error: "Comment cannot be empty" };
 
@@ -92,6 +97,8 @@ export async function signOffAction(
   status: string,
   note?: string,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   if (!SIGNOFF_STATUSES.includes(status as SignoffStatus)) {
     return { error: "Invalid sign-off status" };
   }

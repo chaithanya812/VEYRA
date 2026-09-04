@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -47,6 +48,8 @@ export async function createRfqAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.rfq.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     title: formData.get("title") || undefined,
     project_label: formData.get("project_label") || undefined,
@@ -95,6 +98,8 @@ export async function createRfqAction(
 export async function createRfqFromMrAction(
   mrId: string,
 ): Promise<{ id?: string; error?: string }> {
+  const denied = await requireCan("procurement.rfq.create");
+  if (denied) return denied;
   if (!mrId) return { error: "Material request id is required." };
   const result = await createRfqFromMr(mrId);
   if ("error" in result) return { error: result.error };
@@ -120,6 +125,8 @@ export async function enterBidAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.rfq.create");
+  if (denied) return denied;
   const rfqId = String(formData.get("rfqId") ?? "");
   const vendorId = String(formData.get("vendorId") ?? "");
   if (!rfqId || !vendorId) return { error: "Missing RFQ or vendor." };
@@ -178,6 +185,8 @@ export async function awardRfqAction(
   _prev: RfqActionState,
   formData: FormData,
 ): Promise<RfqActionState> {
+  const denied = await requireCan("procurement.po.approve");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing RFQ." };
 

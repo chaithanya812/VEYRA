@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -93,6 +94,8 @@ export async function createTaskAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const parsed = taskSchema.safeParse({
     title: formData.get("title"),
     description: formData.get("description"),
@@ -121,6 +124,8 @@ export async function updateTaskAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing task.");
   const parsed = taskSchema.partial().safeParse({
@@ -142,6 +147,7 @@ export async function updateTaskAction(
 }
 
 export async function setTaskStatusAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !(TASK_STATUSES as readonly string[]).includes(status)) return;
@@ -150,6 +156,7 @@ export async function setTaskStatusAction(formData: FormData): Promise<void> {
 }
 
 export async function deleteTaskAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.task.delete"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await deleteTask(id);
@@ -157,6 +164,7 @@ export async function deleteTaskAction(formData: FormData): Promise<void> {
 }
 
 export async function toggleChecklistAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await toggleChecklistItem(id, String(formData.get("done")) === "true");
@@ -191,6 +199,8 @@ export async function decideLeaveAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("hr.leave.approve");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   const decision = String(formData.get("decision") ?? "");
   if (!id || (decision !== "approved" && decision !== "rejected")) {
@@ -239,6 +249,8 @@ export async function decideExpenseAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("billing.payment.approve");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   const decision = String(formData.get("decision") ?? "");
   if (!id || !(EXPENSE_STATUSES as readonly string[]).includes(decision) || decision === "submitted") {
@@ -282,6 +294,8 @@ export async function upsertOptionAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const kind = String(formData.get("kind") ?? "");
   if (!(OPTION_KINDS as readonly string[]).includes(kind)) return fail("Unknown list.");
   const label = String(formData.get("label") ?? "");
@@ -296,6 +310,7 @@ export async function upsertOptionAction(
 }
 
 export async function retireOptionAction(formData: FormData): Promise<void> {
+  if (!(await can("settings.workspace.edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await retireOption(id);
@@ -306,6 +321,8 @@ export async function updateMemberAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.user.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing member.");
   const role = String(formData.get("role") ?? "");

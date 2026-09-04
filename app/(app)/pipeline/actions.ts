@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -20,6 +21,8 @@ const followUpSchema = z.object({
 export async function createFollowUpAction(
   formData: FormData,
 ): Promise<{ error?: string } | undefined> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const parsed = followUpSchema.safeParse({
     lead_id: formData.get("lead_id") || "",
     due_at: formData.get("due_at") || "",
@@ -43,6 +46,7 @@ export async function createFollowUpAction(
 }
 
 export async function completeFollowUpAction(formData: FormData): Promise<void> {
+  if (!(await can("leads.lead.edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await completeFollowUp(id);

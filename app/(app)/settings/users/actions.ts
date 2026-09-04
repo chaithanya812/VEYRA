@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -31,6 +32,8 @@ const managerSchema = z.object({
 export async function setManagerAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.user.edit");
+  if (denied) return denied;
   const parsed = managerSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -48,6 +51,8 @@ const statusSchema = z.object({
 export async function setMemberStatusAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.user.edit");
+  if (denied) return denied;
   const parsed = statusSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };

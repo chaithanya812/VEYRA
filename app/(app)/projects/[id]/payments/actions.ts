@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { addLedgerEntry, reverseLedgerEntry } from "@/lib/data/finance";
@@ -31,6 +32,8 @@ export async function addEntryAction(
   _prev: PayState,
   formData: FormData,
 ): Promise<PayState> {
+  const denied = await requireCan("billing.payment.create");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -61,6 +64,8 @@ export async function reverseEntryAction(
   _prev: PayState,
   formData: FormData,
 ): Promise<PayState> {
+  const denied = await requireCan("billing.payment.approve");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing entry." };

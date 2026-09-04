@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -115,6 +116,8 @@ export async function createVendorAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("vendors.vendor.create");
+  if (denied) return denied;
   const parsed = parseForm(formData);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -133,6 +136,8 @@ export async function updateVendorAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("vendors.vendor.create");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return { error: "Missing vendor id" };
 
@@ -159,6 +164,7 @@ export async function updateVendorAction(
  * place to trust one from.
  */
 export async function setVendorStatusAction(formData: FormData) {
+  if (!(await can("vendors.vendor.create"))) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !(VENDOR_STATUSES as readonly string[]).includes(status)) return;
@@ -170,6 +176,7 @@ export async function setVendorStatusAction(formData: FormData) {
 }
 
 export async function deactivateVendorAction(formData: FormData) {
+  if (!(await can("vendors.vendor.delete"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const result = await deactivateVendor(id);
@@ -199,6 +206,8 @@ export async function addRateContractAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("vendors.vendor.create");
+  if (denied) return denied;
   const parsed = rateContractSchema.safeParse({
     vendor_id: formData.get("vendor_id"),
     item_name: formData.get("item_name"),

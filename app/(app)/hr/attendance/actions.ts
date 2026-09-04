@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -95,6 +96,8 @@ export async function decideRequestAction(
   _prev: HrFormState,
   formData: FormData,
 ): Promise<HrFormState> {
+  const denied = await requireCan("hr.leave.approve");
+  if (denied) return denied;
   const parsed = decideSchema.safeParse({
     source: formData.get("source"),
     id: formData.get("id"),

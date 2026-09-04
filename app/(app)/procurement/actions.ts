@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -20,6 +21,7 @@ export type FormState = { error?: string } | undefined;
 export async function searchItemsAction(
   query: string,
 ): Promise<CatalogueMatch[]> {
+  if (!(await can("items.item.view"))) return [];
   if (!query || query.trim().length < 1) return [];
   return searchCatalogueItems(query);
 }
@@ -66,6 +68,8 @@ export async function createMaterialRequestAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.mr.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse({
     title: formData.get("title") || undefined,
     project_label: formData.get("project_label") || undefined,
@@ -111,6 +115,7 @@ export async function createMaterialRequestAction(
  * lifecycle value — the server re-checks it.
  */
 export async function updateMRStageAction(formData: FormData) {
+  if (!(await can("procurement.mr.approve"))) return;
   const id = String(formData.get("id") ?? "");
   const stage = String(formData.get("stage"));
   if (!id || !(MR_LIFECYCLE_STAGES as readonly string[]).includes(stage)) return;
@@ -134,6 +139,8 @@ export async function addMRItemAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("procurement.mr.create");
+  if (denied) return denied;
   const parsed = addItemSchema.safeParse({
     mrId: formData.get("mrId"),
     item_id: formData.get("item_id") || undefined,
@@ -179,6 +186,7 @@ export async function addMRItemAction(
 }
 
 export async function removeMRItemAction(formData: FormData) {
+  if (!(await can("procurement.mr.create"))) return;
   const id = String(formData.get("id") ?? "");
   const mrId = String(formData.get("mrId") ?? "");
   if (!id || !mrId) return;

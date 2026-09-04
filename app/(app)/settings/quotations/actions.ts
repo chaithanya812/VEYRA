@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -20,6 +21,8 @@ export async function saveQuotationSettingsAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const r = await saveQuotationSettings({
     default_gst_pct: Number(formData.get("default_gst_pct")),
     default_margin_pct: Number(formData.get("default_margin_pct")),
@@ -34,6 +37,8 @@ export async function saveTermsAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const r = await saveTerms({
     id: String(formData.get("id") ?? "") || undefined,
     title: String(formData.get("title") ?? ""),
@@ -44,6 +49,7 @@ export async function saveTermsAction(
 }
 
 export async function deleteTermsAction(formData: FormData): Promise<void> {
+  if (!(await can("settings.workspace.edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await deleteTerms(id);

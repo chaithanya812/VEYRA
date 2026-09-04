@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -130,6 +131,8 @@ export async function createLeadAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.create");
+  if (denied) return denied;
   const parsed = createSchema.safeParse(readLead(formData));
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Invalid input");
 
@@ -149,6 +152,8 @@ export async function updateLeadAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing lead.");
   const parsed = createSchema.partial().safeParse(readLead(formData));
@@ -164,6 +169,7 @@ export async function updateLeadAction(
 }
 
 export async function setStatusAction(formData: FormData): Promise<void> {
+  if (!(await can("leads.lead.edit"))) return;
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "");
   if (!id || !status) return;
@@ -176,6 +182,8 @@ export async function setAssigneesAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing lead.");
   const ids = formData.getAll("member_id").map(String).filter(Boolean);
@@ -187,6 +195,8 @@ export async function addRemarkAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   const note = String(formData.get("note") ?? "");
   if (!id) return fail("Missing lead.");
@@ -198,6 +208,8 @@ export async function promoteToProjectAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("projects.project.create");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing lead.");
   const r = await promoteToProject(id);
@@ -223,6 +235,8 @@ export async function createFollowUpAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const parsed = followUpSchema.safeParse({
     lead_id: formData.get("lead_id"),
     kind: formData.get("kind") || "callback",
@@ -253,6 +267,8 @@ export async function completeFollowUpAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing follow-up.");
   const r = await completeFollowUp(
@@ -273,6 +289,8 @@ export async function rescheduleFollowUpAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing follow-up.");
   const when = instant(formData.get("due_date"), formData.get("due_time"));
@@ -282,6 +300,7 @@ export async function rescheduleFollowUpAction(
 }
 
 export async function cancelFollowUpAction(formData: FormData): Promise<void> {
+  if (!(await can("leads.lead.edit"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await cancelFollowUp(id);
@@ -295,6 +314,8 @@ export async function logCallAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("leads.lead.edit");
+  if (denied) return denied;
   const leadId = String(formData.get("lead_id") ?? "");
   if (!leadId) return fail("Missing lead.");
 
@@ -317,6 +338,8 @@ export async function upsertLeadStatusAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const r = await upsertLeadStatus({
     id: opt(formData.get("id")),
     label: String(formData.get("label") ?? ""),
@@ -331,6 +354,8 @@ export async function retireLeadStatusAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const id = String(formData.get("id") ?? "");
   if (!id) return fail("Missing status.");
   const r = await retireLeadStatus(id);

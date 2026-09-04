@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -20,6 +21,7 @@ export type FormState = { error?: string; note?: string } | undefined;
 export async function searchItemsAction(
   query: string,
 ): Promise<CatalogueItemRef[]> {
+  if (!(await can("items.item.view"))) return [];
   if (!query || query.trim().length < 1) return [];
   return searchCatalogueItems(query);
 }
@@ -46,6 +48,8 @@ export async function createWarehouseAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("inventory.warehouse.create");
+  if (denied) return denied;
   const parsed = warehouseSchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind") || "company",
@@ -65,6 +69,7 @@ export async function createWarehouseAction(
 }
 
 export async function deactivateWarehouseAction(formData: FormData) {
+  if (!(await can("inventory.warehouse.create"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const result = await deactivateWarehouse(id);
@@ -73,6 +78,7 @@ export async function deactivateWarehouseAction(formData: FormData) {
 }
 
 export async function reactivateWarehouseAction(formData: FormData) {
+  if (!(await can("inventory.warehouse.create"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const result = await reactivateWarehouse(id);
@@ -122,6 +128,8 @@ export async function addStockInAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
+  const denied = await requireCan("inventory.movement.create");
+  if (denied) return denied;
   const warehouseId = String(formData.get("warehouse_id") ?? "");
   if (!warehouseId) return { error: "Select a warehouse first." };
 

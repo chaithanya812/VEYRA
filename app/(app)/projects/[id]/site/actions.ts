@@ -1,4 +1,5 @@
 "use server";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import {
@@ -52,6 +53,8 @@ export async function addProgressAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -89,6 +92,8 @@ export async function updatePhotoAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return { error: "Missing photo." };
@@ -108,6 +113,8 @@ export async function setVisibilityAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
 
@@ -125,6 +132,7 @@ export async function setVisibilityAction(
 }
 
 export async function deletePhotoAction(formData: FormData): Promise<void> {
+  if (!(await can("projects.project.edit"))) return;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("id"));
   if (!projectId || !id) return;
@@ -136,6 +144,8 @@ export async function deletePhotosAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   if (!projectId) return { error: "Missing project." };
   const selected = ids(formData);
@@ -155,6 +165,8 @@ export async function addPhotoCommentAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.view");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const photoId = str(formData.get("photo_id"));
   if (!projectId || !photoId) return { error: "Missing photo." };
@@ -173,6 +185,8 @@ export async function setPhotoCommentStatusAction(
   _prev: SiteState,
   formData: FormData,
 ): Promise<SiteState> {
+  const denied = await requireCan("projects.project.edit");
+  if (denied) return denied;
   const projectId = str(formData.get("project_id"));
   const id = str(formData.get("comment_id"));
   if (!projectId || !id) return { error: "Missing comment." };

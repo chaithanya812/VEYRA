@@ -1,4 +1,5 @@
 "use server";
+import { requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -34,6 +35,8 @@ const seriesSchema = z.object({
 export async function upsertNumberingSeriesAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.workspace.edit");
+  if (denied) return denied;
   const parsed = seriesSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -53,6 +56,8 @@ const setPermissionSchema = z.object({
 export async function setPermissionAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.role.edit");
+  if (denied) return denied;
   const parsed = setPermissionSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -76,6 +81,8 @@ const removePermissionSchema = z.object({
 export async function removePermissionAction(
   input: unknown,
 ): Promise<{ error?: string }> {
+  const denied = await requireCan("settings.role.edit");
+  if (denied) return denied;
   const parsed = removePermissionSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
