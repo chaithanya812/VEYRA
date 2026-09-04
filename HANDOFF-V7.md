@@ -265,6 +265,14 @@ FormData entry keyed `_1_<field>`**, plus `0 = ["$undefined","$K1"]` as the args
 `(formData) => void` action the args are `["$K1"]`). Use the DEV ids, not the ones in the build
 manifest.
 
+**Order matters, not just the prefix.** Append every `_1_<field>` entry BEFORE the `0` args key.
+Reversed, each field decodes as null and the action fails its own validation — which reads like a
+bug in your validation rather than a malformed request. This cost Unit 2 a detour.
+
+**`db.mjs sql` renders a DATE column through a JS `Date`, so it prints one day early** in IST —
+`2026-11-08` shows as `2026-11-07T18:30:00.000Z`. Cast it: `select holiday_date::text`. Otherwise a
+correct screen looks like an off-by-one against a wrong reference.
+
 This is how uploads, MIME rejections, cross-project refusals, partial bulk updates and every stock
 movement in Phase 9 were proven against the real database.
 

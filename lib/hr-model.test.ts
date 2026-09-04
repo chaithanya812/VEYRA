@@ -1,12 +1,25 @@
 import { describe, it, expect } from "vitest";
 import {
   LEGACY_WFH_LEAVE_TYPE,
+  REQUEST_STATUS_LABELS,
+  REQUEST_STATUS_TONE,
+  asMonthKey,
+  attendanceCsv,
   attendanceDay,
+  attendanceRows,
+  attendanceTotals,
+  fyWindowOf,
   formatHours,
   holidayCalendar,
   leaveKindOf,
   leaveTiles,
   localDayOf,
+  monthKeyOf,
+  monthLabel,
+  monthWindow,
+  overlapsWindow,
+  recentMonths,
+  requestRows,
   timeDifference,
   visitsOnDay,
   type Holiday,
@@ -342,5 +355,215 @@ describe("holidayCalendar", () => {
       "2026-12-31",
     );
     expect(rows.map((r) => r.name)).toEqual(["Diwali", "Govardhan Puja"]);
+  });
+});
+
+/* ── The month window (the FILTER BY band) ────────────────────────────────── */
+
+describe("monthWindow / monthLabel / recentMonths", () => {
+  it("bounds a month as strings, including a leap February", () => {
+    expect(monthWindow("2026-08")).toEqual({ from: "2026-08-01", to: "2026-08-31" });
+    expect(monthWindow("2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+    expect(monthWindow("2028-02")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+    expect(monthWindow("2100-02").to).toBe("2100-02-28"); // not a leap year
+  });
+
+  it("rejects a month key it cannot use rather than guessing", () => {
+    expect(asMonthKey("2026-13")).toBe("");
+    expect(asMonthKey("2026-8")).toBe("");
+    expect(asMonthKey(null)).toBe("");
+    expect(monthWindow("nonsense")).toEqual({ from: "", to: "" });
+    expect(monthLabel("")).toBe("");
+  });
+
+  it("labels and keys a month from the string, never through a Date", () => {
+    expect(monthLabel("2026-08")).toBe("August 2026");
+    expect(monthKeyOf(new Date(2026, 0, 31, 23, 30))).toBe("2026-01");
+  });
+
+  it("walks months backwards across a year boundary", () => {
+    expect(recentMonths(new Date(2026, 1, 15), 4)).toEqual([
+      "2026-02",
+      "2026-01",
+      "2025-12",
+      "2025-11",
+    ]);
+    expect(recentMonths(new Date(2026, 1, 15), 0)).toEqual([]);
+  });
+});
+
+/* ── The Attendance tab ───────────────────────────────────────────────────── */
+
+describe("attendanceRows", () => {
+  const rowsFor = (from: string, to: string) =>
+    attendanceRows(
+      [
+        session({ id: "a", check_in: "2026-03-23T09:30:00+05:30", check_out: "2026-03-23T18:15:00+05:30" }),
+        session({ id: "b", check_in: "2026-03-24T09:30:00+05:30", check_out: null }),
+        session({ id: "c", check_in: "2026-03-31T09:30:00+05:30", check_out: "2026-03-31T18:30:00+05:30" }),
+      ],
+      [visit({ id: "v", started_at: "2026-03-25T11:00:00+05:30", ended_at: "2026-03-25T13:00:00+05:30" })],
+      from,
+      to,
+    );
+
+  it("gives one row per day, newest first, inside the window", () => {
+    expect(rowsFor("2026-03-01", "2026-03-31").map((r) => r.date)).toEqual([
+      "2026-03-31",
+      "2026-03-25",
+      "2026-03-24",
+      "2026-03-23",
+    ]);
+  });
+
+  it("keeps a day that has only a visit — that person still worked", () => {
+    const only = rowsFor("2026-03-25", "2026-03-25");
+    expect(only).toHaveLength(1);
+    expect(only[0]).toMatchObject({ date: "2026-03-25", checkIns: 0, visitCount: 1, visitHours: 2 });
+  });
+
+  it("leaves an open day at zero hours and flags it", () => {
+    const open = rowsFor("2026-03-24", "2026-03-24")[0];
+    expect(open.open).toBe(true);
+    expect(open.sessionHours).toBe(0);
+    expect(open.checkIns).toBe(1);
+    expect(open.checkOuts).toBe(0);
+  });
+
+  it("excludes days outside the window and does not invent the empty ones", () => {
+    const march = rowsFor("2026-03-24", "2026-03-30");
+    expect(march.map((r) => r.date)).toEqual(["2026-03-25", "2026-03-24"]);
+  });
+});
+
+describe("attendanceTotals", () => {
+  it("sums the closed days and says how many are still open", () => {
+    const t = attendanceTotals(
+      attendanceRows(
+        [
+          session({ id: "a", check_in: "2026-03-23T09:30:00+05:30", check_out: "2026-03-23T18:15:00+05:30" }),
+          session({ id: "b", check_in: "2026-03-24T09:30:00+05:30", check_out: null }),
+        ],
+        [visit({ started_at: "2026-03-23T11:00:00+05:30", ended_at: "2026-03-23T12:30:00+05:30" })],
+        "2026-03-01",
+        "2026-03-31",
+      ),
+    );
+    expect(t).toEqual({
+      days: 2,
+      openDays: 1,
+      sessionHours: 8.75,
+      visitCount: 1,
+      visitHours: 1.5,
+    });
+  });
+});
+
+/* ── The Leaves and WFH tabs ──────────────────────────────────────────────── */
+
+describe("overlapsWindow", () => {
+  it("includes a request that straddles the month boundary", () => {
+    expect(overlapsWindow("2026-07-30", "2026-08-02", "2026-08-01", "2026-08-31")).toBe(true);
+    expect(overlapsWindow("2026-08-30", "2026-09-02", "2026-08-01", "2026-08-31")).toBe(true);
+  });
+
+  it("excludes a request wholly outside it, and anything undated", () => {
+    expect(overlapsWindow("2026-09-01", "2026-09-03", "2026-08-01", "2026-08-31")).toBe(false);
+    expect(overlapsWindow("2026-07-01", "2026-07-03", "2026-08-01", "2026-08-31")).toBe(false);
+    expect(overlapsWindow("", "", "2026-08-01", "2026-08-31")).toBe(false);
+  });
+});
+
+describe("requestRows", () => {
+  const win = { from: "2026-08-01", to: "2026-08-31" };
+  const rows = () =>
+    requestRows(
+      [
+        leave({ id: "l1", leave_type: "casual", from_date: "2026-08-29", to_date: "2026-08-30", days: 2, status: "pending" }),
+        leave({ id: "l2", leave_type: "sick", from_date: "2026-08-18", to_date: "2026-08-18", days: 1, status: "approved" }),
+        leave({ id: "l3", leave_type: LEGACY_WFH_LEAVE_TYPE, from_date: "2026-08-27", to_date: "2026-08-27", days: 1, status: "pending" }),
+        leave({ id: "l4", leave_type: "casual", from_date: "2026-06-01", to_date: "2026-06-02", days: 2, status: "approved" }),
+      ],
+      [wfhReq({ id: "w1", from_date: "2026-08-21", to_date: "2026-08-22", days: 2, status: "approved" })],
+      win,
+      { casual: "Casual leave", sick: "Sick leave" },
+    );
+
+  it("merges both tables, newest first, and drops months it was not asked for", () => {
+    expect(rows().map((r) => r.id)).toEqual(["l1", "l3", "w1", "l2"]);
+  });
+
+  it("routes a legacy leave_type='wfh' row to the WFH kind and labels it legacy", () => {
+    const legacy = rows().find((r) => r.id === "l3")!;
+    expect(legacy.kind).toBe("wfh");
+    expect(legacy.legacy).toBe(true);
+    expect(legacy.source).toBe("leave_requests");
+
+    const real = rows().find((r) => r.id === "w1")!;
+    expect(real.kind).toBe("wfh");
+    expect(real.legacy).toBe(false);
+    expect(real.source).toBe("wfh_requests");
+  });
+
+  it("uses the tenant's own label, and falls back to the slug it stored", () => {
+    expect(rows().find((r) => r.id === "l1")!.typeLabel).toBe("Casual leave");
+    expect(rows().find((r) => r.id === "l3")!.typeLabel).toBe("wfh");
+    expect(rows().find((r) => r.id === "w1")!.typeLabel).toBe("Work from home");
+  });
+
+  it("carries a grey/amber/green chip with a label, never colour alone", () => {
+    const byId = new Map(rows().map((r) => [r.id, r]));
+    expect(byId.get("l1")).toMatchObject({ statusLabel: "In process", tone: "amber" });
+    expect(byId.get("l2")).toMatchObject({ statusLabel: "Granted", tone: "green" });
+    expect(REQUEST_STATUS_TONE.rejected).toBe("neutral");
+    expect(REQUEST_STATUS_LABELS.cancelled).toBe("Withdrawn");
+  });
+
+  it("formats both dates from the string, so neither slips a day", () => {
+    const r = rows().find((x) => x.id === "w1")!;
+    expect(r.fromLabel).toBe("21 Aug 2026");
+    expect(r.toLabel).toBe("22 Aug 2026");
+  });
+});
+
+/* ── Export ───────────────────────────────────────────────────────────────── */
+
+describe("attendanceCsv", () => {
+  it("exports the screen's columns, and keeps an open day as a dash", () => {
+    const rows = attendanceRows(
+      [
+        session({ id: "a", check_in: "2026-03-23T09:30:00+05:30", check_out: "2026-03-23T18:15:00+05:30" }),
+        session({ id: "b", check_in: "2026-03-24T09:45:00+05:30", check_out: null }),
+      ],
+      [],
+      "2026-03-01",
+      "2026-03-31",
+    );
+    const lines = attendanceCsv(rows, "09:30").split("\n");
+    expect(lines[0]).toBe(
+      "Date,No. of Check-In,No. of Check-Out,Total Check-In Hours,Total Visit Count,Total Visit Hours,Time Difference",
+    );
+    expect(lines[1]).toBe("24 Mar 2026,1,0,—,0,0 Hrs 0 Min,—");
+    expect(lines[2]).toBe("23 Mar 2026,1,1,8 Hrs 45 Min,0,0 Hrs 0 Min,On-time");
+  });
+});
+
+describe("fyWindowOf", () => {
+  it("bounds the Indian financial year containing the month", () => {
+    expect(fyWindowOf("2026-08")).toEqual({
+      from: "2026-04-01",
+      to: "2027-03-31",
+      label: "FY 2026-27",
+    });
+    expect(fyWindowOf("2026-03")).toEqual({
+      from: "2025-04-01",
+      to: "2026-03-31",
+      label: "FY 2025-26",
+    });
+    expect(fyWindowOf("2026-04").from).toBe("2026-04-01");
+  });
+
+  it("returns an empty window rather than guessing a year", () => {
+    expect(fyWindowOf("nope")).toEqual({ from: "", to: "", label: "" });
   });
 });

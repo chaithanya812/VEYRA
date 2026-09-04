@@ -355,3 +355,358 @@ export function holidayCalendar(
       };
     });
 }
+
+/* ── The FILTER BY month window ───────────────────────────────────────────── */
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Days in a month, without constructing a `Date` for the month itself. */
+function daysInMonth(year: number, month1: number): number {
+  const lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month1 === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    return leap ? 29 : 28;
+  }
+  return lengths[month1 - 1] ?? 30;
+}
+
+/** `"2026-08"` if the value is a usable month key, else `""`. */
+export function asMonthKey(value: string | null | undefined): string {
+  const s = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}$/.test(s)) return "";
+  const m = Number(s.slice(5, 7));
+  return m >= 1 && m <= 12 ? s : "";
+}
+
+/** The month a local `Date` falls in, as `YYYY-MM`. */
+export function monthKeyOf(now: Date): string {
+  if (!Number.isFinite(now.getTime())) return "";
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * The inclusive `[from, to]` window of a month, as `YYYY-MM-DD` STRINGS.
+ *
+ * Strings, not `Date`s, because every date this screen compares against is a
+ * string: `holidays.holiday_date`, `leave_requests.from_date`. A window built
+ * out of `Date`s would sit a timezone away from the rows it filters, and the
+ * first casualty would be a holiday on the 1st.
+ */
+export function monthWindow(monthKey: string): { from: string; to: string } {
+  const key = asMonthKey(monthKey);
+  if (!key) return { from: "", to: "" };
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  return {
+    from: `${key}-01`,
+    to: `${key}-${String(daysInMonth(year, month)).padStart(2, "0")}`,
+  };
+}
+
+/** `"2026-08"` → `"August 2026"`. Read from the string; no `Date` involved. */
+export function monthLabel(monthKey: string): string {
+  const key = asMonthKey(monthKey);
+  if (!key) return "";
+  return `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+}
+
+/**
+ * The month picker's options — `count` months ending at `now`, newest first.
+ * Walked by arithmetic on the year/month pair rather than by subtracting
+ * milliseconds, because "one month ago" is not a fixed number of days.
+ */
+export function recentMonths(now: Date, count = 12): string[] {
+  if (!Number.isFinite(now.getTime())) return [];
+  const out: string[] = [];
+  let year = now.getFullYear();
+  let month = now.getMonth() + 1;
+  for (let i = 0; i < Math.max(0, count); i += 1) {
+    out.push(`${year}-${String(month).padStart(2, "0")}`);
+    month -= 1;
+    if (month === 0) {
+      month = 12;
+      year -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * The Indian financial year (1 Apr – 31 Mar) containing `monthKey`, as
+ * `YYYY-MM-DD` strings plus the `FY 2026-27` label the rest of the app already
+ * prints (see `fyLabel` in lib/date-range.ts).
+ *
+ * The Holidays tab uses this rather than the month window every other tab
+ * uses, and the reason is worth stating: a holiday calendar is a year-long
+ * document. Filtered to a month it is empty in eleven months out of twelve,
+ * and an empty tab teaches the reader the tenant has no holidays rather than
+ * that they asked the wrong question. The tab prints the FY it is showing, so
+ * the window it uses is stated rather than assumed.
+ *
+ * Built from the month key's own digits — no `Date`, so no timezone can move
+ * the 1 April boundary.
+ */
+export function fyWindowOf(monthKey: string): { from: string; to: string; label: string } {
+  const key = asMonthKey(monthKey);
+  if (!key) return { from: "", to: "", label: "" };
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  const start = month >= 4 ? year : year - 1;
+  return {
+    from: `${start}-04-01`,
+    to: `${start + 1}-03-31`,
+    label: `FY ${start}-${String(start + 1).slice(-2)}`,
+  };
+}
+
+/* ── The Attendance tab ───────────────────────────────────────────────────── */
+
+/**
+ * One row per day on which something happened, newest first, inside the
+ * inclusive `[from, to]` window.
+ *
+ * A day appears if it has a session OR a visit: somebody who spent the day at
+ * a client site without stamping in still worked, and a table that dropped
+ * that row would be quietly asserting they did not.
+ *
+ * `attendanceDay` derives its own `date` from the earliest check-in, which is
+ * `""` for a visits-only day — so the day key is put back afterwards. Empty
+ * days in between are NOT filled in: a blank row for every weekend and holiday
+ * would bury the days that carry something.
+ */
+export function attendanceRows(
+  sessions: WorkSession[],
+  visits: FieldVisit[],
+  from: string,
+  to: string,
+  now: Date = new Date(),
+): AttendanceDay[] {
+  const byDay = new Map<string, { sessions: WorkSession[]; visits: FieldVisit[] }>();
+  const bucket = (day: string) => {
+    let b = byDay.get(day);
+    if (!b) {
+      b = { sessions: [], visits: [] };
+      byDay.set(day, b);
+    }
+    return b;
+  };
+
+  for (const s of sessions) {
+    const day = localDayOf(s.check_in);
+    if (day) bucket(day).sessions.push(s);
+  }
+  for (const v of visits) {
+    const day = localDayOf(v.started_at);
+    if (day) bucket(day).visits.push(v);
+  }
+
+  return [...byDay.entries()]
+    .filter(([day]) => (!from || day >= from) && (!to || day <= to))
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([day, b]) => ({ ...attendanceDay(b.sessions, b.visits, now), date: day }));
+}
+
+export interface AttendanceTotals {
+  days: number;
+  /** Days with an unfinished session — the hours below exclude them. */
+  openDays: number;
+  sessionHours: number;
+  visitCount: number;
+  visitHours: number;
+}
+
+/**
+ * The table's footer. `openDays` travels with the hours for the same reason
+ * every ratio in this codebase travels with its denominator: `43 Hrs 45 Min`
+ * across six days means something different when one of those days has not
+ * finished, and the footer has to say so rather than let the reader assume.
+ */
+export function attendanceTotals(rows: AttendanceDay[]): AttendanceTotals {
+  return {
+    days: rows.length,
+    openDays: rows.filter((r) => r.open).length,
+    sessionHours: round2(rows.reduce((s, r) => s + r.sessionHours, 0)),
+    visitCount: rows.reduce((s, r) => s + r.visitCount, 0),
+    visitHours: round2(rows.reduce((s, r) => s + r.visitHours, 0)),
+  };
+}
+
+/* ── The Leaves and WFH tabs ──────────────────────────────────────────────── */
+
+export const REQUEST_STATUS_LABELS: Record<ApprovalStatus, string> = {
+  pending: "In process",
+  approved: "Granted",
+  rejected: "Rejected",
+  cancelled: "Withdrawn",
+};
+
+/**
+ * Chip tone per status. Grey / amber / green only — one's own rejected request
+ * is a fact, not an alarm, and red has five jobs that do not include it
+ * (DESIGN-DIRECTION §2). Every chip carries its label; the colour never
+ * carries the meaning alone.
+ */
+export const REQUEST_STATUS_TONE: Record<ApprovalStatus, "neutral" | "amber" | "green"> = {
+  pending: "amber",
+  approved: "green",
+  rejected: "neutral",
+  cancelled: "neutral",
+};
+
+export interface RequestRow {
+  id: string;
+  kind: LeaveKind;
+  /** Which table the row is stored in — the collision is visible, not hidden. */
+  source: "leave_requests" | "wfh_requests";
+  /**
+   * True for a `leave_type = 'wfh'` row stored before WFH had its own table.
+   * The screen labels these rather than silently folding them in: whether they
+   * get migrated is the owner's call and is still open (HANDOFF §10.5).
+   */
+  legacy: boolean;
+  typeLabel: string;
+  from: string;
+  to: string;
+  fromLabel: string;
+  toLabel: string;
+  days: number;
+  reason: string | null;
+  status: ApprovalStatus;
+  statusLabel: string;
+  tone: "neutral" | "amber" | "green";
+  appliedOn: string;
+}
+
+/** Does `[a, b]` touch `[from, to]`? All four are `YYYY-MM-DD` strings. */
+export function overlapsWindow(a: string, b: string, from: string, to: string): boolean {
+  const start = String(a ?? "");
+  const end = String(b ?? "") || start;
+  if (!start) return false;
+  if (from && end < from) return false;
+  if (to && start > to) return false;
+  return true;
+}
+
+function statusOf(value: unknown): ApprovalStatus {
+  const s = String(value ?? "");
+  return (["pending", "approved", "rejected", "cancelled"] as string[]).includes(s)
+    ? (s as ApprovalStatus)
+    : "pending";
+}
+
+/**
+ * The rows behind the Leaves and WFH tabs, newest first.
+ *
+ * Both tabs are one function over two tables because the frame applies for and
+ * approves them the same way; what differs is `kind`, and the caller filters on
+ * it. A request is included when it OVERLAPS the month, not when it starts in
+ * it — leave taken from the 30th to the 2nd is absence in both months, and
+ * showing it in neither is how a month comes to look emptier than it was.
+ *
+ * `typeLabels` maps a stored `leave_type` slug to the tenant's own label, so a
+ * firm that renamed "Casual" to "Personal" sees their word. An unmapped slug
+ * prints itself rather than disappearing.
+ */
+export function requestRows(
+  leaves: LeaveRequest[],
+  wfh: WfhRequest[],
+  window: { from: string; to: string },
+  typeLabels: Record<string, string> = {},
+): RequestRow[] {
+  const rows: RequestRow[] = [];
+
+  for (const l of leaves) {
+    if (!overlapsWindow(l.from_date, l.to_date, window.from, window.to)) continue;
+    const kind = leaveKindOf(l.leave_type);
+    const status = statusOf(l.status);
+    rows.push({
+      id: l.id,
+      kind,
+      source: "leave_requests",
+      legacy: kind === "wfh",
+      typeLabel: typeLabels[String(l.leave_type)] ?? String(l.leave_type ?? "Leave"),
+      from: l.from_date,
+      to: l.to_date,
+      fromLabel: formatPhotoDate(l.from_date),
+      toLabel: formatPhotoDate(l.to_date),
+      days: Number(l.days) || 0,
+      reason: l.reason,
+      status,
+      statusLabel: REQUEST_STATUS_LABELS[status],
+      tone: REQUEST_STATUS_TONE[status],
+      appliedOn: l.created_at,
+    });
+  }
+
+  for (const w of wfh) {
+    if (!overlapsWindow(w.from_date, w.to_date, window.from, window.to)) continue;
+    const status = statusOf(w.status);
+    rows.push({
+      id: w.id,
+      kind: "wfh",
+      source: "wfh_requests",
+      legacy: false,
+      typeLabel: "Work from home",
+      from: w.from_date,
+      to: w.to_date,
+      fromLabel: formatPhotoDate(w.from_date),
+      toLabel: formatPhotoDate(w.to_date),
+      days: Number(w.days) || 0,
+      reason: w.reason,
+      status,
+      statusLabel: REQUEST_STATUS_LABELS[status],
+      tone: REQUEST_STATUS_TONE[status],
+      appliedOn: w.created_at,
+    });
+  }
+
+  return rows.sort((a, b) => b.from.localeCompare(a.from));
+}
+
+/* ── Export ───────────────────────────────────────────────────────────────── */
+
+const CSV_HEADERS = [
+  "Date",
+  "No. of Check-In",
+  "No. of Check-Out",
+  "Total Check-In Hours",
+  "Total Visit Count",
+  "Total Visit Hours",
+  "Time Difference",
+];
+
+function csvCell(value: string): string {
+  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
+ * The Attendance tab as CSV — the exact columns on screen, in the same order,
+ * with the same `—` for an unfinished day. An export that quietly turned an
+ * open day into `0 Hrs 0 Min` would be a second, more confident answer to a
+ * question the screen deliberately refuses to answer.
+ */
+export function attendanceCsv(
+  rows: AttendanceDay[],
+  expectedStart: string | null | undefined,
+): string {
+  const lines = [CSV_HEADERS.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        formatPhotoDate(r.date),
+        String(r.checkIns),
+        String(r.checkOuts),
+        r.open ? "—" : formatHours(r.sessionHours),
+        String(r.visitCount),
+        formatHours(r.visitHours),
+        timeDifference(r, expectedStart) ?? "—",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\n");
+}

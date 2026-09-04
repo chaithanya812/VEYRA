@@ -379,12 +379,12 @@ export async function requestLeave(input: {
   from_date: string;
   to_date: string;
   reason?: string | null;
-}): Promise<{ error?: string }> {
+}): Promise<{ error?: string; id?: string }> {
   const days = leaveDays(input.from_date, input.to_date);
   if (days <= 0) return { error: "The end date must be on or after the start date." };
 
   const { db } = await withOrg();
-  const { error } = await db.table("leave_requests").insert({
+  const { data, error } = await db.table("leave_requests").insert({
     member_id: (await getActingContext()).member.id,
     leave_type: input.leave_type || "casual",
     from_date: input.from_date,
@@ -393,7 +393,10 @@ export async function requestLeave(input: {
     reason: input.reason?.trim() || null,
     status: "pending",
   });
-  return error ? { error: error.message } : {};
+  if (error) return { error: error.message };
+  // The id is returned so a caller can name the request it just created. The
+  // insert already `.select()`s; nothing extra is fetched.
+  return { id: ((data ?? [])[0] as unknown as { id: string } | undefined)?.id };
 }
 
 /**

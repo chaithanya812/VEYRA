@@ -145,7 +145,7 @@ export const NAV: NavEntry[] = [
     label: "HR",
     icon: CalendarCheck,
     items: [
-      { label: "Attendance", href: "/hr/attendance", icon: CalendarCheck, soon: true },
+      { label: "Attendance", href: "/hr/attendance", icon: CalendarCheck },
     ],
   },
 
