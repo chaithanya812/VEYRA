@@ -186,10 +186,27 @@ export function SkeletonTable({
   );
 }
 
-/** A grid of cards, for the screens that list cards rather than rows. */
-export function SkeletonCards({ count = 3 }: { count?: number }) {
+/**
+ * Cards, for the screens that list cards rather than rows. Stacked by default;
+ * `cols` lays them out as the grid the reports index and any other card-grid
+ * screen actually renders, so those do not need a skeleton style of their own.
+ */
+export function SkeletonCards({
+  count = 3,
+  cols = 1,
+}: {
+  count?: number;
+  cols?: 1 | 2 | 3;
+}) {
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      className={cn(
+        "gap-4",
+        cols === 1 && "flex flex-col",
+        cols === 2 && "grid grid-cols-1 sm:grid-cols-2",
+        cols === 3 && "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3",
+      )}
+    >
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}

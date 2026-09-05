@@ -4,7 +4,7 @@ import { useFormStatus } from "react-dom";
 import type { ReactNode } from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { StatusChip } from "@/components/ui/primitives";
+import { EmptyState, StatusChip } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import type { Tone } from "@/lib/workspace-model";
 
@@ -319,14 +319,26 @@ export function Row({
   );
 }
 
-export function Empty({ message, hint }: { message: string; hint?: string }) {
+/**
+ * A panel's empty state. Twenty-one call sites across the dashboard, followups
+ * and the lead detail, so it stays a named component with this vocabulary's
+ * `message`/`hint` words — but the BOX is no longer hand-rolled here. It is
+ * `EmptyState` at panel scale, which is the whole point of Phase 12 Unit 3:
+ * one dashed box in the app, not one per screen that needed a small one.
+ *
+ * `hint` is where "what to do next" belongs, and most of these carry it.
+ */
+export function Empty({
+  message,
+  hint,
+  action,
+}: {
+  message: string;
+  hint?: string;
+  action?: ReactNode;
+}) {
   return (
-    <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-6 py-10 text-center">
-      <p className="text-sm font-medium text-[var(--color-ink)]">{message}</p>
-      {hint && (
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">{hint}</p>
-      )}
-    </div>
+    <EmptyState compact title={message} description={hint} action={action} />
   );
 }
 

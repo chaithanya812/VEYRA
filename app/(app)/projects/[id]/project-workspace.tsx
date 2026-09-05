@@ -20,7 +20,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import { SegmentedControl } from "@/components/ui/patterns";
 import { MilestoneCell } from "@/components/ui/milestone-cell";
 import { StatTile, TabBar, TileGrid, type TabDef } from "../../dashboard/workspace-ui";
@@ -184,7 +184,10 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
             href="/site"
           />
           {data.sitePhotos.length === 0 ? (
-            <Blank>No site photos uploaded yet.</Blank>
+            <Blank
+              title="No site photos yet"
+              hint="Dated photographs are what the client progress report is built from. Open Site progress above to upload the first one."
+            />
           ) : (
             <>
               <div className="grid grid-cols-4 gap-1.5">
@@ -221,7 +224,10 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
             href={`/projects/${data.project.id}/documents`}
           />
           {data.documents.length === 0 ? (
-            <Blank>No documents yet.</Blank>
+            <Blank
+              title="No design documents yet"
+              hint="Drawings, approvals and client sign-offs live here — one folder per project, never shared with another. Open Design documents above to add one."
+            />
           ) : (
             <ul className="flex flex-col gap-1.5">
               {data.documents.slice(0, 5).map((d) => (
@@ -239,7 +245,10 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
         <Card className="p-4">
           <PanelHead icon={<MessageSquare className="size-4" />} title="Latest updates" />
           {data.updates.length === 0 ? (
-            <Blank>Nothing logged yet.</Blank>
+            <Blank
+              title="Nothing logged yet"
+              hint="Use Add note above to record progress, a delay or a material arrival. Stage changes land here on their own."
+            />
           ) : (
             <ul className="flex flex-col gap-2">
               {data.updates.slice(0, 6).map((u) => (
@@ -332,9 +341,14 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
               </div>
             </>
           ) : (
-            <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center text-sm text-[var(--color-ink-secondary)]">
-              Financials hidden.
-            </p>
+            /* Not a permission refusal — the reader pressed Hide, and the way
+               back is the button they pressed. `PermissionLimited` would be a
+               lie here: nothing is being withheld from them. */
+            <EmptyState
+              compact
+              title="Financials hidden"
+              description="You pressed Hide, so the money is off this band. Press Show to bring it back."
+            />
           )}
         </Card>
 
@@ -375,18 +389,18 @@ function MilestoneTable({ data }: { data: ProjectWorkspaceData }) {
 
   if (data.milestones.length === 0) {
     return (
-      <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">No plan yet</p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          <Link
-            href={`/projects/${data.project.id}/plan`}
-            className="font-medium text-[var(--color-red)] hover:underline"
-          >
-            Open Project planning
-          </Link>{" "}
-          to lay one out — start from a template or write your own.
-        </p>
-      </div>
+      <EmptyState
+        compact
+        title="No plan yet"
+        description="Milestones are how every other screen knows whether this project is on time — the list, the client report and the payment schedule all read them."
+        action={
+          <Link href={`/projects/${data.project.id}/plan`}>
+            <Button variant="secondary" size="sm">
+              Open Project planning
+            </Button>
+          </Link>
+        }
+      />
     );
   }
 
@@ -451,14 +465,18 @@ function MilestoneTable({ data }: { data: ProjectWorkspaceData }) {
 function ProcurementTable({ data }: { data: ProjectWorkspaceData }) {
   if (data.orders.length === 0 && data.requests.length === 0) {
     return (
-      <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">
-          Nothing procured yet
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          An approved quotation can raise its material request in one click.
-        </p>
-      </div>
+      <EmptyState
+        compact
+        title="Nothing procured yet"
+        description="An approved quotation can raise its material request in one click, or start one by hand — requests become RFQs, RFQs become orders, and this panel follows them."
+        action={
+          <Link href={`/projects/${data.project.id}/procurement`}>
+            <Button variant="secondary" size="sm">
+              Open Procurement
+            </Button>
+          </Link>
+        }
+      />
     );
   }
 
@@ -687,10 +705,12 @@ function Figure({
   );
 }
 
-function Blank({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-3 py-6 text-center text-xs text-[var(--color-ink-secondary)]">
-      {children}
-    </p>
-  );
+/**
+ * A summary panel with nothing in it. `EmptyState` at panel scale — the box is
+ * no longer drawn here — and the `hint` is mandatory rather than optional,
+ * because every one of these panels sits next to the control that would fill
+ * it and saying so is the whole job.
+ */
+function Blank({ title, hint }: { title: string; hint: string }) {
+  return <EmptyState compact title={title} description={hint} />;
 }

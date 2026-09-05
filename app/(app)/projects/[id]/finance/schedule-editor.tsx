@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { EmptyState } from "@/components/ui/primitives";
 import { FormError, SubmitButton } from "../../../dashboard/workspace-ui";
 import {
   amountFromPct,
@@ -132,9 +133,11 @@ export function ScheduleEditor({
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-3 py-6 text-center text-[12px] text-[var(--color-ink-secondary)]">
-          No schedule yet. Add milestones until they total 100% of the contract.
-        </p>
+        <EmptyState
+          compact
+          title="No payment schedule yet"
+          description="A schedule is what turns a contract value into invoiceable stages. Press Milestone above to add the first one, then Split evenly — the rows must total 100% of the contract before this saves."
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-[12px]">

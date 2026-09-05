@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import {
   DEFAULT_REPORT_OPTIONS,
   generateProgressReport,
@@ -121,11 +121,22 @@ export function ReportBuilder({ data }: { data: ReportData }) {
               )}
             </div>
             {shown.length === 0 ? (
-              <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center text-sm text-[var(--color-ink-secondary)]">
-                {data.milestones.length === 0
-                  ? "This project has no milestones yet."
-                  : "No milestone is marked client-visible, so this report would show none."}
-              </p>
+              /* Two different empties. One says the project has no plan; the
+                 other says the plan exists and this SETTING hid all of it —
+                 and that one names the radio three inches to the left. */
+              <EmptyState
+                compact
+                title={
+                  data.milestones.length === 0
+                    ? "This project has no milestones yet"
+                    : "No milestone is marked client-visible"
+                }
+                description={
+                  data.milestones.length === 0
+                    ? "Lay out a plan in Project planning and the report can show what has been handed over and what is next."
+                    : `All ${data.milestones.length} would be withheld, so this report would show none. Choose All milestones on the left, or mark the ones the client should see in Project planning.`
+                }
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[520px] text-[13px]">

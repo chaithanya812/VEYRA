@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Download } from "lucide-react";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import { AreaTrend, BarList, Donut } from "@/components/ui/charts";
 import { DateRangeControl, SegmentedControl } from "@/components/ui/patterns";
 import { StatTile, TileGrid } from "../../dashboard/workspace-ui";
@@ -58,6 +58,14 @@ export function LeadInsightsView({ data }: { data: LeadInsightsData }) {
     [scoped, statuses, measure],
   );
   const owners = useMemo(() => ownerSplit(scoped, members), [scoped, members]);
+
+  // The two different empties. A chart the RANGE emptied has a way back — the
+  // control that emptied it is three inches above the box. A chart empty
+  // because the tenant has no leads is a different sentence entirely.
+  const rangeFiltered = scope === "range" && leads.length > 0;
+  const blankHint = rangeFiltered
+    ? "Switch to All time above, or widen the selected range."
+    : "Capture one with New lead in Lead Management and these charts fill themselves.";
 
   const strays = funnel.filter((f) => f.unmapped && f.count > 0);
   const strayLeads = strays.reduce((n, f) => n + f.count, 0);
@@ -237,7 +245,12 @@ export function LeadInsightsView({ data }: { data: LeadInsightsData }) {
             }
           />
           {scoped.length === 0 ? (
-            <Blank message="No leads created in this range." />
+            <Blank
+              message={
+                rangeFiltered ? "No leads created in this range" : "No leads yet"
+              }
+              hint={blankHint}
+            />
           ) : (
             <AreaTrend points={trend} />
           )}
@@ -258,7 +271,14 @@ export function LeadInsightsView({ data }: { data: LeadInsightsData }) {
             }
           />
           {sources.length === 0 ? (
-            <Blank message="No leads to break down yet." />
+            <Blank
+              message={
+                rangeFiltered
+                  ? "No sources in this range"
+                  : "No sources to break down yet"
+              }
+              hint={blankHint}
+            />
           ) : (
             <Donut slices={sources} centerLabel="leads" />
           )}
@@ -271,7 +291,14 @@ export function LeadInsightsView({ data }: { data: LeadInsightsData }) {
             subtitle="Unassigned first — an unowned lead is a problem, not a statistic."
           />
           {owners.length === 0 ? (
-            <Blank message="No leads to attribute yet." />
+            <Blank
+              message={
+                rangeFiltered
+                  ? "No owners in this range"
+                  : "No leads to attribute yet"
+              }
+              hint={blankHint}
+            />
           ) : (
             <BarList
               rows={owners.map((o) => ({
@@ -315,12 +342,16 @@ function CardHead({
   );
 }
 
-function Blank({ message }: { message: string }) {
-  return (
-    <div className="rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] px-4 py-10 text-center">
-      <p className="text-sm text-[var(--color-ink-secondary)]">{message}</p>
-    </div>
-  );
+/**
+ * A chart card with nothing to draw. `EmptyState` at panel scale rather than a
+ * fourth dashed box — and it always carries the hint, because "no leads to
+ * break down yet" alone leaves the reader with no move to make. The hint the
+ * call sites pass is scope-aware: a chart emptied by the date range says how to
+ * widen it; a chart empty because the tenant has no leads says where they come
+ * from.
+ */
+function Blank({ message, hint }: { message: string; hint: string }) {
+  return <EmptyState compact title={message} description={hint} />;
 }
 
 function ExportButton({

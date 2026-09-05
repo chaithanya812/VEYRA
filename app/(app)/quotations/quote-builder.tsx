@@ -12,7 +12,7 @@ import { uomLabel } from "@/lib/items-ui";
 import { inr } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea, Select } from "@/components/ui/field";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import type { PromptTemplate } from "@/lib/data/quotation-studio";
 import { LineDialog } from "./line-dialog";
 import { AiBoqPanel } from "./ai-boq-panel";
@@ -175,9 +175,11 @@ export function QuoteBuilder({
             )}
 
             {sections.length === 0 && lines.length === 0 && (
-              <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-4 py-8 text-center text-sm text-[var(--color-ink-secondary)]">
-                No lines yet. Add a section (e.g. “Wood Work”) then add lines, or add an ungrouped line.
-              </p>
+              <EmptyState
+                compact
+                title="No lines yet"
+                description="A quotation is a section-grouped BOQ: name a section with Add section below — “Wood Work”, “Modular Kitchen” — then add its lines from the catalogue. A line can also stand ungrouped."
+              />
             )}
           </div>
 
