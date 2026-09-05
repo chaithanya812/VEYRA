@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, FileText, History, IndianRupee, Plus, Trash2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -274,12 +274,11 @@ function ContractList({
 }) {
   if (contracts.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">Nothing here yet</p>
-        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-          {empty}
-        </p>
-      </Card>
+      <EmptyState
+        icon={<Wallet className="size-8" />}
+        title={source === "client" ? "No client contracts yet" : "No vendor contracts yet"}
+        description={empty}
+      />
     );
   }
 
@@ -645,24 +644,16 @@ function DocumentList({
 
   if (plan.documents.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <FileText className="mx-auto size-5 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          No contract documents yet
-        </p>
-        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-          Upload in Designs &amp; documents and file it against a contract — same
-          storage, same versions, same review thread.
-        </p>
-        <div className="mt-3">
-          <Link
-            href={`/projects/${projectId}/documents`}
-            className="text-[13px] font-medium text-[var(--color-red)] hover:underline"
-          >
-            Go to documents
+      <EmptyState
+        icon={<FileText className="size-8" />}
+        title="No contract documents yet"
+        description="Upload in Designs & documents and file it against a contract — same storage, same versions, same review thread."
+        action={
+          <Link href={`/projects/${projectId}/documents`}>
+            <Button variant="secondary">Go to documents</Button>
           </Link>
-        </div>
-      </Card>
+        }
+      />
     );
   }
 

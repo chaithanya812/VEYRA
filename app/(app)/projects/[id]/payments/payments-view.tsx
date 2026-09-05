@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -306,16 +306,15 @@ function Listing({
 
   if (view.rows.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">
-          {side === "funds" ? "No funds collected yet" : "No expenses recorded yet"}
-        </p>
-        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-          {side === "funds"
-            ? "A fund is money in against a client contract — that is what makes it a receipt rather than an unexplained credit."
-            : "Record what the project has actually spent. An expense does not need a contract; site spend often has none."}
-        </p>
-      </Card>
+      <EmptyState
+        icon={<Wallet className="size-8" />}
+        title={side === "funds" ? "No funds collected yet" : "No expenses recorded yet"}
+        description={
+          side === "funds"
+            ? "A fund is money in against a client contract — that is what makes it a receipt rather than an unexplained credit. Use Record fund above."
+            : "Record what the project has actually spent. An expense does not need a contract; site spend often has none. Use Record expense above."
+        }
+      />
     );
   }
 
@@ -467,16 +466,11 @@ function Analytics({
 
   if (entries.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <BarChart3 className="mx-auto size-5 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          Nothing to analyse yet
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          Record a few {side === "funds" ? "receipts" : "expenses"} and the
-          breakdowns fill in.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<BarChart3 className="size-8" />}
+        title="Nothing to analyse yet"
+        description={`Record a few ${side === "funds" ? "receipts" : "expenses"} on the Ledger tab and the breakdowns fill in.`}
+      />
     );
   }
 

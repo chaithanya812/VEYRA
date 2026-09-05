@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { AlertTriangle, CalendarOff } from "lucide-react";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import { GANTT_LEGEND, buildGantt, type BarTone } from "@/lib/gantt-model";
 import type { ProjectMilestone } from "@/lib/milestones-model";
 import { cn, fmtDate } from "@/lib/utils";
@@ -45,16 +45,11 @@ export function GanttChart({
 
   if (chart.bars.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <CalendarOff className="mx-auto size-5 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          Nothing to chart yet
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          A milestone needs at least one date before it can be drawn. Add
-          planned dates on the Milestone tab and they appear here.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<CalendarOff className="size-8" />}
+        title="Nothing to chart yet"
+        description="A milestone needs at least one date before it can be drawn. Add planned dates on the Milestone tab and they appear here."
+      />
     );
   }
 

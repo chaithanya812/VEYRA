@@ -4,7 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import { ListChecks, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card, StatusChip } from "@/components/ui/primitives";
+import { Card, EmptyState, StatusChip } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -95,16 +95,16 @@ export function TasksPanel({
       </div>
 
       {shown.length === 0 ? (
-        <Card className="border-dashed p-10 text-center">
-          <ListChecks className="mx-auto size-5 text-[var(--color-ink-disabled)]" />
-          <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-            No tasks on this project
-          </p>
-          <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-            Milestones are the schedule; tasks are the jobs underneath it. Add
-            one and it also appears in the assignee&apos;s own work list.
-          </p>
-        </Card>
+        <EmptyState
+          icon={<ListChecks className="size-8" />}
+          title={showClosed ? "No tasks on this project" : "No open tasks"}
+          description={
+            showClosed
+              ? "Milestones are the schedule; tasks are the jobs underneath it. Add one and it also appears in the assignee's own work list."
+              : "Nothing is open right now. Tick Show closed to see finished tasks, or add the next one."
+          }
+          action={<AddTaskDialog projectId={projectId} members={members} />}
+        />
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -368,16 +368,25 @@ function OverviewTable({
 }) {
   if (entries.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">
-          {board.entries.length === 0 ? "No labour recorded yet" : "Nothing matches those filters"}
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          {board.entries.length === 0
+      <EmptyState
+        icon={
+          board.entries.length === 0 ? (
+            <HardHat className="size-8" />
+          ) : (
+            <Search className="size-8" />
+          )
+        }
+        title={
+          board.entries.length === 0
+            ? "No labour recorded yet"
+            : "No labour days match those filters"
+        }
+        description={
+          board.entries.length === 0
             ? "Record a day's attendance — how many skilled, unskilled and coordinating people were on site, and which trades they worked."
-            : "Clear a filter to see the rest of this project's labour."}
-        </p>
-      </Card>
+            : `Clear a filter above to see the rest of this project's ${board.entries.length} labour days.`
+        }
+      />
     );
   }
 
@@ -556,12 +565,11 @@ function AnalyticsTab({
 
   if (entries.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">Nothing to chart yet</p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          Analytics draw from the days that match the filters above.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<BarChart3 className="size-8" />}
+        title="Nothing to chart yet"
+        description="Analytics draw from the days that match the filters above. Clear a filter, or record a labour day on the Entries tab."
+      />
     );
   }
 

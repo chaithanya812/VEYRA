@@ -6,6 +6,7 @@ import {
   FileArchive,
   FileSpreadsheet,
   FileText,
+  FolderOpen,
   FolderPlus,
   Image as ImageIcon,
   MessageSquare,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card, StatusChip } from "@/components/ui/primitives";
+import { Card, EmptyState, StatusChip } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -129,13 +130,12 @@ export function DocumentsView({
       )}
 
       {data.files.length === 0 ? (
-        <Card className="border-dashed p-10 text-center">
-          <p className="text-sm font-medium text-[var(--color-ink)]">No files yet</p>
-          <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-            Upload a drawing, a quotation or a photo. Files live under this
-            project only — another project cannot see them.
-          </p>
-        </Card>
+        <EmptyState
+          icon={<FolderOpen className="size-8" />}
+          title="No files yet"
+          description="Upload a drawing, a quotation or a photo. Files live under this project only — another project cannot see them."
+          action={<UploadDialog projectId={projectId} data={data} />}
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {groups.map((g) => (

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
-import { Card } from "@/components/ui/primitives";
+import { Card, EmptyState } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -226,13 +226,19 @@ export function PlanView({
           </div>
 
           {groups.length === 0 ? (
-            <Card className="border-dashed p-10 text-center">
-              <p className="text-sm font-medium text-[var(--color-ink)]">No plan yet</p>
-              <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-                Start from a template — Design Team, Execution Team, Post Handover —
-                let SmartPlan draft one, or add milestones one at a time.
-              </p>
-            </Card>
+            <EmptyState
+              icon={<CalendarDays className="size-8" />}
+              title="No plan yet"
+              description="Start from a template — Design Team, Execution Team, Post Handover — let SmartPlan draft one, or add milestones one at a time."
+              action={
+                <AddMilestoneDialog
+                  projectId={projectId}
+                  scopeItems={scopeItems}
+                  members={members}
+                  nextSort={milestones.length}
+                />
+              }
+            />
           ) : (
             <div className="flex flex-col gap-4">
               {groups.map((g) => {

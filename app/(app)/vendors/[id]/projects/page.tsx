@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Building2 } from "lucide-react";
 import { getVendor, getVendorProjects } from "@/lib/data/vendors";
 import {
   VENDOR_STATUS_META,
@@ -8,7 +8,7 @@ import {
   vendorStatusOf,
   type VendorTone,
 } from "@/lib/vendors-model";
-import { Card, PageHeader, StatusChip } from "@/components/ui/primitives";
+import { Card, EmptyState, PageHeader, StatusChip } from "@/components/ui/primitives";
 import { StatTile, TileGrid } from "../../../dashboard/workspace-ui";
 import { cn, inr } from "@/lib/utils";
 
@@ -106,17 +106,13 @@ export default async function VendorProjectsPage({
       </TileGrid>
 
       {rows.length === 0 ? (
-        <Card className="mt-4 border-dashed p-10 text-center">
-          <p className="text-sm font-medium text-[var(--color-ink)]">
-            This vendor is not on any project yet
-          </p>
-          <p className="mx-auto mt-1 max-w-lg text-xs text-[var(--color-ink-secondary)]">
-            A vendor joins a project by having a contract on it, or by being
-            paid against it. Raise a vendor contract from the project&apos;s
-            Financial Planning and this table fills itself — nothing here is
-            entered twice.
-          </p>
-        </Card>
+        <div className="mt-4">
+          <EmptyState
+            icon={<Building2 className="size-8" />}
+            title="This vendor is not on any project yet"
+            description="A vendor joins a project by having a contract on it, or by being paid against it. Raise a vendor contract from the project's Financial Planning and this table fills itself — nothing here is entered twice."
+          />
+        </div>
       ) : (
         <Card className="mt-4 overflow-hidden">
           <div className="overflow-x-auto">

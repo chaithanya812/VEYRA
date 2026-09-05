@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { Card, StatusChip } from "@/components/ui/primitives";
+import { Card, EmptyState, StatusChip } from "@/components/ui/primitives";
 import { SegmentedControl } from "@/components/ui/patterns";
 import { StatTile, TileGrid } from "../dashboard/workspace-ui";
 import {
@@ -215,19 +215,19 @@ function WarehousesTab({
       )}
 
       {nodes.length === 0 ? (
-        <Card className="border-dashed p-10 text-center">
-          <WarehouseIcon className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-          <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-            {scope === "company"
+        <EmptyState
+          icon={<WarehouseIcon className="size-8" />}
+          title={
+            scope === "company"
               ? "No company warehouses yet"
-              : "No project warehouses yet"}
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-            {scope === "company"
-              ? "A company warehouse is a godown every project can draw from. Add one — every movement books against a warehouse."
-              : "A project warehouse is a site store that belongs to exactly one project, and its stock is never shared with another."}
-          </p>
-        </Card>
+              : "No project warehouses yet"
+          }
+          description={
+            scope === "company"
+              ? "A company warehouse is a godown every project can draw from. Use Add Warehouse above — every movement books against a warehouse."
+              : "A project warehouse is a site store that belongs to exactly one project, and its stock is never shared with another. Use Add Warehouse above and pick a project."
+          }
+        />
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
@@ -415,22 +415,16 @@ function DeliveriesTab({ rows }: { rows: DeliveryStockInRow[] }) {
 
   if (rows.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <Truck className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          No deliveries recorded yet
-        </p>
-        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-          A receipt against a purchase order lands here, waiting to be booked
-          into a warehouse. Record one from the order.
-        </p>
-        <Link
-          href="/orders"
-          className="mt-3 inline-block text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
-        >
-          Go to orders
-        </Link>
-      </Card>
+      <EmptyState
+        icon={<Truck className="size-8" />}
+        title="No deliveries recorded yet"
+        description="A receipt against a purchase order lands here, waiting to be booked into a warehouse. Record one from the order."
+        action={
+          <Link href="/orders">
+            <Button variant="secondary">Go to orders</Button>
+          </Link>
+        }
+      />
     );
   }
 
@@ -552,17 +546,11 @@ function ExpenseTab({
 
   if (rows.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <Package className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          Nothing waiting on a stock-in
-        </p>
-        <p className="mx-auto mt-1 max-w-lg text-xs text-[var(--color-ink-secondary)]">
-          Tick <span className="font-medium">Raise a stock-in request</span> when
-          recording a project expense for material, and it appears here until
-          the goods are booked into a warehouse.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<Package className="size-8" />}
+        title="Nothing waiting on a stock-in"
+        description="Tick Raise a stock-in request when recording a project expense for material, and it appears here until the goods are booked into a warehouse."
+      />
     );
   }
 
@@ -723,24 +711,21 @@ function HistoryTab({
       </div>
 
       {shown.length === 0 && (
-        <Card className="border-dashed p-10 text-center">
-          <Boxes className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-          <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-            No {NOTE_KIND_LABELS[direction].toLowerCase()}s yet
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-            Every movement posts one numbered document and one ledger line per
-            item. Both are append-only.
-            {strays.length > 0 &&
-              " The movements below predate stock notes, so they have no number to show."}
-          </p>
-          <Link
-            href={`/inventory/stock-in?direction=${direction}`}
-            className="mt-3 inline-block text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
-          >
-            Record one
-          </Link>
-        </Card>
+        <EmptyState
+          icon={<Boxes className="size-8" />}
+          title={`No ${NOTE_KIND_LABELS[direction].toLowerCase()}s yet`}
+          description={
+            "Every movement posts one numbered document and one ledger line per item. Both are append-only." +
+            (strays.length > 0
+              ? " The movements below predate stock notes, so they have no number to show."
+              : "")
+          }
+          action={
+            <Link href={`/inventory/stock-in?direction=${direction}`}>
+              <Button variant="secondary">Record one</Button>
+            </Link>
+          }
+        />
       )}
 
       {shown.length > 0 && (
@@ -914,22 +899,22 @@ function MaterialsTab({
       </div>
 
       {levels.length === 0 ? (
-        <Card className="border-dashed p-10 text-center">
-          <Boxes className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-          <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-            No stock recorded yet
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-            Levels are summed from the movement ledger, never stored. Record a
-            stock-in and this fills itself.
-          </p>
-        </Card>
+        <EmptyState
+          icon={<Boxes className="size-8" />}
+          title="No stock recorded yet"
+          description="Levels are summed from the movement ledger, never stored. Record a stock-in and this fills itself."
+        />
       ) : shown.length === 0 ? (
-        <Card className="border-dashed p-10 text-center">
-          <p className="text-sm font-medium text-[var(--color-ink)]">
-            Nothing matches “{query}”
-          </p>
-        </Card>
+        <EmptyState
+          icon={<Search className="size-8" />}
+          title={`No item matches “${query}”`}
+          description={`Clear the search to see all ${levels.length} item${levels.length === 1 ? "" : "s"} in stock.`}
+          action={
+            <Button variant="secondary" onClick={() => setQuery("")}>
+              Clear search
+            </Button>
+          }
+        />
       ) : (
         <Card className="overflow-hidden">
           <div className="max-h-[70vh] overflow-x-auto overflow-y-auto">

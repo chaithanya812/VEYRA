@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
-import { Card, StatusChip } from "@/components/ui/primitives";
+import { Card, EmptyState, StatusChip } from "@/components/ui/primitives";
 import {
   Dialog,
   DialogContent,
@@ -301,20 +301,21 @@ export function ProcurementView({
 
           <div className="mt-4 flex flex-col gap-3">
             {inScope.requests.length === 0 ? (
-              <Card className="border-dashed p-10 text-center">
-                <p className="text-sm font-medium text-[var(--color-ink)]">
-                  {companyWide
+              <EmptyState
+                icon={<ClipboardList className="size-8" />}
+                title={
+                  companyWide
                     ? draftFilter === "draft"
                       ? "No draft requests"
                       : "No requests raised yet"
-                    : "No requests raised for this project"}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-                  {companyWide && draftFilter === "draft"
-                    ? "Drafts park here until somebody raises them."
-                    : "Raise one to start the trail: request → RFQ → order → delivery."}
-                </p>
-              </Card>
+                    : "No requests raised for this project"
+                }
+                description={
+                  companyWide && draftFilter === "draft"
+                    ? "Drafts park here until somebody raises them. Switch to All Requests to see the raised ones."
+                    : "Raise one to start the trail: request → RFQ → order → delivery."
+                }
+              />
             ) : (
               inScope.requests.map((r) => (
                 <RequestCard
@@ -584,13 +585,11 @@ function RfqTable({
 }) {
   if (data.rfqs.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">No RFQs yet</p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          Raise one from a request&apos;s lines. Bids, comparison and the award
-          reason live in the RFQ itself.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<ClipboardList className="size-8" />}
+        title="No RFQs yet"
+        description="Raise one from a request's lines on the Requests tab. Bids, comparison and the award reason live in the RFQ itself."
+      />
     );
   }
 
@@ -687,12 +686,11 @@ function OrderTable({
 
   if (data.orders.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">No orders yet</p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          Awarding an RFQ drafts a purchase order for the winning vendor.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<Package className="size-8" />}
+        title="No orders yet"
+        description="Awarding an RFQ on the RFQ tab drafts a purchase order for the winning vendor."
+      />
     );
   }
 
@@ -785,15 +783,11 @@ function DeliveryTable({
 }) {
   if (data.deliveries.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <p className="text-sm font-medium text-[var(--color-ink)]">
-          Nothing received yet
-        </p>
-        <p className="mt-1 text-xs text-[var(--color-ink-secondary)]">
-          A receipt is recorded against an order. Accepting goods is what moves a
-          line to <span className="font-medium">In stock</span>.
-        </p>
-      </Card>
+      <EmptyState
+        icon={<Truck className="size-8" />}
+        title="Nothing received yet"
+        description="A receipt is recorded against an order on the Orders tab. Accepting goods is what moves a line to In stock."
+      />
     );
   }
 
@@ -861,23 +855,18 @@ function InventoryPanel({
 }) {
   if (!inventory || inventory.warehouses.length === 0) {
     return (
-      <Card className="border-dashed p-10 text-center">
-        <Boxes className="mx-auto size-6 text-[var(--color-ink-disabled)]" />
-        <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-          No site store for this project yet
-        </p>
-        <p className="mx-auto mt-1 max-w-md text-xs text-[var(--color-ink-secondary)]">
-          A project warehouse belongs to exactly one project and its stock is
-          never shared with another. Add one from Inventory, then goods received
-          against this project land here.
-        </p>
-        <Link
-          href="/inventory"
-          className="mt-3 inline-flex items-center gap-1 text-[13px] text-[var(--color-ink)] underline-offset-2 hover:underline"
-        >
-          <Truck className="size-3.5" /> Company-wide inventory
-        </Link>
-      </Card>
+      <EmptyState
+        icon={<Boxes className="size-8" />}
+        title="No site store for this project yet"
+        description="A project warehouse belongs to exactly one project and its stock is never shared with another. Add one from Inventory, then goods received against this project land here."
+        action={
+          <Link href="/inventory">
+            <Button variant="secondary">
+              <Truck className="size-4" /> Company-wide inventory
+            </Button>
+          </Link>
+        }
+      />
     );
   }
 
