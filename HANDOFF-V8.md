@@ -401,17 +401,45 @@ and the project Summary band.
 
 ## 9. Deployment state
 
-`bb872c5` (Phases 0–8) is pushed to `origin/quotations-v2-plus-fleet` and live in Vercel production,
-reading the same Supabase project the local app does. `main` is untouched. **Phases 9, 10 and 12
-Unit 1 are committed locally and NOT deployed** — the owner authorised publishing through Phase 8
-only. Ask before deploying.
+**`4a9d863` (Phases 0–12, the whole build) is pushed to `origin/quotations-v2-plus-fleet` and LIVE
+in Vercel production** at https://veyra-five-beta.vercel.app, deployment `dpl_ETU8994…`, reading the
+same Supabase project the local app does. `main` is still untouched. Deployed 2026-09-05 on the
+owner's explicit instruction. **Still ask before the next one.**
 
-Two things production is missing. Fix them with the owner, not silently:
+Migrations 0041–0043 were applied before the deploy, and production shares that database, so the
+schema was already live when the code arrived.
+
+### ⚠ How to deploy: NOT by pushing
+
+**`git push` does NOT deploy this project.** The GitHub integration builds every push and **every
+one of those builds fails** — six in a row now — with:
+
+```
+Error: Missing required environment variable: SUPABASE_URL
+```
+
+The env vars are scoped to **Production only**, so the Preview builds the GitHub integration creates
+have none. Every successful production deploy in this project's history was made from the CLI:
+
+```bash
+npx vercel --prod --yes      # from the repo root; .vercel/project.json links the project
+```
+
+Push for the source of truth, then deploy with the CLI. Expect a red preview build in the Vercel
+dashboard afterwards — it is that env-var scope gap, not your code. **The real fix is to add the
+Supabase vars to the Preview scope too**; until someone does, the Git integration is decorative.
+
+### Three things production is missing. Fix them with the owner, not silently:
 
 1. **No `GEMINI_*` / `AI_*` env vars in Vercel** — every AI surface fails in production until the
-   owner adds them. Do not paste their API keys yourself.
-2. **Vercel caps a serverless request body at 4.5 MB** while the app accepts 25 MB uploads. The real
-   fix is uploading from the browser straight to Supabase storage.
+   owner adds them. Do not paste their API keys yourself. They fail *gracefully*: the keys are read
+   inside functions, `isAiConfigured()` drives a status line, and the call path returns a friendly
+   error rather than throwing, so this is a dead feature and not a broken deploy.
+2. **Vercel caps a serverless request body at 4.5 MB** while `next.config.ts` sets
+   `bodySizeLimit: "26mb"` and `lib/data/storage.ts` allows 25 MB. Any upload over ~4.5 MB fails in
+   production while working locally. The real fix is uploading from the browser straight to Supabase
+   storage.
+3. **The Preview env scope**, per the box above.
 
 ---
 
