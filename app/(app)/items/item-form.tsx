@@ -148,11 +148,11 @@ export function ItemForm({
         )}
 
         <div className="flex justify-end gap-2 pt-1">
-          <Link href={mode === "edit" && item ? `/items/${item.id}` : "/items"}>
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href={mode === "edit" && item ? `/items/${item.id}` : "/items"}>
               Cancel
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending
               ? "Saving…"

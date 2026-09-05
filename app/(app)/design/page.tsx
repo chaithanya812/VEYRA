@@ -53,11 +53,11 @@ export default async function DesignPage({
           Filter
         </Button>
         {project && (
-          <Link href="/design">
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href="/design">
               Clear
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
       </form>
 

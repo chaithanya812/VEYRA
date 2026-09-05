@@ -227,11 +227,11 @@ function LeadHeader({ detail }: { detail: LeadDetail }) {
 
         <div className="flex flex-col items-end gap-2">
           {lead.project_id ? (
-            <Link href={`/projects/${lead.project_id}`}>
-              <Button variant="secondary" size="sm">
+            <Button asChild variant="secondary" size="sm">
+              <Link href={`/projects/${lead.project_id}`}>
                 Open project <ArrowUpRight className="size-3.5" />
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           ) : (
             <form action={promote}>
               <input type="hidden" name="id" value={lead.id} />

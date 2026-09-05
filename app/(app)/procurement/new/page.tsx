@@ -326,9 +326,9 @@ export default function NewMaterialRequestPage() {
 
         {/* ── Sticky footer ─────────────────────────────────────────────── */}
         <div className="sticky bottom-0 flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm">
-          <Link href="/procurement">
-            <Button type="button" variant="ghost">Cancel</Button>
-          </Link>
+          <Button asChild type="button" variant="ghost">
+            <Link href="/procurement">Cancel</Link>
+          </Button>
           <div className="flex items-center gap-2">
             <Button
               type="submit"

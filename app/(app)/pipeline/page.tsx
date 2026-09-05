@@ -25,11 +25,11 @@ export default async function PipelinePage() {
         title="Pipeline"
         subtitle={`${total} leads · ${inr(value)} in play · grouped by your own status ladder`}
         actions={
-          <Link href="/settings/workspace">
-            <Button variant="secondary">
+          <Button asChild variant="secondary">
+            <Link href="/settings/workspace">
               <Settings2 className="size-4" /> Manage statuses
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
       <PipelineBoard rows={rows} statuses={statuses} options={options} />

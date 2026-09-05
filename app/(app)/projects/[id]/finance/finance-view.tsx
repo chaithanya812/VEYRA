@@ -649,9 +649,9 @@ function DocumentList({
         title="No contract documents yet"
         description="Upload in Designs & documents and file it against a contract — same storage, same versions, same review thread."
         action={
-          <Link href={`/projects/${projectId}/documents`}>
-            <Button variant="secondary">Go to documents</Button>
-          </Link>
+          <Button asChild variant="secondary">
+            <Link href={`/projects/${projectId}/documents`}>Go to documents</Link>
+          </Button>
         }
       />
     );

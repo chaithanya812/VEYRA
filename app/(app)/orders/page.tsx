@@ -77,11 +77,11 @@ export default async function OrdersPage({
             : `${rows.length} purchase orders`
         }
         actions={
-          <Link href="/orders/new">
-            <Button variant="primary">
+          <Button asChild variant="primary">
+            <Link href="/orders/new">
               <Plus className="size-4" /> Create Order
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -138,11 +138,11 @@ export default async function OrdersPage({
             Filter
           </Button>
           {filtered && (
-            <Link href="/orders">
-              <Button type="button" variant="ghost">
+            <Button asChild type="button" variant="ghost">
+              <Link href="/orders">
                 Clear
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           )}
         </div>
       </form>
@@ -160,15 +160,15 @@ export default async function OrdersPage({
             /* The way out of a filtered empty belongs inside the box — the
                filter bar is scrolled off above it. */
             filtered ? (
-              <Link href="/orders">
-                <Button variant="secondary">Clear all filters</Button>
-              </Link>
+              <Button asChild variant="secondary">
+                <Link href="/orders">Clear all filters</Link>
+              </Button>
             ) : (
-              <Link href="/orders/new">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/orders/new">
                   <Plus className="size-4" /> Create Order
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           }
         />

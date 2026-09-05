@@ -51,11 +51,11 @@ export default async function AttendanceApprovalsPage({
           title="You do not approve attendance requests"
           description={`${board.actor.name} is signed in as ${board.actor.role}. Deciding leave and work-from-home requests is a manager's job — your own requests live on My attendance.`}
           action={
-            <Link href="/hr/attendance">
-              <Button variant="secondary" size="sm">
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/hr/attendance">
                 Go to my attendance
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           }
         />
       </div>
@@ -72,11 +72,11 @@ export default async function AttendanceApprovalsPage({
           waiting === 0 ? "nothing waiting for a decision" : `${waiting} waiting for a decision`
         }`}
         actions={
-          <Link href="/hr/attendance">
-            <Button variant="secondary" size="sm">
+          <Button asChild variant="secondary" size="sm">
+            <Link href="/hr/attendance">
               My attendance
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 

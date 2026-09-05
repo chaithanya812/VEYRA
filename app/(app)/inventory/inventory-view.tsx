@@ -420,9 +420,9 @@ function DeliveriesTab({ rows }: { rows: DeliveryStockInRow[] }) {
         title="No deliveries recorded yet"
         description="A receipt against a purchase order lands here, waiting to be booked into a warehouse. Record one from the order."
         action={
-          <Link href="/orders">
-            <Button variant="secondary">Go to orders</Button>
-          </Link>
+          <Button asChild variant="secondary">
+            <Link href="/orders">Go to orders</Link>
+          </Button>
         }
       />
     );
@@ -721,9 +721,9 @@ function HistoryTab({
               : "")
           }
           action={
-            <Link href={`/inventory/stock-in?direction=${direction}`}>
-              <Button variant="secondary">Record one</Button>
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href={`/inventory/stock-in?direction=${direction}`}>Record one</Link>
+            </Button>
           }
         />
       )}

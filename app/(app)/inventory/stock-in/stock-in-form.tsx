@@ -493,11 +493,11 @@ export function StockInForm({
           </div>
         </dl>
         <div className="ml-auto flex items-center gap-2">
-          <Link href="/inventory">
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href="/inventory">
               Cancel
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button type="submit" variant="primary" disabled={pending || !canSubmit}>
             {pending ? "Posting…" : "Confirm stock-in"}
           </Button>

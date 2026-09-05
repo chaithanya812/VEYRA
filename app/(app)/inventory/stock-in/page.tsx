@@ -57,9 +57,9 @@ export default async function StockInPage({
           title="No active warehouses"
           description="Create a warehouse first — every movement books against one."
           action={
-            <Link href="/inventory">
-              <Button variant="primary">Go to warehouses</Button>
-            </Link>
+            <Button asChild variant="primary">
+              <Link href="/inventory">Go to warehouses</Link>
+            </Button>
           }
         />
       ) : (

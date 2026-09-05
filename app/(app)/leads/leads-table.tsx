@@ -140,11 +140,11 @@ export function LeadsTable({
           >
             <Columns3 className="size-4" /> Columns
           </Button>
-          <Link href="/leads/new">
-            <Button variant="primary" size="sm">
+          <Button asChild variant="primary" size="sm">
+            <Link href="/leads/new">
               <Plus className="size-4" /> New lead
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -268,11 +268,11 @@ export function LeadsTable({
           }
           action={
             leads.length === 0 ? (
-              <Link href="/leads/new">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/leads/new">
                   <Plus className="size-4" /> New lead
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ) : undefined
           }
         />

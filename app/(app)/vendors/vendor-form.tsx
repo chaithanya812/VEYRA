@@ -192,11 +192,11 @@ export function VendorForm({
 
         {/* Sticky footer — Cancel ghost-left, primary red-right (DESIGN-DIRECTION §5). */}
         <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4 rounded-b-[var(--radius-card)]">
-          <Link href={mode === "edit" && vendor ? `/vendors/${vendor.id}` : "/vendors"}>
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href={mode === "edit" && vendor ? `/vendors/${vendor.id}` : "/vendors"}>
               Cancel
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending
               ? "Saving…"

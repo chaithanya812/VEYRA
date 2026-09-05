@@ -18,11 +18,11 @@ export default async function TemplatesPage() {
         title="Quotation templates"
         subtitle="Reusable BOQ presets — save a quote's structure, spin up a new draft in one click."
         actions={
-          <Link href="/quotations">
-            <Button variant="secondary">
+          <Button asChild variant="secondary">
+            <Link href="/quotations">
               <Plus className="size-4" /> New quotation
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 

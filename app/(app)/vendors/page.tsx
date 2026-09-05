@@ -96,11 +96,11 @@ export default async function VendorsPage({
         title="Vendors"
         subtitle={`${all.length} vendors · ${byStatus("onboarded")} onboarded · ${byStatus("verified")} verified · ${byStatus("created")} not checked yet`}
         actions={
-          <Link href="/vendors/new">
-            <Button variant="primary">
+          <Button asChild variant="primary">
+            <Link href="/vendors/new">
               <Plus className="size-4" /> New Vendor
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -199,11 +199,11 @@ export default async function VendorsPage({
           Filter
         </Button>
         {filtered && (
-          <Link href="/vendors">
-            <Button type="button" variant="ghost" className="h-9">
+          <Button asChild type="button" variant="ghost" className="h-9">
+            <Link href="/vendors">
               <RotateCcw className="size-3.5" /> Reset
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
       </form>
 
@@ -218,17 +218,17 @@ export default async function VendorsPage({
           }
           action={
             filtered ? (
-              <Link href="/vendors">
-                <Button variant="secondary">
+              <Button asChild variant="secondary">
+                <Link href="/vendors">
                   <RotateCcw className="size-4" /> Reset filters
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             ) : (
-              <Link href="/vendors/new">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/vendors/new">
                   <Plus className="size-4" /> New Vendor
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           }
         />

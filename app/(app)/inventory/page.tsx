@@ -58,22 +58,22 @@ export default async function InventoryPage({
           <div className="flex items-center gap-2">
             {/* One filled primary per tab. `110109` puts a second red button
                 here (`Material Search`, outlined red) — the fix, not the copy. */}
-            <Link href="/inventory?tab=materials">
-              <Button variant="secondary">
+            <Button asChild variant="secondary">
+              <Link href="/inventory?tab=materials">
                 <Search className="size-4" /> Material search
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             {tab === "warehouses" ? (
               <AddWarehouseDialog
                 projects={data.projectOptions}
                 parents={parents}
               />
             ) : (
-              <Link href="/inventory/stock-in">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/inventory/stock-in">
                   <Plus className="size-4" /> Record stock movement
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )}
           </div>
         }

@@ -46,11 +46,11 @@ export default async function ProjectsPage({
         title="Projects"
         subtitle={`${portfolio.total} projects · ${inr(portfolio.portfolioValue)} in the book`}
         actions={
-          <Link href="/projects/new">
-            <Button variant="primary">
+          <Button asChild variant="primary">
+            <Link href="/projects/new">
               <Plus className="size-4" /> New project
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -101,11 +101,11 @@ export default async function ProjectsPage({
           Filter
         </Button>
         {stage && (
-          <Link href="/projects">
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href="/projects">
               Clear
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
       </form>
 
@@ -123,15 +123,15 @@ export default async function ProjectsPage({
                them nothing to clear it with — the form is scrolled off above a
                tall empty box. The way out belongs in the box. */
             stage ? (
-              <Link href="/projects">
-                <Button variant="secondary">Show all stages</Button>
-              </Link>
+              <Button asChild variant="secondary">
+                <Link href="/projects">Show all stages</Link>
+              </Button>
             ) : (
-              <Link href="/projects/new">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/projects/new">
                   <Plus className="size-4" /> New project
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           }
         />

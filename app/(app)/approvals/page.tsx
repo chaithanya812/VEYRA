@@ -80,11 +80,11 @@ export default async function ApprovalsPage({
         title="Approvals"
         subtitle={`${requests.length} request${requests.length === 1 ? "" : "s"} · threshold rules per module`}
         actions={
-          <Link href="/approvals/rules">
-            <Button variant="secondary">
+          <Button asChild variant="secondary">
+            <Link href="/approvals/rules">
               <Settings2 className="size-4" /> Rules
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 

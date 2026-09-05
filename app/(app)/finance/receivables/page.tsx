@@ -178,11 +178,11 @@ export default async function ReceivablesPage({
           <Filter className="size-4" /> Filter
         </Button>
         {chip && (
-          <Link href="/finance/receivables">
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href="/finance/receivables">
               Clear
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
         <span className="text-[13px] text-[var(--color-ink-secondary)]">
           <span data-testid="applied-filter-chip">
@@ -309,9 +309,9 @@ export default async function ReceivablesPage({
             }
             action={
               chip ? (
-                <Link href="/finance/receivables">
-                  <Button variant="secondary">Clear filter</Button>
-                </Link>
+                <Button asChild variant="secondary">
+                  <Link href="/finance/receivables">Clear filter</Link>
+                </Button>
               ) : undefined
             }
           />

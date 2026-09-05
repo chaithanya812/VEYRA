@@ -54,16 +54,16 @@ export default async function UsersSettingsPage({
         }`}
         actions={
           <div className="flex items-center gap-2">
-            <Link href="/settings/workspace">
-              <Button variant="secondary" size="sm">
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/settings/workspace">
                 Names &amp; roles
-              </Button>
-            </Link>
-            <Link href="/settings/roles">
-              <Button variant="secondary" size="sm">
+              </Link>
+            </Button>
+            <Button asChild variant="secondary" size="sm">
+              <Link href="/settings/roles">
                 Roles &amp; permissions
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         }
       />

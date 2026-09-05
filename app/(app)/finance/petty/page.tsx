@@ -143,9 +143,9 @@ export default async function PettyFinancePage({
         title="Petty Finance"
         subtitle={`${monthLabel(month)} · every figure derives from expense_claims — nothing here is stored as a total`}
         actions={
-          <Link href="/approvals?module=expense">
-            <Button variant="secondary">Approvals</Button>
-          </Link>
+          <Button asChild variant="secondary">
+            <Link href="/approvals?module=expense">Approvals</Link>
+          </Button>
         }
       />
 
@@ -246,9 +246,9 @@ export default async function PettyFinancePage({
 
             <div className="space-y-2">
               {scopedMemberId && (
-                <Link href={href({ member: undefined })} data-testid="clear-scope">
-                  <Button variant="ghost" size="sm">← Everybody</Button>
-                </Link>
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={href({ member: undefined })} data-testid="clear-scope">← Everybody</Link>
+                </Button>
               )}
               {cards.length === 0 ? (
                 <p className="px-1 text-[13px] text-[var(--color-ink-secondary)]">

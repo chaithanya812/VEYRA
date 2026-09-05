@@ -23,11 +23,11 @@ export default async function FinancePage() {
         title="Finance"
         subtitle="Contracts, milestone billing and cash — inflow vs outflow"
         actions={
-          <Link href="/finance/new">
-            <Button variant="primary">
+          <Button asChild variant="primary">
+            <Link href="/finance/new">
               <Plus className="size-4" /> New Contract
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -99,11 +99,11 @@ export default async function FinancePage() {
           title="No contracts yet"
           description="Create a client or vendor contract with its billing milestones to start tracking cash."
           action={
-            <Link href="/finance/new">
-              <Button variant="primary">
+            <Button asChild variant="primary">
+              <Link href="/finance/new">
                 <Plus className="size-4" /> New Contract
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           }
         />
       ) : (

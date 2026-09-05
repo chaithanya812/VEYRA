@@ -242,11 +242,11 @@ export default async function PaymentsDashboardPage({
             <Filter className="size-4" /> Filter
           </Button>
           {chip && (
-            <Link href="/finance/payments">
-              <Button type="button" variant="ghost">
+            <Button asChild type="button" variant="ghost">
+              <Link href="/finance/payments">
                 Clear
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           )}
         </div>
       </form>
@@ -320,9 +320,9 @@ export default async function PaymentsDashboardPage({
             }
             action={
               chip ? (
-                <Link href="/finance/payments">
-                  <Button variant="secondary">Clear filter</Button>
-                </Link>
+                <Button asChild variant="secondary">
+                  <Link href="/finance/payments">Clear filter</Link>
+                </Button>
               ) : undefined
             }
           />

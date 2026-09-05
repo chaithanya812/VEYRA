@@ -860,11 +860,11 @@ function InventoryPanel({
         title="No site store for this project yet"
         description="A project warehouse belongs to exactly one project and its stock is never shared with another. Add one from Inventory, then goods received against this project land here."
         action={
-          <Link href="/inventory">
-            <Button variant="secondary">
+          <Button asChild variant="secondary">
+            <Link href="/inventory">
               <Truck className="size-4" /> Company-wide inventory
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
     );

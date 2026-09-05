@@ -16,16 +16,16 @@ export default async function QuotationsPage() {
         subtitle={`${counts.total} quotations · ${inr(counts.openValue)} open value`}
         actions={
           <div className="flex items-center gap-2">
-            <Link href="/quotations/templates">
-              <Button variant="secondary">
+            <Button asChild variant="secondary">
+              <Link href="/quotations/templates">
                 <LayoutTemplate className="size-4" /> Templates
-              </Button>
-            </Link>
-            <Link href="/quotations/new">
-              <Button variant="primary">
+              </Link>
+            </Button>
+            <Button asChild variant="primary">
+              <Link href="/quotations/new">
                 <Plus className="size-4" /> New quotation
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         }
       />
@@ -36,11 +36,11 @@ export default async function QuotationsPage() {
           title="No quotations yet"
           description="Build a section-grouped BOQ from your catalogue — priced by the engine, never by hand."
           action={
-            <Link href="/quotations/new">
-              <Button variant="primary">
+            <Button asChild variant="primary">
+              <Link href="/quotations/new">
                 <Plus className="size-4" /> New quotation
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           }
         />
       ) : (

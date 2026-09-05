@@ -33,11 +33,11 @@ export default async function RfqPage() {
         title="RFQ"
         subtitle={`${rfqs.length} requests for quotation`}
         actions={
-          <Link href="/rfq/new">
-            <Button variant="primary">
+          <Button asChild variant="primary">
+            <Link href="/rfq/new">
               <Plus className="size-4" /> New RFQ
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -47,11 +47,11 @@ export default async function RfqPage() {
           title="No RFQs yet"
           description="Create one from scratch or convert an approved material request."
           action={
-            <Link href="/rfq/new">
-              <Button variant="primary">
+            <Button asChild variant="primary">
+              <Link href="/rfq/new">
                 <Plus className="size-4" /> New RFQ
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           }
         />
       ) : (

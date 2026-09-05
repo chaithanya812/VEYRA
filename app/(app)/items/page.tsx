@@ -33,16 +33,16 @@ export default async function ItemsPage({
         subtitle={`${counts.total} items · ${counts.active} active`}
         actions={
           <div className="flex items-center gap-2">
-            <Link href="/items/import">
-              <Button variant="secondary">
+            <Button asChild variant="secondary">
+              <Link href="/items/import">
                 <Upload className="size-4" /> Import CSV
-              </Button>
-            </Link>
-            <Link href="/items/new">
-              <Button variant="primary">
+              </Link>
+            </Button>
+            <Button asChild variant="primary">
+              <Link href="/items/new">
                 <Plus className="size-4" /> New item
-              </Button>
-            </Link>
+              </Link>
+            </Button>
           </div>
         }
       />
@@ -75,11 +75,11 @@ export default async function ItemsPage({
           Filter
         </Button>
         {filtered && (
-          <Link href="/items">
-            <Button type="button" variant="ghost">
+          <Button asChild type="button" variant="ghost">
+            <Link href="/items">
               Clear
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         )}
       </form>
 
@@ -94,11 +94,11 @@ export default async function ItemsPage({
           }
           action={
             !filtered && (
-              <Link href="/items/new">
-                <Button variant="primary">
+              <Button asChild variant="primary">
+                <Link href="/items/new">
                   <Plus className="size-4" /> New item
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )
           }
         />

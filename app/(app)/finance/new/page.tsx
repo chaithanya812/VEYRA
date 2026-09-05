@@ -277,11 +277,11 @@ export default function NewContractPage() {
 
           {/* Sticky footer action bar (DESIGN-DIRECTION §5): Cancel ghost-left, primary red-right. */}
           <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4">
-            <Link href="/finance">
-              <Button type="button" variant="ghost">
+            <Button asChild type="button" variant="ghost">
+              <Link href="/finance">
                 Cancel
-              </Button>
-            </Link>
+              </Link>
+            </Button>
             <Button type="submit" variant="primary" disabled={pending}>
               {pending ? "Creating…" : "Create contract"}
             </Button>

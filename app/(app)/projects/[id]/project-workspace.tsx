@@ -130,11 +130,11 @@ function ProjectHeader({ data }: { data: ProjectWorkspaceData }) {
               {health.label}
             </p>
           </div>
-          <Link href={`/projects/${project.id}/report`}>
-            <Button variant="secondary" size="sm">
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/projects/${project.id}/report`}>
               <FileText className="size-4" /> View report
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </div>
     </div>
@@ -404,11 +404,11 @@ function MilestoneTable({ data }: { data: ProjectWorkspaceData }) {
         title="No plan yet"
         description="Milestones are how every other screen knows whether this project is on time — the list, the client report and the payment schedule all read them."
         action={
-          <Link href={`/projects/${data.project.id}/plan`}>
-            <Button variant="secondary" size="sm">
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/projects/${data.project.id}/plan`}>
               Open Project planning
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
     );
@@ -480,11 +480,11 @@ function ProcurementTable({ data }: { data: ProjectWorkspaceData }) {
         title="Nothing procured yet"
         description="An approved quotation can raise its material request in one click, or start one by hand — requests become RFQs, RFQs become orders, and this panel follows them."
         action={
-          <Link href={`/projects/${data.project.id}/procurement`}>
-            <Button variant="secondary" size="sm">
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/projects/${data.project.id}/procurement`}>
               Open Procurement
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
     );
