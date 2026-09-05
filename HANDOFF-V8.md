@@ -1,3 +1,8 @@
+> # ⛔ SUPERSEDED BY `HANDOFF-V9.md`
+>
+> This file is kept only as the record of how Phases 11–12 were built. Its queue is finished and its
+> Parts 3–4 are spent unit briefs. **Read `HANDOFF-V9.md` instead.**
+
 # HANDOFF V8 — VEYRA
 
 **This is the current, authoritative handoff. It is the only one.** It supersedes `HANDOFF-V7.md`
