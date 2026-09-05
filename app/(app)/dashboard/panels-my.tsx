@@ -396,7 +396,10 @@ export function MyInfoPanel({ w }: { w: MyWorkspace }) {
 
         <div className="mt-3">
           {w.leave.length === 0 ? (
-            <Empty message="No leave requested" />
+            <Empty
+              message="No leave requested"
+              hint="Use “Request leave” above; it goes to your manager for approval."
+            />
           ) : (
             <List>
               {w.leave.map((l: LeaveRequest) => (

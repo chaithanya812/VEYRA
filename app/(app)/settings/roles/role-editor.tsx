@@ -309,11 +309,25 @@ function NewRoleButton({
         });
       }}
     >
-      <Field label="Role name">
-        <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
+      <Field label="Role name" htmlFor="new_role_name" required>
+        <Input
+          id="new_role_name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+          required
+        />
       </Field>
-      <Field label="Inherit from" hint="Starts with everything that role can do.">
-        <Select value={inherits} onChange={(e) => setInherits(e.target.value)}>
+      <Field
+        label="Inherit from"
+        htmlFor="new_role_inherits"
+        hint="Starts with everything that role can do."
+      >
+        <Select
+          id="new_role_inherits"
+          value={inherits}
+          onChange={(e) => setInherits(e.target.value)}
+        >
           <option value="">Nothing — start empty</option>
           {roles.map((r) => (
             <option key={r.id} value={r.id}>
@@ -362,8 +376,9 @@ function RoleMeta({
   return (
     <Card className="space-y-3 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Role name">
+        <Field label="Role name" htmlFor="role_name">
           <Input
+            id="role_name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={readOnly}
@@ -371,9 +386,11 @@ function RoleMeta({
         </Field>
         <Field
           label="Inherit from"
+          htmlFor="role_inherits"
           hint="This role also gets everything the parent can do."
         >
           <Select
+            id="role_inherits"
             value={inherits}
             onChange={(e) => setInherits(e.target.value)}
             disabled={readOnly}
@@ -390,9 +407,11 @@ function RoleMeta({
 
       <Field
         label="Description"
+        htmlFor="role_description"
         hint={`${description.length}/155 — what this role is for, in a sentence.`}
       >
         <Textarea
+          id="role_description"
           value={description}
           maxLength={155}
           rows={2}

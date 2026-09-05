@@ -45,7 +45,9 @@ export function AddAssetForm() {
 
         <div className="md:col-span-2">
           <Field label="Note" htmlFor="note">
-            <Textarea name="note" placeholder="Revision, scope, anything reviewers should know…" />
+            {/* The Field already said htmlFor="note"; the control had no id,
+                so the label pointed at nothing. */}
+            <Textarea id="note" name="note" placeholder="Revision, scope, anything reviewers should know…" />
           </Field>
         </div>
 

@@ -156,6 +156,7 @@ export function NewRfqForm({
           <input
             value={vendorQuery}
             onChange={(e) => setVendorQuery(e.target.value)}
+            aria-label="Filter vendors"
             placeholder="Filter vendors…"
             autoComplete="off"
             className="h-8 w-48 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] outline-none focus:border-[var(--color-red)]"

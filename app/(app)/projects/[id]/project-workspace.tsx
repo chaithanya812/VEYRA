@@ -301,8 +301,18 @@ function SummaryTab({ data }: { data: ProjectWorkspaceData }) {
                 it is made of, and Dues is billed less received on every screen.
               */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <Figure label="Funds received" value={inr(f.fundsReceived)} tone="green" />
-                <Figure label="Total disbursed" value={inr(f.totalDisbursed)} tone="red" />
+                {/*
+                  Both used to be toned — received green, disbursed red. Money
+                  going out is not one of red's five jobs (§2 rule 7): it is not
+                  the primary action, not nav, not destructive, not an alert and
+                  not the hero metric. It is a fact, and it sat in a grid of six
+                  facts where the other four were untoned, so the colour said
+                  "something is wrong here" about an ordinary payment. Green
+                  went with it for the same reason — the pair only read as a
+                  pair.
+                */}
+                <Figure label="Funds received" value={inr(f.fundsReceived)} />
+                <Figure label="Total disbursed" value={inr(f.totalDisbursed)} />
                 <Figure
                   label="Contracted"
                   value={inr(f.contracted)}

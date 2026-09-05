@@ -306,7 +306,12 @@ export function LeadInsightsView({ data }: { data: LeadInsightsData }) {
                 label: o.name,
                 value: o.count,
                 display: `${o.count} · ${inr(o.value)}`,
-                color: o.memberId ? undefined : "var(--color-red)",
+                // The Unassigned bar used to be red. That is red on a chart
+                // series (§2 rule 7's named offender) and it duplicated a red
+                // that already exists on this screen — the "Assign them" link
+                // in the band above, which is the actionable one. Two reds for
+                // one fact is how a closed list of five becomes six. The bar is
+                // labelled "Unassigned"; the label was always doing the work.
               }))}
             />
           )}

@@ -144,6 +144,30 @@ export function capabilityDef(key: string): CapabilityDef | null {
 }
 
 /**
+ * How a capability is NAMED to a person who has just been refused it.
+ *
+ * The Edit Role screen nests every capability three deep — group, then parent,
+ * then the label on the row itself — so a refusal that names fewer than three
+ * cannot be acted on. `billing.payment.view` used to read "View (Finance)",
+ * which sends the reader to a screen with three Finance groups and no clue
+ * which row to ask for; `billing.invoice.view` read "View (Invoice)", which
+ * says the same word twice. This returns the path exactly as the Edit Role
+ * screen draws it — `Finance → Payments → View` — and collapses the middle
+ * segment when parent and group are the same word, because "Invoice → Invoice
+ * → View" is noise, not precision.
+ *
+ * Unknown keys return null rather than a guess: a capability the registry does
+ * not know refuses everyone (§5a), and inventing a plausible name for it would
+ * send someone to look for a permission that does not exist.
+ */
+export function capabilityPath(key: string): string | null {
+  const def = capabilityDef(key);
+  if (!def) return null;
+  const segments = def.parent && def.parent !== def.group ? [def.group, def.parent] : [def.group];
+  return [...segments, def.label].join(" → ");
+}
+
+/**
  * Split a capability into the three columns `permissions` stores it in.
  *
  * Returns null for anything the registry does not know, so a caller cannot

@@ -80,8 +80,16 @@ export default async function ProjectsPage({
         </TileGrid>
       </div>
 
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
-        <Select name="stage" defaultValue={stage ?? ""} className="w-44">
+      {/* Keyed on the resolved stage: `defaultValue` applies on mount only, so
+          without this the control keeps the previous URL's stage after a soft
+          navigation and the next Filter press silently drops it (§11). */}
+      <form method="get" key={stage ?? ""} className="mb-4 flex flex-wrap items-end gap-3">
+        <Select
+          name="stage"
+          aria-label="Filter by stage"
+          defaultValue={stage ?? ""}
+          className="w-44"
+        >
           <option value="">All stages</option>
           {PROJECT_STAGES.map((s) => (
             <option key={s} value={s}>
@@ -107,11 +115,18 @@ export default async function ProjectsPage({
           title={stage ? "No projects in this stage" : "No projects yet"}
           description={
             stage
-              ? "Try a different stage or clear the filter."
+              ? `Nothing is in ${STAGE_LABELS[stage]} right now.`
               : "Create one here, or promote a won lead from Lead Management."
           }
           action={
-            !stage && (
+            /* A filtered empty told the reader to clear the filter and gave
+               them nothing to clear it with — the form is scrolled off above a
+               tall empty box. The way out belongs in the box. */
+            stage ? (
+              <Link href="/projects">
+                <Button variant="secondary">Show all stages</Button>
+              </Link>
+            ) : (
               <Link href="/projects/new">
                 <Button variant="primary">
                   <Plus className="size-4" /> New project

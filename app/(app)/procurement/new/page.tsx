@@ -186,6 +186,7 @@ export default function NewMaterialRequestPage() {
                       onKeyDown={(e) => {
                         if (e.key === "Escape") setOpenKey(null);
                       }}
+                      aria-label="Item"
                       placeholder="Search the catalogue…"
                       autoComplete="off"
                       className={cn(
@@ -272,6 +273,7 @@ export default function NewMaterialRequestPage() {
                 <input
                   value={r.remarks}
                   onChange={(e) => patchRow(r.key, { remarks: e.target.value })}
+                  aria-label="Remarks"
                   placeholder="Optional"
                   className="w-full rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] outline-none focus:border-[var(--color-red)]"
                 />

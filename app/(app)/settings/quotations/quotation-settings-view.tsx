@@ -178,7 +178,10 @@ export function QuotationSettingsView({
 
         <div className="mt-3">
           {terms.length === 0 ? (
-            <Empty message="No clauses yet" />
+            <Empty
+              message="No clauses yet"
+              hint="Use “Add clause” above. Clauses you mark auto-attach to every new quotation."
+            />
           ) : (
             <List>
               {terms.map((t) => (
@@ -249,7 +252,10 @@ export function QuotationSettingsView({
 
         <div className="mt-3">
           {prompts.length === 0 ? (
-            <Empty message="No prompts saved" />
+            <Empty
+              message="No prompts saved"
+              hint="Use “Add prompt” above to save a brief the BOQ generator can reuse."
+            />
           ) : (
             <List>
               {prompts.map((p) => (

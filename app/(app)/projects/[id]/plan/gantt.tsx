@@ -86,7 +86,13 @@ export function GanttChart({
               <div className="pointer-events-none absolute inset-y-0 left-[240px] right-4 z-10">
                 <span
                   style={{ left: `${chart.todayPct}%` }}
-                  className="absolute inset-y-0 w-px -translate-x-1/2 bg-[var(--color-red)] opacity-60"
+                  /* Ink, not red. Today is a reference line, not an alert, and
+                     this chart already spends red on the `late` bars it runs
+                     through — a red rule crossing red bars made the one that
+                     means "someone must act" indistinguishable from the one
+                     that means "it is Thursday". Its own label pill was already
+                     ink; the line now matches it. */
+                  className="absolute inset-y-0 w-px -translate-x-1/2 bg-[var(--color-ink)] opacity-50"
                 />
                 <span
                   style={{ left: `${chart.todayPct}%` }}

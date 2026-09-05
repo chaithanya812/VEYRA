@@ -30,6 +30,7 @@ export function AddNoteForm({ projectId }: { projectId: string }) {
     >
       <Textarea
         name="note"
+        aria-label="Site update note"
         placeholder="Add a site update — progress, delay, material arrival…"
       />
       {error && <p className="text-sm text-[var(--color-red)]">{error}</p>}

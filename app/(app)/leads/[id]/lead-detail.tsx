@@ -1050,7 +1050,10 @@ function ActivityTab({
 
       <Section title="Timeline">
         {activities.length === 0 ? (
-          <Empty message="Nothing has happened yet" />
+          <Empty
+            message="Nothing has happened yet"
+            hint="Add a remark above, or log a call or follow-up — each one lands here."
+          />
         ) : (
           <List>
             {activities.map((a) => (

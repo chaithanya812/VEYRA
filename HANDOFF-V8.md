@@ -137,7 +137,7 @@ accounting export · the public tokenised vendor-onboarding form.
 
 ## 3. Where the build is
 
-**Phases 0–11 are complete, plus Phase 12 Units 1–2.** Only Phase 12 Units 3 and 4 remain (§8).
+**Phases 0–12 are COMPLETE.** Every unit in §8 is committed. There is no queue left — see §8 for what a next session might pick up instead.
 
 Every route below is built and working. **Do not rebuild any of it.**
 
@@ -251,7 +251,7 @@ node scripts/verify-storage.mjs
 ```
 
 **Current baseline — nothing may lower these:**
-tsc 0 · eslint 0 · **864 tests in 46 files** · **verify 208/208** · verify-storage 11/11 ·
+tsc 0 · eslint 0 · **868 tests in 46 files** · **verify 208/208** · verify-storage 11/11 ·
 build clean.
 
 `next build` passing does NOT mean the typecheck passes — Next skips test files. Run both.
@@ -370,6 +370,24 @@ Dispatch **in order, one agent each**. Do not read the briefs — hand over the 
 across `/finance/receivables`, `/finance/payments`, `/projects/[id]/finance`, `/projects/[id]/payments`
 and the project Summary band.
 
+> **THE QUEUE IS EMPTY.** Every unit below is committed. What a next session might pick up, in
+> rough order of value — none of it is scheduled, and the first two are the owner's call, not an
+> agent's:
+> 1. **Deploy.** §9 — Phases 9-12 are committed locally and NOT deployed; the owner authorised
+>    publishing through Phase 8 only. Production also still lacks the `GEMINI_*` / `AI_*` env vars,
+>    so every AI surface fails there.
+> 2. **The still-open decisions in §10** — vendor documents (2), the marketplace (3), the goods-value
+>    method (4), the legacy `wfh` leave rows (5), whether visit requests are approvable (6), applying
+>    for leave on someone's behalf (7), and the sales owner column (9).
+> 3. **`<Link><Button>` is two tab stops and a button inside a link** (invalid HTML), across ~50 call
+>    sites. Found by Unit 4, not fixed because it needs a `Button asChild` / `buttonClasses` API
+>    change. This is the largest remaining a11y item.
+> 4. **Saved views cover only `/finance/payments` and `/finance/receivables`.** `/finance/petty` is
+>    mixed-permission and `/reports` has no URL filters yet.
+> 5. **The demo tenant has ONE project and ZERO `project_files`**, so several finished screens cannot
+>    be demonstrated — the matrix is a one-row table and the file viewer's Audits tab has nothing to
+>    show. Seeding a second project would make more of the build demonstrable than any new code.
+
 ### Phase 12 — Reports & polish · **Part 4**
 
 | Unit | What | Notes |
@@ -377,7 +395,7 @@ and the project Summary band.
 | ~~1~~ | ~~Wire the six Reports permission groups~~ | **DONE — committed `b61e791`** |
 | ~~2~~ | ~~Saved views · column chooser · CSV export~~ | **DONE. Migration 0043 applied.** Adopted on `/finance/payments` and `/finance/receivables` only — **`/finance/petty` and `/reports` are NOT done** (petty is mixed-permission, `/reports` has no URL filters yet). A saved view is a named query string; the chosen columns ride in it. |
 | ~~3~~ | ~~Skeleton loading + designed empty states on every list~~ | **DONE** (in two halves — `f960a63` and the commit after it). `components/ui/skeleton.tsx` is the ONE skeleton vocabulary — no `"use client"`, so `loading.tsx` can import it. **Compose it; never write a third.** 15 routes now carry a `loading.tsx` with a route-specific `sr-only` label. `EmptyState` gained `compact`, and `workspace-ui.tsx`'s `Empty` (21 call sites) delegates to it, so the copy rules live in one place. |
-| 4 | Accessibility floor + full red-discipline audit | last, so it audits finished screens. **Two things Unit 3 found and left for you.** (a) **Dead-end empty copy** — `/projects` and `/orders` filtered empties say "clear the filter" with no Clear control in the box, and ~8 `Empty` call sites are bare facts with no way forward ("No leave requested", "No claims awaiting you", "No clauses yet", "No prompts saved", "Nothing has happened yet" — panels-my/team, settings/quotations, lead-detail). An empty state that only reports emptiness leaves the reader where it found them. (b) **`/vendors` and `/orders` GET filter forms use `defaultValue`/`defaultChecked` with NO `key`** — the §11 family. It does not reproduce today because their Reset is a hard navigation, but it is latent the moment either becomes a soft nav; key them like the `/finance/*` forms. **Known defect to fix here:** `components/ui/permission-limited.tsx` renders `${label} (${group})` and DROPS `parent`, so `billing.payment.view` refuses with "It needs the View (Finance) permission" — the word *Payments* is lost, and `billing.invoice.view` would read "View (Invoice)". Cosmetic, but it makes the refusal hard to act on, and it is wrong on **every** gated screen. Found in Phase 11 Unit 2; not fixed there because it changes copy app-wide. |
+| ~~4~~ | ~~Accessibility floor + full red-discipline audit~~ | **DONE.** Refusals now name all three levels (`Finance → Payments → View`) via the new pure `capabilityPath()`. Four unkeyed GET filter forms fixed (the brief named two; there were four). Red fell, never grew. ~~**Two things Unit 3 found and left for you.**~~ *(both fixed)* (a) **Dead-end empty copy** — `/projects` and `/orders` filtered empties say "clear the filter" with no Clear control in the box, and ~8 `Empty` call sites are bare facts with no way forward ("No leave requested", "No claims awaiting you", "No clauses yet", "No prompts saved", "Nothing has happened yet" — panels-my/team, settings/quotations, lead-detail). An empty state that only reports emptiness leaves the reader where it found them. (b) **`/vendors` and `/orders` GET filter forms use `defaultValue`/`defaultChecked` with NO `key`** — the §11 family. It does not reproduce today because their Reset is a hard navigation, but it is latent the moment either becomes a soft nav; key them like the `/finance/*` forms. **Known defect to fix here:** `components/ui/permission-limited.tsx` renders `${label} (${group})` and DROPS `parent`, so `billing.payment.view` refuses with "It needs the View (Finance) permission" — the word *Payments* is lost, and `billing.invoice.view` would read "View (Invoice)". Cosmetic, but it makes the refusal hard to act on, and it is wrong on **every** gated screen. Found in Phase 11 Unit 2; not fixed there because it changes copy app-wide. |
 
 ---
 

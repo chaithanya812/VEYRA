@@ -474,7 +474,10 @@ export function ApprovalsPanel({
         description="A rejection needs a reason — the same rule the approval engine applies everywhere."
       >
         {team.pendingLeave.length === 0 ? (
-          <Empty message="No leave awaiting you" />
+          <Empty
+            message="No leave awaiting you"
+            hint="Requests appear here the moment someone reporting to you sends one."
+          />
         ) : (
           <List>
             {team.pendingLeave.map((l) => (
@@ -502,7 +505,10 @@ export function ApprovalsPanel({
 
       <Section title="Expense claims">
         {team.pendingExpenses.length === 0 ? (
-          <Empty message="No claims awaiting you" />
+          <Empty
+            message="No claims awaiting you"
+            hint="Filed expenses land here for approval. Settled ones are on Petty Finance."
+          />
         ) : (
           <List>
             {team.pendingExpenses.map((e) => (

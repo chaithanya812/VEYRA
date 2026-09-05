@@ -48,17 +48,22 @@ export default async function ItemsPage({
       />
 
       {/* Filter bar — server-rendered GET form, no client JS. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
+      <form
+        method="get"
+        key={`${q ?? ""}|${type ?? ""}`}
+        className="mb-4 flex flex-wrap items-end gap-3"
+      >
         <div className="relative flex-1 min-w-52">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-ink-disabled)]" />
           <Input
             name="q"
+            aria-label="Search items"
             defaultValue={q ?? ""}
             placeholder="Search name, code, category, brand…"
             className="pl-9"
           />
         </div>
-        <Select name="type" defaultValue={type ?? ""} className="w-44">
+        <Select name="type" aria-label="Item type" defaultValue={type ?? ""} className="w-44">
           <option value="">All types</option>
           {ITEM_TYPES.map((t) => (
             <option key={t} value={t}>

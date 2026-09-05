@@ -37,9 +37,14 @@ export default async function DesignPage({
       <AddAssetForm />
 
       {/* Project filter — server-rendered GET form, no client JS. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-3">
+      <form
+        method="get"
+        key={project ?? ""}
+        className="mb-4 flex flex-wrap items-end gap-3"
+      >
         <Input
           name="project"
+          aria-label="Filter by project label"
           defaultValue={project ?? ""}
           placeholder="Filter by project label…"
           className="w-64"

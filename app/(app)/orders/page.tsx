@@ -86,8 +86,16 @@ export default async function OrdersPage({
       />
 
       {/* Filter bar — server-rendered GET form, no client JS. Order state is
-          multi-select (checkboxes); payment + vendor are single. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3">
+          multi-select (checkboxes); payment + vendor are single.
+          Keyed on the resolved filter: `defaultChecked`/`defaultValue` apply on
+          mount only, so without this the controls keep the previous URL's state
+          after a soft navigation and the next Filter press silently drops a
+          filter (§11). Today's Reset is a hard nav, which hid it. */}
+      <form
+        method="get"
+        key={`${selOs.join(",")}|${ps ?? ""}|${vendorId ?? ""}`}
+        className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3"
+      >
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <legend className="mb-1 w-full text-[13px] font-medium text-[var(--color-ink-secondary)]">
             Order state
@@ -145,11 +153,17 @@ export default async function OrdersPage({
           title={filtered ? "No orders match" : "No purchase orders yet"}
           description={
             filtered
-              ? "Try a different state or clear the filter."
+              ? "No order is in every state, payment state and vendor you picked."
               : "Raise a standalone PO against a preferred vendor — lines carry your rates."
           }
           action={
-            !filtered && (
+            /* The way out of a filtered empty belongs inside the box — the
+               filter bar is scrolled off above it. */
+            filtered ? (
+              <Link href="/orders">
+                <Button variant="secondary">Clear all filters</Button>
+              </Link>
+            ) : (
               <Link href="/orders/new">
                 <Button variant="primary">
                   <Plus className="size-4" /> Create Order

@@ -293,6 +293,7 @@ export function ClientVisibleToggle({
   name,
   disabled,
   compact,
+  readOnly,
 }: {
   checked: boolean;
   onChange?: (next: boolean) => void;
@@ -300,6 +301,17 @@ export function ClientVisibleToggle({
   name?: string;
   disabled?: boolean;
   compact?: boolean;
+  /**
+   * Render the chip, not a control — for the case where something OUTSIDE
+   * already is the control. `/projects/[id]/plan` wraps this in a
+   * `<button type="submit">`, and a `<button>` inside a `<button>` is invalid
+   * HTML: the parser hoists the inner one out, so the submit button was left
+   * with no accessible name at all and the a11y tree showed twelve nameless
+   * buttons on that one table. Read-only also reads `checked` straight through
+   * instead of holding it in state, so it can never disagree with the row it
+   * is describing after a re-render (§11).
+   */
+  readOnly?: boolean;
 }) {
   const [on, setOn] = useState(checked);
   const toggle = useCallback(() => {
@@ -309,6 +321,32 @@ export function ClientVisibleToggle({
       return !prev;
     });
   }, [disabled, onChange]);
+
+  const shown = readOnly ? checked : on;
+  const chip = cn(
+    "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50",
+    compact && "px-1.5",
+    shown
+      ? "border-[color-mix(in_srgb,var(--color-green)_25%,white)] bg-[var(--color-green-tint)] text-[var(--color-green)]"
+      : "border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-[var(--color-ink-secondary)]",
+  );
+  const face = (
+    <>
+      {shown ? <Eye aria-hidden className="size-3" /> : <EyeOff aria-hidden className="size-3" />}
+      {/* Compact drops the word visually but never from the accessibility
+          tree: the state must not be carried by the icon and the tint alone. */}
+      <span className={compact ? "sr-only" : undefined}>{shown ? "Visible" : "Hidden"}</span>
+    </>
+  );
+
+  if (readOnly) {
+    return (
+      <>
+        {name && <input type="hidden" name={name} value={shown ? "true" : "false"} />}
+        <span className={chip}>{face}</span>
+      </>
+    );
+  }
 
   return (
     <>
@@ -320,16 +358,9 @@ export function ClientVisibleToggle({
         aria-label="Visible to the client"
         disabled={disabled}
         onClick={toggle}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50",
-          compact && "px-1.5",
-          on
-            ? "border-[color-mix(in_srgb,var(--color-green)_25%,white)] bg-[var(--color-green-tint)] text-[var(--color-green)]"
-            : "border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-[var(--color-ink-secondary)]",
-        )}
+        className={chip}
       >
-        {on ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
-        {!compact && (on ? "Visible" : "Hidden")}
+        {face}
       </button>
     </>
   );

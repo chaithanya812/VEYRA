@@ -59,7 +59,12 @@ export function MilestoneCell({
         </span>
 
         <span className="inline-flex items-center gap-1 text-[12px] font-medium tabular text-[var(--color-ink)]">
+          {/* Sighted readers get the icon and the red bar. Everything that
+              carried "behind" was either colour or an aria-hidden glyph, so
+              the judgement itself was inaudible — the two percentages were
+              there but the cell's own verdict was not. */}
           {behind && <AlertTriangle aria-hidden className="size-3 text-[var(--color-red)]" />}
+          <span className="sr-only">{behind ? "Behind schedule, " : "On track, "}</span>
           {r.actualPct}%
         </span>
         <span className="text-[11px] tabular text-[var(--color-ink-secondary)]">

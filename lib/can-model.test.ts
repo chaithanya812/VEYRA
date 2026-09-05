@@ -3,6 +3,7 @@ import {
   CAPABILITIES,
   can,
   capabilityDef,
+  capabilityPath,
   capabilityTree,
   enableAllKeys,
   isCapability,
@@ -339,5 +340,33 @@ describe("resolveActor", () => {
     expect(r.error).toBe("cycle");
     expect(can(r, "leads.lead.view")).toBe(false);
     expect(can(r, "vendors.vendor.delete")).toBe(false);
+  });
+});
+
+describe("capabilityPath", () => {
+  it("names all three levels, so the refusal can be acted on", () => {
+    // The defect this replaced: "View (Finance)" dropped the word Payments,
+    // which is the only part that says which row to ask an admin for.
+    expect(capabilityPath("billing.payment.view")).toBe("Finance → Payments → View");
+  });
+
+  it("collapses the middle segment when parent repeats the group", () => {
+    expect(capabilityPath("billing.invoice.view")).toBe("Invoice → View");
+    expect(capabilityPath("leads.lead.view")).toBe("Leads → View");
+  });
+
+  it("returns null for a key the registry does not know", () => {
+    // An unknown capability refuses everyone; naming it anyway would send
+    // someone hunting for a permission that does not exist.
+    expect(capabilityPath("billing.payment.teleport")).toBeNull();
+  });
+
+  it("every registered capability has a path, and it ends in its own label", () => {
+    for (const c of CAPABILITIES) {
+      const path = capabilityPath(c.key);
+      expect(path, c.key).toBeTruthy();
+      expect(path!.endsWith(c.label), c.key).toBe(true);
+      expect(path!.startsWith(c.group), c.key).toBe(true);
+    }
   });
 });

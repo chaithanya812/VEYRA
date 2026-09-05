@@ -31,13 +31,26 @@ export function Field({
         className="text-[13px] font-medium text-[var(--color-ink-secondary)]"
       >
         {label}
-        {required && <span className="text-[var(--color-red)]"> *</span>}
+        {/* Two fixes in one marker. The asterisk was RED, which is a sixth job
+            for red (§2 rule 7) — "this field is required" is not an alert, and
+            on a long form it painted red down the whole label column, so the
+            one real red on the page had to compete with it. And a bare `*` is
+            announced as "star" or skipped entirely, so the only carrier of
+            "required" was a glyph a screen reader does not explain. */}
+        {required && (
+          <>
+            <span aria-hidden className="text-[var(--color-ink-disabled)]"> *</span>
+            <span className="sr-only"> (required)</span>
+          </>
+        )}
       </label>
       {children}
       {hint && !error && (
         <p className="text-xs text-[var(--color-ink-secondary)]">{hint}</p>
       )}
-      {error && <p className="text-xs text-[var(--color-red)]">{error}</p>}
+      {/* `role="alert"` so a validation failure is announced, not just painted.
+          The words carry the meaning; red is job four, a genuine alert. */}
+      {error && <p role="alert" className="text-xs text-[var(--color-red)]">{error}</p>}
     </div>
   );
 }

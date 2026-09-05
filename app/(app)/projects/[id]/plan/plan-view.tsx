@@ -519,8 +519,21 @@ function MilestoneRow({
             name="client_visible"
             value={milestone.client_visible ? "false" : "true"}
           />
-          <button type="submit" className="cursor-pointer">
-            <ClientVisibleToggle checked={milestone.client_visible} />
+          {/* The submit button is the control; the chip inside it is now a
+              span (see `readOnly`). Before this, a nested <button> left the
+              submit with no accessible name — twelve nameless buttons in one
+              table — and the label says what pressing it DOES, not what the
+              row currently is. */}
+          <button
+            type="submit"
+            className="cursor-pointer"
+            aria-label={
+              milestone.client_visible
+                ? `Hide ${milestone.name} from the client`
+                : `Show ${milestone.name} to the client`
+            }
+          >
+            <ClientVisibleToggle readOnly checked={milestone.client_visible} />
           </button>
         </form>
       </td>
@@ -583,7 +596,13 @@ function AddMilestoneDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="primary" size="sm">
+        {/* Secondary, not primary. This screen had TWO filled red buttons in
+            one view — `Add scope` in the page header and this one — which is
+            §2 rule 7's first named offender: one primary action per view, and
+            two reds means neither is the primary. `Add scope` keeps the red
+            because it is the page's action; this now matches `Start from a
+            template` beside it, which is the pair it actually belongs to. */}
+        <Button variant="secondary" size="sm">
           <Plus className="size-4" /> Add milestone
         </Button>
       </DialogTrigger>

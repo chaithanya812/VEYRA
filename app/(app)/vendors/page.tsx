@@ -105,8 +105,25 @@ export default async function VendorsPage({
       />
 
       {/* The frame's filter band. A GET form: no client JS, and the filtered
-          view is a URL somebody can send to a colleague. */}
-      <form method="get" className="mb-4 flex flex-wrap items-end gap-2">
+          view is a URL somebody can send to a colleague.
+          Keyed on the RESOLVED filter: `defaultValue`/`defaultChecked` apply on
+          mount only, so without this the eight controls keep the previous URL's
+          state after a soft navigation and the next Filter press silently drops
+          one (§11). Today's Reset is a hard nav, which hid it. */}
+      <form
+        method="get"
+        key={[
+          filter.category ?? "",
+          workingModel ?? "",
+          status ?? "",
+          filter.country ?? "",
+          filter.state ?? "",
+          filter.city ?? "",
+          filter.query ?? "",
+          filter.activeOnly ? "1" : "",
+        ].join("|")}
+        className="mb-4 flex flex-wrap items-end gap-2"
+      >
         <FilterSelect name="category" label="Category" value={sp.category}>
           {options.categories.map((c) => (
             <option key={c} value={c}>
@@ -115,7 +132,7 @@ export default async function VendorsPage({
           ))}
         </FilterSelect>
 
-        <FilterSelect name="model" label="Working Model" value={sp.model}>
+        <FilterSelect name="model" label="Working Model" value={workingModel}>
           {WORKING_MODELS.map((m) => (
             <option key={m} value={m}>
               {WORKING_MODEL_LABELS[m]}
@@ -123,7 +140,7 @@ export default async function VendorsPage({
           ))}
         </FilterSelect>
 
-        <FilterSelect name="status" label="Status" value={sp.status}>
+        <FilterSelect name="status" label="Status" value={status}>
           {VENDOR_STATUSES.map((s) => (
             <option key={s} value={s}>
               {VENDOR_STATUS_META[s].label}

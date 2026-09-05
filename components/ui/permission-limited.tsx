@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { capabilityDef } from "@/lib/can-model";
+import { capabilityPath } from "@/lib/can-model";
 
 /**
  * What a screen renders when the caller lacks the capability it needs.
@@ -28,8 +28,11 @@ export function PermissionLimited({
   hint?: string;
   action?: ReactNode;
 }) {
-  const def = capabilityDef(capability);
-  const what = def ? `${def.label} (${def.group})` : "this area";
+  // The full Edit-Role path, not `label (group)`. The old form dropped
+  // `parent`, so `billing.payment.view` refused with "View (Finance)" — the
+  // word Payments, the only part that says which row to ask for, was thrown
+  // away. See `capabilityPath`.
+  const what = capabilityPath(capability);
 
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] border border-dashed border-[var(--color-border-strong)] py-16 px-6 text-center">
@@ -46,8 +49,15 @@ export function PermissionLimited({
       <div>
         <p className="font-medium text-[var(--color-ink)]">You do not have access to this</p>
         <p className="mt-1 text-sm text-[var(--color-ink-secondary)]">
-          It needs the <span className="font-medium text-[var(--color-ink)]">{what}</span>{" "}
-          permission. An admin can grant it in Settings → Roles &amp; permissions.
+          {what ? (
+            <>
+              It needs the <span className="font-medium text-[var(--color-ink)]">{what}</span>{" "}
+              permission.{" "}
+            </>
+          ) : (
+            <>You do not have permission for this area. </>
+          )}
+          An admin can grant it in Settings → Roles &amp; permissions.
         </p>
         {hint && <p className="mt-1 text-sm text-[var(--color-ink-secondary)]">{hint}</p>}
       </div>
