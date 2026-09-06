@@ -25,8 +25,15 @@ const DEMO_ORG_ID = "d46a53af-58b1-4ed7-87be-c675e5803802";
 export async function getViewer(): Promise<Viewer | null> {
   const user = await getUser();
 
+  // ⛔ TEMPORARY (login removed) — the demo tenant is pinned, exactly as in
+  // `getOrgContext()`. These two MUST agree: this one names the workspace in
+  // the top bar while that one scopes every read, so letting a stale auth
+  // cookie steer one and not the other prints one org's name over another
+  // org's data. See the long note in lib/data/with-org.ts.
+  const AUTH_ENABLED = false;
+
   // Authenticated path: the user's own active membership.
-  if (user) {
+  if (AUTH_ENABLED && user) {
     const { data: member } = await admin
       .from("org_members")
       .select("org_id, role")

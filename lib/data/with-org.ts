@@ -1,7 +1,6 @@
 import "server-only";
 import { cache } from "react";
 import { admin } from "@/lib/supabase/admin";
-import { getUser } from "@/lib/auth/session";
 import type { TenantTable } from "./tables";
 
 /**
@@ -56,29 +55,26 @@ export interface OrgContext {
  * request; it is request-scoped, so tenant isolation is unchanged.
  */
 export const getOrgContext = cache(async function getOrgContext(): Promise<OrgContext> {
-  const user = await getUser();
-  if (user) {
-    const { data, error } = await admin
-      .from("org_members")
-      .select("id, org_id, role")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (data) {
-      return {
-        orgId: data.org_id as string,
-        userId: user.id,
-        role: data.role as string,
-        memberId: data.id as string,
-      };
-    }
-  }
-
-  // TEMPORARY (login removed) — no session: operate as the demo tenant. Restore
-  // auth by throwing NotAuthenticatedError here instead. See top-of-file note.
+  // ⛔ TEMPORARY (login removed) — THE DEMO TENANT IS PINNED.
+  //
+  // This used to prefer the authenticated user's own membership and only fall
+  // back to the demo tenant. With the password form gone there is no way to
+  // choose an account, but a Supabase auth cookie from an earlier sign-up
+  // SURVIVES in the browser — so whoever had one silently landed in their own
+  // workspace instead of the demo. That is how the owner ended up looking at an
+  // org literally named "1", with one project worth ₹10,000 and no leads, and
+  // concluded the demo data was missing. It was not missing; they were in the
+  // wrong tenant, and `ensureDemoProfiles()` had seeded that org with the same
+  // person names, which made it look like the demo.
+  //
+  // The session picker at /login is now the only way in, and it offers exactly
+  // one workspace, so the context must resolve to that same workspace for
+  // everyone — cookie or no cookie. The auth branch is deliberately not
+  // consulted while login is removed.
+  //
+  // TO RESTORE AUTH: put the `getUser()` lookup back ABOVE this block (see git
+  // history for `9fda188`), and delete this note. Isolation is unchanged either
+  // way — every read below is still filtered by whatever orgId resolves here.
   const { data: demo, error: demoErr } = await admin
     .from("org_members")
     .select("id, org_id, role, user_id")
