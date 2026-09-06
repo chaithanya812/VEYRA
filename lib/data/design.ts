@@ -34,11 +34,19 @@ export {
   type SignoffStatus,
 } from "@/lib/design-model";
 
-export async function listAssets(projectLabel?: string): Promise<Asset[]> {
+/**
+ * The vault, optionally narrowed to one project.
+ *
+ * Filters on `project_id`, not on the typed `project_label` it used to match:
+ * a label filter missed every row whose label was spelled differently and
+ * matched rows from a project of the same name in spirit only. `project_id` is
+ * the FK migration 0028 added and backfilled.
+ */
+export async function listAssets(projectId?: string): Promise<Asset[]> {
   const { db } = await withOrg();
   // Apply .eq filters before .order (PostgrestTransformBuilder has no .eq).
   let q = db.table("assets").select("*");
-  if (projectLabel) q = q.eq("project_label", projectLabel);
+  if (projectId) q = q.eq("project_id", projectId);
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as Asset[];
@@ -97,7 +105,8 @@ export async function getAsset(
 }
 
 export async function createAsset(input: {
-  project_label?: string | null;
+  /** The real link. `project_label` is derived from it, never typed. */
+  project_id?: string | null;
   name: string;
   kind: AssetKind;
   url?: string | null;
@@ -109,8 +118,22 @@ export async function createAsset(input: {
   if (gate.error) return { error: gate.error };
   const { db, ctx } = await withOrg();
 
+  // Stamp the label from the chosen project's real name. PLAN-V4 §7.3 keeps
+  // `project_label` as a DISPLAY FALLBACK for pre-0028 rows; it is written here
+  // so old and new rows read the same, and it is never the link.
+  let projectLabel: string | null = null;
+  if (input.project_id) {
+    const { data: proj } = await db
+      .table("projects")
+      .select("name")
+      .eq("id", input.project_id)
+      .maybeSingle();
+    projectLabel = (proj as { name?: string } | null)?.name ?? null;
+  }
+
   const { data, error } = await db.table("assets").insert({
-    project_label: input.project_label ?? null,
+    project_id: input.project_id ?? null,
+    project_label: projectLabel,
     name: input.name,
     kind: input.kind,
     url: input.url ?? null,

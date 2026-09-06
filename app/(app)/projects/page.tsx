@@ -160,17 +160,39 @@ export default async function ProjectsPage({
                       ? dueVariance(project.handover_date)
                       : null;
                   return (
+                    // `relative` is what lets the project link below stretch
+                    // across the whole row — see the comment on that Link.
                     <tr
                       key={project.id}
-                      className="border-b border-[var(--color-border)] last:border-0 odd:bg-[var(--color-surface)] even:bg-[color-mix(in_srgb,var(--color-surface-sunken)_55%,white)] hover:bg-[var(--color-surface-sunken)]"
+                      className="relative cursor-pointer border-b border-[var(--color-border)] last:border-0 odd:bg-[var(--color-surface)] even:bg-[color-mix(in_srgb,var(--color-surface-sunken)_55%,white)] hover:bg-[var(--color-surface-sunken)]"
                     >
                       <td className="px-4 py-3 text-[var(--color-ink-secondary)]">
                         {project.client_name ?? "—"}
                       </td>
                       <td className="px-4 py-3">
+                        {/*
+                          THE WHOLE ROW OPENS THE PROJECT.
+
+                          This used to be a link on the name and nothing else,
+                          so the click target was exactly as wide as the text —
+                          on a project called "1" that is about six pixels, and
+                          it read as "clicking the project does nothing".
+
+                          The stretched-link pattern fixes the target without
+                          adding a second control: `after:absolute after:inset-0`
+                          expands THIS anchor over the whole `relative` row, so
+                          there is still one link, one tab stop and one href.
+                          Wrapping every cell in its own <Link> would give the
+                          keyboard eight stops for one destination — the same
+                          mistake as a <button> inside an <a> (§3.2).
+
+                          Nothing else in the row is interactive; if a cell ever
+                          gains a control, give it `relative z-10` so it sits
+                          above this overlay.
+                        */}
                         <Link
                           href={`/projects/${project.id}`}
-                          className="font-medium text-[var(--color-ink)] hover:underline"
+                          className="font-medium text-[var(--color-ink)] after:absolute after:inset-0 after:content-[''] hover:underline"
                         >
                           {project.name}
                         </Link>

@@ -4,12 +4,13 @@ import { useActionState } from "react";
 import { addSiteLogAction, type FormState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
+import { ProjectSelect, type ProjectOption } from "@/components/ui/project-select";
 import { Card } from "@/components/ui/primitives";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 /** Add-log form on the Daily logs tab — the tab's one red primary (§Design). */
-export function AddLogForm() {
+export function AddLogForm({ projects }: { projects: ProjectOption[] }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addSiteLogAction,
     undefined,
@@ -22,13 +23,7 @@ export function AddLogForm() {
       </h2>
       <form action={formAction} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Project" htmlFor="log_project" hint="Optional label">
-            <Input
-              id="log_project"
-              name="project_label"
-              placeholder="e.g. Malviya Nagar site"
-            />
-          </Field>
+          <ProjectSelect projects={projects} id="log_project" hint="Attach this to a job, or leave it company-wide" />
           <Field label="Date" htmlFor="log_date">
             <Input
               id="log_date"

@@ -18,7 +18,7 @@ const bomLineSchema = z.object({
 });
 
 const bomSchema = z.object({
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   title: z.string().min(1, "Title is required"),
   source_ref: z.string().optional(),
   notes: z.string().optional(),
@@ -47,7 +47,7 @@ export async function createBomAction(
   }
 
   const parsed = bomSchema.safeParse({
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     title: formData.get("title"),
     source_ref: formData.get("source_ref") || undefined,
     notes: formData.get("notes") || undefined,
@@ -58,7 +58,7 @@ export async function createBomAction(
   }
 
   const result = await addBom({
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     title: parsed.data.title,
     source_ref: parsed.data.source_ref ?? null,
     notes: parsed.data.notes ?? null,
@@ -92,7 +92,7 @@ const cutlistSchema = z.object({
     .regex(/^[0-9a-fA-F-]{36}$/, "BOM reference must be a valid id")
     .optional()
     .or(z.literal("")),
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   title: z.string().min(1, "Title is required"),
   board_material: z.string().optional(),
   board_length_mm: z.coerce.number().min(0).optional(),
@@ -118,7 +118,7 @@ export async function createCutlistAction(
 
   const parsed = cutlistSchema.safeParse({
     bom_id: String(formData.get("bom_id") ?? "").trim() || "",
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     title: formData.get("title"),
     board_material: formData.get("board_material") || undefined,
     board_length_mm: optionalNumber(formData.get("board_length_mm")),
@@ -137,7 +137,7 @@ export async function createCutlistAction(
 
   const result = await addCutlist({
     bom_id: parsed.data.bom_id || null,
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     title: parsed.data.title,
     board_material: parsed.data.board_material ?? null,
     board_length_mm: parsed.data.board_length_mm ?? null,

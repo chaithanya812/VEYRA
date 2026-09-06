@@ -297,17 +297,31 @@ export function LeadsTable({
               </thead>
               <tbody>
                 {shown.map((l, i) => (
+                  // `relative` anchors the stretched link on the name cell —
+                  // see the comment there.
                   <tr
                     key={l.id}
                     className={cn(
-                      "border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-sunken)]",
+                      "relative cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-sunken)]",
                       i % 2 === 1 && "bg-[color-mix(in_srgb,var(--color-surface-sunken)_40%,white)]",
                     )}
                   >
                     <td className="px-4 py-2.5">
+                      {/*
+                        THE WHOLE ROW OPENS THE LEAD. Previously the target was
+                        only as wide as the name text. `after:absolute
+                        after:inset-0` stretches THIS anchor over the `relative`
+                        row, so the row is clickable with one link and one tab
+                        stop rather than one <Link> per cell.
+
+                        ⚠ FollowUpCell renders its own link inside this row, so
+                        it carries `relative z-10` to sit ABOVE this overlay —
+                        otherwise "Add follow-up" would silently open the lead
+                        instead. Any future control in this row needs the same.
+                      */}
                       <Link
                         href={`/leads/${l.id}`}
-                        className="font-medium text-[var(--color-ink)] hover:underline"
+                        className="font-medium text-[var(--color-ink)] after:absolute after:inset-0 after:content-[''] hover:underline"
                       >
                         {l.name}
                       </Link>
@@ -460,9 +474,11 @@ function chipClass(tone: "neutral" | "green" | "amber" | "red"): string {
 function FollowUpCell({ lead }: { lead: LeadListRow }) {
   if (lead.followUpCount === 0 && lead.callCount === 0) {
     return (
+      // `relative z-10`: this sits inside a row whose name cell stretches a
+      // link across the whole row, and without it this control is unreachable.
       <Link
         href={`/leads/${lead.id}?tab=followups`}
-        className="inline-flex items-center gap-1 text-[13px] font-medium text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)] hover:underline"
+        className="relative z-10 inline-flex items-center gap-1 text-[13px] font-medium text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)] hover:underline"
       >
         <Plus className="size-3.5" /> Add follow-up
       </Link>

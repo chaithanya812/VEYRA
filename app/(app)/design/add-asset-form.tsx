@@ -6,10 +6,11 @@ import { createAssetAction } from "./actions";
 import { ASSET_KINDS, KIND_LABELS } from "@/lib/design-model";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { ProjectSelect, type ProjectOption } from "@/components/ui/project-select";
 import { Card } from "@/components/ui/primitives";
 
 /** Add-asset form — the one primary (red) action of the gallery view. */
-export function AddAssetForm() {
+export function AddAssetForm({ projects }: { projects: ProjectOption[] }) {
   const [state, formAction, pending] = useActionState<
     { error?: string } | undefined,
     FormData
@@ -35,9 +36,10 @@ export function AddAssetForm() {
           </Select>
         </Field>
 
-        <Field label="Project label" htmlFor="project_label" hint="Tag the asset to a project, e.g. Mehta Residence">
-          <Input id="project_label" name="project_label" />
-        </Field>
+        {/* Was a free-text "Project label". Typing a project name is how the
+            demo ended up with expense claims tagged to projects that do not
+            exist — see components/ui/project-select.tsx. */}
+        <ProjectSelect projects={projects} hint="Attach this drawing to a job, or leave it company-wide" />
 
         <Field label="Link (URL)" htmlFor="url" hint="Paste the link to the drawing/render — file storage is not wired in v1">
           <Input id="url" name="url" type="url" placeholder="https://…" />

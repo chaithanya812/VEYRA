@@ -4,11 +4,12 @@ import { useActionState } from "react";
 import { addPhotoAction, type FormState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { ProjectSelect, type ProjectOption } from "@/components/ui/project-select";
 import { Card } from "@/components/ui/primitives";
 
 /** Add-photo form on the Photos tab. Photos are pasted links in v1 — no
  *  uploads; the submit is secondary (this tab has no red primary). */
-export function AddPhotoForm() {
+export function AddPhotoForm({ projects }: { projects: ProjectOption[] }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     addPhotoAction,
     undefined,
@@ -21,13 +22,7 @@ export function AddPhotoForm() {
       </h2>
       <form action={formAction} className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Project" htmlFor="photo_project" hint="Optional label">
-            <Input
-              id="photo_project"
-              name="project_label"
-              placeholder="e.g. Malviya Nagar site"
-            />
-          </Field>
+          <ProjectSelect projects={projects} id="photo_project" hint="Attach this to a job, or leave it company-wide" />
           <Field label="Caption" htmlFor="photo_caption">
             <Input
               id="photo_caption"

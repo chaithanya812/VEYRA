@@ -16,7 +16,7 @@ export type FormState = { error?: string } | undefined;
 
 /* ── Daily site log (optional pasted photo URLs ride along) ─────────────────── */
 const logSchema = z.object({
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   log_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Log date must be a valid date")
@@ -38,7 +38,7 @@ export async function addSiteLogAction(
   const denied = await requireCan("projects.project.edit");
   if (denied) return denied;
   const parsed = logSchema.safeParse({
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     log_date: formData.get("log_date") || "",
     work_summary: formData.get("work_summary"),
     photo_url: formData.get("photo_url") || "",
@@ -49,7 +49,7 @@ export async function addSiteLogAction(
   }
 
   const result = await addSiteLog({
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     log_date: parsed.data.log_date || null,
     work_summary: parsed.data.work_summary,
     photos: parsed.data.photo_url
@@ -64,7 +64,7 @@ export async function addSiteLogAction(
 
 /* ── Photo feed ─────────────────────────────────────────────────────────────── */
 const photoSchema = z.object({
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   caption: z.string().optional(),
   url: z.string().min(1, "Image URL is required").url("URL must be valid"),
 });
@@ -76,7 +76,7 @@ export async function addPhotoAction(
   const denied = await requireCan("projects.project.edit");
   if (denied) return denied;
   const parsed = photoSchema.safeParse({
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     caption: formData.get("caption") || undefined,
     url: formData.get("url"),
   });
@@ -85,7 +85,7 @@ export async function addPhotoAction(
   }
 
   const result = await addPhoto({
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     caption: parsed.data.caption ?? null,
     url: parsed.data.url,
   });
@@ -97,7 +97,7 @@ export async function addPhotoAction(
 
 /* ── Attendance ─────────────────────────────────────────────────────────────── */
 const checkInSchema = z.object({
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   member_name: z.string().min(1, "Member name is required"),
   lat: z.coerce.number().min(-90).max(90).optional(),
   lng: z.coerce.number().min(-180).max(180).optional(),
@@ -113,7 +113,7 @@ export async function checkInAction(
   formData: FormData,
 ): Promise<FormState> {
   const parsed = checkInSchema.safeParse({
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     member_name: formData.get("member_name"),
     lat: optionalCoord(formData.get("lat")),
     lng: optionalCoord(formData.get("lng")),
@@ -129,7 +129,7 @@ export async function checkInAction(
   }
 
   const result = await checkIn({
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     member_name: parsed.data.member_name,
     lat: parsed.data.lat ?? null,
     lng: parsed.data.lng ?? null,
@@ -150,7 +150,7 @@ export async function checkOutAction(formData: FormData): Promise<void> {
 
 /* ── Measurement variance ─────────────────────────────────────────────────── */
 const varianceSchema = z.object({
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   item_name: z.string().min(1, "Item name is required"),
   uom: z.string().optional(),
   quoted_qty: z.string().min(1, "Quoted qty is required"),
@@ -165,7 +165,7 @@ export async function addVarianceAction(
   const denied = await requireCan("projects.project.edit");
   if (denied) return denied;
   const parsed = varianceSchema.safeParse({
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     item_name: formData.get("item_name"),
     uom: formData.get("uom") || undefined,
     quoted_qty: formData.get("quoted_qty"),
@@ -186,7 +186,7 @@ export async function addVarianceAction(
   }
 
   const result = await addVariance({
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     item_name: parsed.data.item_name,
     uom: parsed.data.uom ?? null,
     quoted_qty: quoted,

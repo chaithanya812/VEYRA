@@ -16,7 +16,7 @@ import type { AssetKind, SignoffStatus } from "@/lib/design-model";
 const createSchema = z.object({
   name: z.string().min(1, "Name is required"),
   kind: z.enum(ASSET_KINDS),
-  project_label: z.string().optional(),
+  project_id: z.string().uuid().optional(),
   url: z.string().optional(),
   note: z.string().optional(),
 });
@@ -30,7 +30,7 @@ export async function createAssetAction(
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind"),
-    project_label: formData.get("project_label") || undefined,
+    project_id: formData.get("project_id") || undefined,
     url: formData.get("url") || undefined,
     note: formData.get("note") || undefined,
   });
@@ -41,7 +41,7 @@ export async function createAssetAction(
   const result = await createAsset({
     name: parsed.data.name,
     kind: parsed.data.kind as AssetKind,
-    project_label: parsed.data.project_label ?? null,
+    project_id: parsed.data.project_id ?? null,
     url: parsed.data.url ?? null,
     note: parsed.data.note ?? null,
   });

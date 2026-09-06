@@ -10,6 +10,25 @@ import type {
 import { effectiveQty } from "@/lib/production-model";
 
 /**
+ * The display label for a chosen project. `project_id` is the link (0028);
+ * `project_label` survives only as a fallback for pre-0028 rows (PLAN-V4 §7.3),
+ * so it is DERIVED from the project here and never typed by a user.
+ */
+async function labelForProject(
+  db: Awaited<ReturnType<typeof withOrg>>["db"],
+  projectId: string | null | undefined,
+): Promise<string | null> {
+  if (!projectId) return null;
+  const { data } = await db
+    .table("projects")
+    .select("name")
+    .eq("id", projectId)
+    .maybeSingle();
+  return (data as { name?: string } | null)?.name ?? null;
+}
+
+
+/**
  * Production data module (FEATURE-REGISTER OPS-PROD-001) — BOM explosion and
  * the panel-wise Cutlist with grain direction + edge-banding, the factory
  * moat. Follows the Site reference pattern exactly: no table is touched
@@ -25,11 +44,11 @@ export type { Bom, BomLine, Cutlist, CutlistPanel };
 
 /* ── Bills of materials ────────────────────────────────────────────────────── */
 
-export async function listBoms(projectLabel?: string): Promise<Bom[]> {
+export async function listBoms(projectId?: string): Promise<Bom[]> {
   const { db } = await withOrg();
   // Apply .eq filters before .order (PostgrestTransformBuilder has no .eq).
   let q = db.table("boms").select("*");
-  if (projectLabel) q = q.eq("project_label", projectLabel);
+  if (projectId) q = q.eq("project_id", projectId);
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as Bom[];
@@ -62,7 +81,7 @@ export async function getBom(id: string): Promise<BomWithLines | null> {
 }
 
 export async function addBom(input: {
-  project_label?: string | null;
+  project_id?: string | null;
   title: string;
   source_ref?: string | null;
   notes?: string | null;
@@ -78,7 +97,8 @@ export async function addBom(input: {
   const { db, ctx } = await withOrg();
 
   const { data, error } = await db.table("boms").insert({
-    project_label: input.project_label?.trim() || null,
+    project_id: input.project_id ?? null,
+    project_label: await labelForProject(db, input.project_id),
     title: input.title.trim(),
     source_ref: input.source_ref?.trim() || null,
     notes: input.notes?.trim() || null,
@@ -114,11 +134,11 @@ export async function addBom(input: {
 /* ── Cutlists ──────────────────────────────────────────────────────────────── */
 
 export async function listCutlists(
-  projectLabel?: string,
+  projectId?: string,
 ): Promise<Cutlist[]> {
   const { db } = await withOrg();
   let q = db.table("cutlists").select("*");
-  if (projectLabel) q = q.eq("project_label", projectLabel);
+  if (projectId) q = q.eq("project_id", projectId);
   const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as Cutlist[];
@@ -174,7 +194,7 @@ function safeCount(v: unknown): number {
 
 export async function addCutlist(input: {
   bom_id?: string | null;
-  project_label?: string | null;
+  project_id?: string | null;
   title: string;
   board_material?: string | null;
   board_length_mm?: number | null;
@@ -203,7 +223,8 @@ export async function addCutlist(input: {
 
   const { data, error } = await db.table("cutlists").insert({
     bom_id: input.bom_id?.trim() || null,
-    project_label: input.project_label?.trim() || null,
+    project_id: input.project_id ?? null,
+    project_label: await labelForProject(db, input.project_id),
     title: input.title.trim(),
     board_material: input.board_material?.trim() || null,
     board_length_mm:

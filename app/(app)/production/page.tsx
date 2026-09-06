@@ -25,6 +25,7 @@ import {
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
 import { fmtDate } from "@/lib/utils";
 import { BomForm } from "./bom-form";
+import { listProjectOptions } from "@/lib/data/projects";
 import { CutlistForm } from "./cutlist-form";
 import { NestingForm, type NestableCutlist } from "./nesting-form";
 import { AdvancePanelButton, GenerateTagsForm } from "./panel-tags-form";
@@ -114,6 +115,8 @@ function BoardLayout({
 export default async function ProductionPage() {
   const boms = await listBoms();
   const cutlists = await listCutlists();
+  // One read, shared by both forms — they must offer the same projects.
+  const projects = await listProjectOptions();
 
   // Per-cutlist totals need their panels; small lists make this fine.
   const cutlistRows = await Promise.all(
@@ -174,7 +177,7 @@ export default async function ProductionPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-ink-secondary)]">
           Bills of materials
         </h2>
-        <BomForm />
+        <BomForm projects={projects} />
 
         {boms.length === 0 ? (
           <EmptyState
@@ -248,7 +251,7 @@ export default async function ProductionPage() {
           </div>
         )}
 
-        <CutlistForm />
+        <CutlistForm projects={projects} />
 
         {cutlists.length === 0 ? (
           <EmptyState

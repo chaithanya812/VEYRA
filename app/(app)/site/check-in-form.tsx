@@ -6,12 +6,13 @@ import { Crosshair } from "lucide-react";
 import { checkInAction, type FormState } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
+import { ProjectSelect, type ProjectOption } from "@/components/ui/project-select";
 import { Card } from "@/components/ui/primitives";
 
 /** Check-in form on the Attendance tab — the tab's one red primary. Geo
  *  coordinates auto-fill from the browser's GPS when allowed; manual entry
  *  stays possible for denied-permission fallbacks. */
-export function CheckInForm() {
+export function CheckInForm({ projects }: { projects: ProjectOption[] }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     checkInAction,
     undefined,
@@ -53,13 +54,7 @@ export function CheckInForm() {
               placeholder="e.g. Ramesh (carpenter lead)"
             />
           </Field>
-          <Field label="Project" htmlFor="ci_project" hint="Optional label">
-            <Input
-              id="ci_project"
-              name="project_label"
-              placeholder="e.g. Malviya Nagar site"
-            />
-          </Field>
+          <ProjectSelect projects={projects} id="ci_project" hint="Attach this to a job, or leave it company-wide" />
           <Field
             label="Latitude"
             htmlFor="ci_lat"

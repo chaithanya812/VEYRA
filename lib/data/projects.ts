@@ -55,6 +55,31 @@ export async function listProjects(filter?: {
   return (data ?? []) as unknown as Project[];
 }
 
+/**
+ * The projects a picker needs: id, name and whose job it is, cheapest read
+ * possible. Every module form that can attach work to a project uses this, so
+ * they all offer the same list in the same order.
+ *
+ * Ordered by name because a dropdown is scanned alphabetically, not by recency
+ * — `listProjects` orders by created_at for the table, which is a different
+ * question.
+ */
+export async function listProjectOptions(): Promise<
+  { id: string; name: string; client_name: string | null }[]
+> {
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("projects")
+    .select("id, name, client_name")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as unknown as {
+    id: string;
+    name: string;
+    client_name: string | null;
+  }[];
+}
+
 export async function projectPortfolio(): Promise<{
   total: number;
   portfolioValue: number;

@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
+import { ProjectSelect, type ProjectOption } from "@/components/ui/project-select";
 
 interface DraftPanel {
   panel_name: string;
@@ -56,7 +57,7 @@ const EDGE_FIELDS = [
  *  live area/banding preview runs the SAME pure helpers the hub renders
  *  (panelAreaSqm/panelBandingMm/cutlistTotals), so what you see while typing
  *  is exactly what the stored cutlist totals to. */
-export function CutlistForm() {
+export function CutlistForm({ projects }: { projects: ProjectOption[] }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     createCutlistAction,
     undefined,
@@ -117,13 +118,7 @@ export function CutlistForm() {
               placeholder="e.g. Bedroom wardrobe — shutters"
             />
           </Field>
-          <Field label="Project" htmlFor="cl_project" hint="Optional label">
-            <Input
-              id="cl_project"
-              name="project_label"
-              placeholder="e.g. Malviya Nagar site"
-            />
-          </Field>
+          <ProjectSelect projects={projects} id="cl_project" hint="Attach this cutlist to a job, or leave it company-wide" />
           <Field label="Board material" htmlFor="cl_board_material">
             <Input
               id="cl_board_material"

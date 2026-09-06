@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, Sparkles } from "lucide-react";
 import {
   listAssets,
   listSignoffs,
@@ -9,9 +9,10 @@ import {
 } from "@/lib/data/design";
 import { Button } from "@/components/ui/button";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
-import { Input } from "@/components/ui/field";
 import { fmtDate } from "@/lib/utils";
 import { AddAssetForm } from "./add-asset-form";
+import { listProjectOptions } from "@/lib/data/projects";
+import { projectOptionLabel } from "@/components/ui/project-select";
 
 export default async function DesignPage({
   searchParams,
@@ -21,10 +22,13 @@ export default async function DesignPage({
   const sp = await searchParams;
   const project = sp.project?.trim() || undefined;
 
-  const [assets, signoffs] = await Promise.all([
+  const [assets, signoffs, projects] = await Promise.all([
     listAssets(project),
     listSignoffs(),
+    listProjectOptions(),
   ]);
+  const projectName = new Map(projects.map((p) => [p.id, p.name]));
+  const activeProject = project ? projectName.get(project) : undefined;
   const current = latestSignoffByAsset(signoffs);
 
   return (
@@ -32,9 +36,16 @@ export default async function DesignPage({
       <PageHeader
         title="Design vault"
         subtitle="Drawings, renders and BOQs per project — reviewed with pin comments and gated by a formal sign-off."
+        actions={
+          <Button asChild variant="secondary">
+            <Link href="/design/prompts">
+              <Sparkles className="size-4" /> Prompt library
+            </Link>
+          </Button>
+        }
       />
 
-      <AddAssetForm />
+      <AddAssetForm projects={projects} />
 
       {/* Project filter — server-rendered GET form, no client JS. */}
       <form
@@ -42,13 +53,25 @@ export default async function DesignPage({
         key={project ?? ""}
         className="mb-4 flex flex-wrap items-end gap-3"
       >
-        <Input
-          name="project"
-          aria-label="Filter by project label"
-          defaultValue={project ?? ""}
-          placeholder="Filter by project label…"
-          className="w-64"
-        />
+        {/* Filters by project_id. The old text box matched `project_label`
+            exactly, so a filter only worked if you retyped the label the way
+            whoever added the asset had typed it. */}
+        <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-disabled)]">
+          Project
+          <select
+            name="project"
+            aria-label="Filter by project"
+            defaultValue={project ?? ""}
+            className="w-64 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)]"
+          >
+            <option value="">All projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {projectOptionLabel(p)}
+              </option>
+            ))}
+          </select>
+        </label>
         <Button type="submit" variant="secondary">
           Filter
         </Button>
@@ -64,10 +87,10 @@ export default async function DesignPage({
       {assets.length === 0 ? (
         <EmptyState
           icon={<ImageIcon className="size-8" />}
-          title={project ? "No assets for this project" : "The vault is empty"}
+          title={project ? `No assets for ${activeProject ?? "this project"}` : "The vault is empty"}
           description={
             project
-              ? "Try a different project label or clear the filter."
+              ? "Nothing has been added to this project yet — pick another, or clear the filter."
               : "Add your first drawing, render or BOQ above — reviewers comment with pins and approve it before site execution."
           }
         />

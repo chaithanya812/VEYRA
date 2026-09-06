@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
 import { fmtDate } from "@/lib/utils";
 import { AddLogForm } from "./log-form";
+import { listProjectOptions } from "@/lib/data/projects";
 import { AddPhotoForm } from "./photo-form";
 import { CheckInForm } from "./check-in-form";
 import { AddVarianceForm } from "./variance-form";
@@ -118,11 +119,14 @@ export default async function SitePage({
 /* ── Daily logs ─────────────────────────────────────────────────────────────── */
 
 async function LogsTab() {
-  const logs = await listSiteLogs();
+  const [logs, projects] = await Promise.all([
+    listSiteLogs(),
+    listProjectOptions(),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
-      <AddLogForm />
+      <AddLogForm projects={projects} />
 
       {logs.length === 0 ? (
         <EmptyState
@@ -159,12 +163,15 @@ async function LogsTab() {
 /* ── Photos ─────────────────────────────────────────────────────────────────── */
 
 async function PhotosTab() {
-  const photos = await listPhotos();
+  const [photos, projects] = await Promise.all([
+    listPhotos(),
+    listProjectOptions(),
+  ]);
 
   if (photos.length === 0) {
     return (
       <div className="flex flex-col gap-4">
-        <AddPhotoForm />
+        <AddPhotoForm projects={projects} />
         <EmptyState
           icon={<Camera className="size-8" />}
           title="No photos yet"
@@ -176,7 +183,7 @@ async function PhotosTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AddPhotoForm />
+      <AddPhotoForm projects={projects} />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {photos.map((p) => (
           <Card key={p.id} className="flex flex-col overflow-hidden">
@@ -216,11 +223,14 @@ async function PhotosTab() {
 /* ── Attendance ─────────────────────────────────────────────────────────────── */
 
 async function AttendanceTab() {
-  const rows = await listAttendance();
+  const [rows, projects] = await Promise.all([
+    listAttendance(),
+    listProjectOptions(),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
-      <CheckInForm />
+      <CheckInForm projects={projects} />
 
       {rows.length === 0 ? (
         <EmptyState
