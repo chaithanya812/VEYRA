@@ -261,7 +261,24 @@ describe("the tier floor", () => {
     expect(can(r, "procurement.mr.approve")).toBe(false);
     expect(can(r, "hr.leave.approve")).toBe(false);
     expect(can(r, "billing.cost.view")).toBe(false);
-    expect(can(r, "reports.financial.view")).toBe(false);
+  });
+
+  /**
+   * Owner's call, 2026-09-06. `reports.*` used to be withheld from this tier,
+   * and the exclusion was theatre: the Accounting screens gate on
+   * `billing.payment.view`, which this tier HAS, and `/finance/receivables` is
+   * a strict superset of the Receivables Ageing report it was refused. The
+   * exclusion is gone rather than left to imply a protection it never gave.
+   *
+   * This test exists so that reinstating it is a deliberate act with a failing
+   * assertion attached, not a quiet edit to a filter chain.
+   */
+  it("a member CAN read reports — the money is already on the Accounting screens", () => {
+    const r = resolveTier("member");
+    expect(can(r, "reports.financial.view")).toBe(true);
+    expect(can(r, "reports.payment.view")).toBe(true);
+    // What the tier still refuses is acting, not seeing.
+    expect(can(r, "billing.payment.approve")).toBe(false);
   });
 
   it("an unknown or missing tier denies", () => {

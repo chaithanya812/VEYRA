@@ -3,8 +3,22 @@ import { getSubscription, usageSummary, isReadOnly } from "@/lib/data/subscripti
 import { statusTone, statusLabel, metricLabel } from "@/lib/subscription-ui";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
 import { inr, fmtDate } from "@/lib/utils";
+import { can } from "@/lib/data/permissions";
+import { PermissionLimited } from "@/components/ui/permission-limited";
 
+
+/**
+ * Read guard. These figures are the same ones `/finance/payments` and
+ * `/finance/receivables` gate on `billing.payment.view`; this screen had no
+ * guard at all, so a tenant-authored role without that capability still saw
+ * them here. The tier floor grants it to everyone above deactivated, so this
+ * refuses nobody today — it exists so a custom role can actually withhold it.
+ */
 export default async function BillingPage() {
+  if (!(await can("billing.invoice.view"))) {
+    return <PermissionLimited capability="billing.invoice.view" />;
+  }
+
   const [sub, usage, readOnly] = await Promise.all([
     getSubscription(),
     usageSummary(),

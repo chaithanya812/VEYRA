@@ -125,39 +125,38 @@ export const REPORTS: ReportDef[] = [
     capability: "reports.payment.view",
     title: "Receivables Ageing",
     subtitle:
-      "Outstanding client receivables — current vs past-due milestones",
+      "Outstanding client receivables, in the same buckets as Account Receivables",
     cardDescription:
-      "Money still to collect from client contracts, split into current and overdue.",
+      "Money still to collect from client contracts, split the way the receivables screen splits it.",
     icon: Hourglass,
     async run() {
       const rows = await receivablesAgeing();
-      const byBucket = new Map(rows.map((r) => [r.bucket, num(r.amount)]));
-      const current = byBucket.get("current") ?? 0;
-      const overdue = byBucket.get("overdue") ?? 0;
+      // Red stays on the one genuine alert: money signed off, due, unpaid.
+      const isAlert = (bucket: string) => bucket === "overdue_payment";
       return {
-        head: ["Bucket", "Amount"],
-        rows: [
-          [
-            { node: "Current (not yet due)" },
-            { node: inr(current), right: true },
-          ],
-          [
-            {
-              node: (
-                <span className="inline-flex items-center gap-1.5">
-                  <CircleAlert className="size-3.5" />
-                  Overdue
-                </span>
-              ),
-            },
-            { node: inr(overdue), right: true, alert: true },
-          ],
-        ],
-        csv: [
-          ["Current (not yet due)", String(current)],
-          ["Overdue", String(overdue)],
-        ],
-        isEmpty: current === 0 && overdue === 0,
+        head: ["Bucket", "What it counts", "Milestones", "Amount"],
+        rows: rows.map((r) => [
+          {
+            node: isAlert(r.bucket) ? (
+              <span className="inline-flex items-center gap-1.5">
+                <CircleAlert className="size-3.5" />
+                {r.label}
+              </span>
+            ) : (
+              r.label
+            ),
+          },
+          { node: r.note },
+          { node: r.count.toLocaleString("en-IN"), right: true },
+          { node: inr(r.amount), right: true, alert: isAlert(r.bucket) },
+        ]),
+        csv: rows.map((r) => [
+          r.label,
+          r.note,
+          String(r.count),
+          String(num(r.amount)),
+        ]),
+        isEmpty: rows.every((r) => r.count === 0),
         emptyTitle: "Nothing outstanding",
         emptyDescription:
           "Client contracts with billing milestones will show their outstanding amount here.",
@@ -259,15 +258,15 @@ export const REPORTS: ReportDef[] = [
   {
     slug: "project-profitability",
     capability: "reports.financial.view",
-    title: "Project Profitability",
-    subtitle: "Project value next to cash P&L booked under the same label",
+    title: "Project Cash Flow",
+    subtitle: "Project value next to cash actually received less cash paid out",
     cardDescription:
-      "Each project's configured value versus inflow minus outflow on its label.",
+      "Each project's configured value versus money in minus money out on its label.",
     icon: FolderKanban,
     async run() {
       const rows = await projectProfitability();
       return {
-        head: ["Project", "Value", "P&L"],
+        head: ["Project", "Value", "Cash flow"],
         rows: rows.map((r) => [
           { node: r.project },
           { node: inr(r.value), right: true },
@@ -281,7 +280,7 @@ export const REPORTS: ReportDef[] = [
         isEmpty: rows.length === 0,
         emptyTitle: "No projects yet",
         emptyDescription:
-          "Create a project (and tag payments with its label) to see profitability.",
+          "Create a project (and tag payments with its label) to see cash flow.",
       };
     },
   },

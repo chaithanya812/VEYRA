@@ -9,8 +9,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, PageHeader, EmptyState } from "@/components/ui/primitives";
 import { inr, fmtDate, cn } from "@/lib/utils";
+import { can } from "@/lib/data/permissions";
+import { PermissionLimited } from "@/components/ui/permission-limited";
 
+
+/**
+ * Read guard. These figures are the same ones `/finance/payments` and
+ * `/finance/receivables` gate on `billing.payment.view`; this screen had no
+ * guard at all, so a tenant-authored role without that capability still saw
+ * them here. The tier floor grants it to everyone above deactivated, so this
+ * refuses nobody today — it exists so a custom role can actually withhold it.
+ */
 export default async function FinancePage() {
+  if (!(await can("billing.payment.view"))) {
+    return <PermissionLimited capability="billing.payment.view" />;
+  }
+
   const [contracts, counts, summary] = await Promise.all([
     listContracts(),
     milestoneCounts(),

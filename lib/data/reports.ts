@@ -4,6 +4,14 @@ import { listLeadStatuses } from "./lead-management";
 import { listWarehouses, stockLevels } from "./inventory";
 import { vendorNames } from "./purchase-orders";
 import { sessionHours, type WorkSession } from "@/lib/workspace-model";
+import { receivablesData } from "./receivables";
+import {
+  BUCKET_META,
+  TILE_BUCKETS,
+  receivableRows,
+  summariseReceivables,
+  type ReceivableBucket,
+} from "@/lib/receivables-model";
 
 /**
  * Reports data module (FEATURE-REGISTER OPS-REP-001 · PLAN §6.10) — six
@@ -26,7 +34,11 @@ export interface SalesFunnelRow {
 }
 
 export interface AgeingRow {
-  bucket: string;
+  /** The bucket key from `RECEIVABLE_BUCKETS`, not a private vocabulary. */
+  bucket: ReceivableBucket;
+  label: string;
+  note: string;
+  count: number;
   amount: number;
 }
 
@@ -61,15 +73,9 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-/** Local calendar day as YYYY-MM-DD — safe lexicographic date comparison. */
-function todayISO(): string {
-  const now = new Date();
-  return [
-    String(now.getFullYear()).padStart(4, "0"),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
-}
+// `todayISO` lived here to age receivables by hand. That arithmetic now comes
+// from `lib/receivables-model.ts` (which has its own `todayIso`), so the local
+// copy is gone rather than left to rot into a second source of "today".
 
 /**
  * Leads grouped by pipeline status with count + Σ value. One row per
@@ -113,69 +119,43 @@ export async function salesFunnel(): Promise<SalesFunnelRow[]> {
 }
 
 /**
- * Receivables ageing — outstanding = Σ client-contract amounts − Σ inflow,
- * split into a pragmatic CURRENT vs OVERDUE pair of buckets: a milestone
- * counts as overdue when its tentative_due has passed AND work isn't done
- * (same rule as the finance module); the overdue bucket is clamped so it can
- * never exceed the actual outstanding amount. Pure SUMs throughout.
+ * Receivables ageing — the SAME buckets `/finance/receivables` shows, built
+ * from the SAME model, because two screens answering one question must not
+ * answer it differently.
+ *
+ * This previously computed its own pair of buckets and got both wrong:
+ * `outstanding` was `contracted − received`, which books work nobody has done
+ * yet as a receivable, and the bucket it labelled "Overdue" actually counted
+ * milestones whose work is NOT signed off — money that is not yet invoiceable,
+ * while the money genuinely late to collect was counted nowhere. The report
+ * therefore read "₹0 overdue" against ₹7,00,000 six weeks past due.
+ *
+ * A receivable is `billed − received` (HANDOFF-V9 §7). `bucketOf` partitions
+ * every client milestone into exactly one of Overdue Payment / Milestone
+ * Overdue / Upcoming / Written Off, and this returns those four verbatim —
+ * labels and all — so the report cannot drift from the screen again.
  */
 export async function receivablesAgeing(): Promise<AgeingRow[]> {
-  const { db } = await withOrg();
+  const data = await receivablesData();
+  const rows = receivableRows({
+    projects: data.projects,
+    contracts: data.contracts,
+    milestonesByContract: data.milestonesByContract,
+    receipts: data.receipts,
+  });
+  const summary = summariseReceivables(rows, data.contracts);
+  const byBucket = new Map(summary.tiles.map((t) => [t.bucket, t]));
 
-  const [contractsRes, paymentsRes, milestonesRes] = await Promise.all([
-    db.table("contracts").select("id, amount, source"),
-    db.table("payments").select("direction, amount"),
-    db.table("milestones").select("contract_id, amount, tentative_due, work_done"),
-  ]);
-  if (contractsRes.error) throw contractsRes.error;
-  if (paymentsRes.error) throw paymentsRes.error;
-  if (milestonesRes.error) throw milestonesRes.error;
-
-  const contractRows = (contractsRes.data ?? []) as unknown as {
-    id: string;
-    amount: number | string | null;
-    source: string;
-  }[];
-  const paymentRows = (paymentsRes.data ?? []) as unknown as {
-    direction: string;
-    amount: number | string | null;
-  }[];
-  const milestoneRows = (milestonesRes.data ?? []) as unknown as {
-    contract_id: string;
-    amount: number | string | null;
-    tentative_due: string | null;
-    work_done: boolean;
-  }[];
-
-  const clientIds = new Set(
-    contractRows.filter((c) => c.source === "client").map((c) => c.id),
-  );
-  const contractTotal = contractRows
-    .filter((c) => c.source === "client")
-    .reduce((s, c) => s + num(c.amount), 0);
-  const inflow = paymentRows
-    .filter((p) => p.direction === "inflow")
-    .reduce((s, p) => s + num(p.amount), 0);
-
-  const outstanding = Math.max(contractTotal - inflow, 0);
-  const today = todayISO();
-  const overdueMilestones = milestoneRows
-    .filter(
-      (m) =>
-        clientIds.has(m.contract_id) &&
-        !!m.tentative_due &&
-        !m.work_done &&
-        m.tentative_due.slice(0, 10) < today,
-    )
-    .reduce((s, m) => s + num(m.amount), 0);
-
-  const overdue = Math.min(overdueMilestones, outstanding);
-  const current = Math.max(outstanding - overdue, 0);
-
-  return [
-    { bucket: "current", amount: round2(current) },
-    { bucket: "overdue", amount: round2(overdue) },
-  ];
+  return TILE_BUCKETS.map((bucket) => {
+    const tile = byBucket.get(bucket);
+    return {
+      bucket,
+      label: BUCKET_META[bucket].label,
+      note: BUCKET_META[bucket].note,
+      count: tile?.count ?? 0,
+      amount: round2(tile?.amount ?? 0),
+    };
+  });
 }
 
 /**

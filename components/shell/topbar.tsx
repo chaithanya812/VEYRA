@@ -1,4 +1,6 @@
+import { LogOut } from "lucide-react";
 import { ViewAs } from "./view-as";
+import { endSessionAction } from "@/app/(auth)/login/actions";
 import type { Member } from "@/lib/data/team";
 
 /**
@@ -6,6 +8,11 @@ import type { Member } from "@/lib/data/team";
  * carries the "View as" picker instead of an account menu — pick a profile and
  * the whole workspace re-scopes to that person. When auth returns, swap this
  * back for the signed-in user + sign-out control.
+ *
+ * "End session" sits beside it and drops the session cookie, which returns the
+ * client to the picker at /login. View-as switches WITHIN a session and stays
+ * on the current page; ending one starts over. Two different things, so two
+ * controls rather than one overloaded menu.
  */
 export function TopBar({
   orgName,
@@ -25,12 +32,25 @@ export function TopBar({
       <span className="truncate text-sm font-semibold text-[var(--color-ink)]">
         {orgName}
       </span>
-      <ViewAs
-        members={members}
-        currentId={currentId}
-        currentName={currentName}
-        currentRole={currentRole}
-      />
+      <div className="flex items-center gap-2">
+        <ViewAs
+          members={members}
+          currentId={currentId}
+          currentName={currentName}
+          currentRole={currentRole}
+        />
+        {/* Not destructive — it ends a demo session, it deletes nothing — so
+            grey, not red (§2 rule 7 keeps red to its five jobs). */}
+        <form action={endSessionAction}>
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
+          >
+            <LogOut aria-hidden className="size-3.5" />
+            End session
+          </button>
+        </form>
+      </div>
     </header>
   );
 }

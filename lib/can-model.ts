@@ -348,11 +348,17 @@ export const TIER_CAPABILITIES: Record<string, "all" | string[]> = {
   manager: CAPABILITIES.filter(
     (c) => !c.destructive && !c.key.startsWith("settings."),
   ).map((c) => c.key),
+  // `reports.*` was excluded here until 2026-09-06 and the exclusion was
+  // cosmetic: every figure a report withheld from a member was reachable in
+  // richer form one menu across, because the Accounting screens gate on
+  // `billing.payment.view` — which this tier grants. `/finance/receivables` is
+  // a strict superset of the Receivables Ageing report it was refused. Owner's
+  // call: the tier keeps the money screens, so the reports stop pretending to
+  // be a gate. A member still cannot approve, delete, or touch settings.
   member: CAPABILITIES.filter(
     (c) =>
       !c.destructive &&
       !c.key.startsWith("settings.") &&
-      !c.key.startsWith("reports.") &&
       c.key !== "billing.cost.view" &&
       !c.key.endsWith(".approve"),
   ).map((c) => c.key),

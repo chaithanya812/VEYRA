@@ -39,6 +39,20 @@ const SELF_SERVICE = new Set([
   "startVisitAction",
   "endVisitAction",
   "setActingMemberAction",
+  // ── PRE-SESSION ──────────────────────────────────────────────────────────
+  // These are ungated for a different reason than the rows above. The entries
+  // above write a row keyed to the ACTING member, so gating them would lock a
+  // person out of their own records. These have no actor to check at all: they
+  // run before anyone is chosen, so there is no capability to test and any
+  // guard would be a guard against nobody.
+  //
+  // ⛔ `startSessionAction` takes its member id FROM THE FORM, so it is NOT
+  // self-service by the usual test and must not be read as one. It is the demo
+  // front door, and it is deliberately open — anyone with the URL can start a
+  // session as the Owner. It validates only that the id belongs to THIS org,
+  // which keeps it from reaching another tenant. See app/(auth)/login/actions.ts.
+  "startSessionAction",
+  "endSessionAction",
   "signUp",
   "signIn",
   "signOut",
