@@ -53,6 +53,7 @@ export function ProjectSelect({
   hint = "Leave as company-wide if this is not tied to one job",
   required = false,
   id,
+  lockedTo,
 }: {
   projects: ProjectOption[];
   defaultValue?: string | null;
@@ -62,8 +63,30 @@ export function ProjectSelect({
   required?: boolean;
   /** Defaults to `name`, so the label's htmlFor always points at the control. */
   id?: string;
+  /**
+   * Pin the form to one project and show it rather than ask for it. Used by
+   * `/projects/[id]/production`, where the project is the page you are on — a
+   * dropdown there could only ever be set wrong.
+   */
+  lockedTo?: ProjectOption;
 }) {
   const controlId = id ?? name;
+
+  if (lockedTo) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-disabled)]">
+          {label}
+        </span>
+        {/* Hidden input, not a disabled <select>: a disabled control submits
+            nothing, and the write would silently lose its project. */}
+        <input type="hidden" name={name} value={lockedTo.id} />
+        <span className="rounded-md border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-sunken)] px-3 py-2 text-sm text-[var(--color-ink)]">
+          {projectOptionLabel(lockedTo)}
+        </span>
+      </div>
+    );
+  }
 
   // A tenant with no projects yet would otherwise get an empty dropdown that
   // looks broken. Say why it is empty instead.

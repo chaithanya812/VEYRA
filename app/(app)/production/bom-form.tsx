@@ -32,7 +32,14 @@ function num(v: string): number {
 /** Add-BOM form — the BOM section's one red primary (§Design). Each line's
  *  effective qty is live-computed with the SAME pure helper the server stamps
  *  (effectiveQty), so the preview is exactly what gets stored. */
-export function BomForm({ projects }: { projects: ProjectOption[] }) {
+export function BomForm({
+  projects,
+  lockedTo,
+}: {
+  projects: ProjectOption[];
+  /** Pin to one project — used by the project-scoped Production screen. */
+  lockedTo?: ProjectOption;
+}) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     createBomAction,
     undefined,
@@ -76,7 +83,7 @@ export function BomForm({ projects }: { projects: ProjectOption[] }) {
               placeholder="e.g. Wardrobe shutters — Sharma residence"
             />
           </Field>
-          <ProjectSelect projects={projects} id="bom_project" hint="Attach this BOM to a job, or leave it company-wide" />
+          <ProjectSelect projects={projects} lockedTo={lockedTo} id="bom_project" hint="Attach this BOM to a job, or leave it company-wide" />
           <Field
             label="Source ref"
             htmlFor="bom_source_ref"

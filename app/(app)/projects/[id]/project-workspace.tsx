@@ -15,6 +15,7 @@ import {
   ListChecks,
   MessageSquare,
   Ruler,
+  Scissors,
   ShoppingCart,
   Users,
   Wallet,
@@ -570,6 +571,7 @@ function ModulesTab({ data }: { data: ProjectWorkspaceData }) {
     { key: "finplan", label: "Financial planning", icon: <IndianRupee className="size-5" />, href: `/projects/${id}/finance`, hint: "Inflow and outflow contracts" },
     { key: "payments", label: "Project payments", icon: <Wallet className="size-5" />, href: `/projects/${id}/payments`, hint: "Expenses, funds and analytics" },
     { key: "labour", label: "Labour report", icon: <Users className="size-5" />, href: `/projects/${id}/labour`, hint: "Daily headcount by trade and vendor" },
+    { key: "production", label: "Production", icon: <Scissors className="size-5" />, href: `/projects/${id}/production`, hint: "This job's BOMs and cutting lists" },
     { key: "finance", label: "Company finance", icon: <IndianRupee className="size-5" />, href: "/finance", hint: "Across every project" },
   ];
 

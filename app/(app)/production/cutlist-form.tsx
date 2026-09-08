@@ -57,7 +57,14 @@ const EDGE_FIELDS = [
  *  live area/banding preview runs the SAME pure helpers the hub renders
  *  (panelAreaSqm/panelBandingMm/cutlistTotals), so what you see while typing
  *  is exactly what the stored cutlist totals to. */
-export function CutlistForm({ projects }: { projects: ProjectOption[] }) {
+export function CutlistForm({
+  projects,
+  lockedTo,
+}: {
+  projects: ProjectOption[];
+  /** Pin to one project — used by the project-scoped Production screen. */
+  lockedTo?: ProjectOption;
+}) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     createCutlistAction,
     undefined,
@@ -118,7 +125,7 @@ export function CutlistForm({ projects }: { projects: ProjectOption[] }) {
               placeholder="e.g. Bedroom wardrobe — shutters"
             />
           </Field>
-          <ProjectSelect projects={projects} id="cl_project" hint="Attach this cutlist to a job, or leave it company-wide" />
+          <ProjectSelect projects={projects} lockedTo={lockedTo} id="cl_project" hint="Attach this cutlist to a job, or leave it company-wide" />
           <Field label="Board material" htmlFor="cl_board_material">
             <Input
               id="cl_board_material"
