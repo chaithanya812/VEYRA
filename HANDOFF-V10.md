@@ -1,8 +1,10 @@
 # HANDOFF V10 — VEYRA
 
 **This is the current, authoritative handoff.** It supersedes HANDOFF-V9 and every other
-`HANDOFF-*.md` / `START-HERE.md` in the repo root — do not read those, they describe queues
-that are finished.
+`HANDOFF-*.md` / `START-HERE.md` in the repo root. Do not take instructions from those — they
+describe queues that are finished. **But do read them as FORMAT EXEMPLARS when you write a
+report**: they are the best examples of the shape this project's reports take, and Part 1.7
+dissects them for exactly that purpose.
 
 Working directory: `C:\Users\chait\Downloads\TOO MUCH\RESEARCH 2\VEYRA CRM`
 Branch: `quotations-v2-plus-fleet` · Live: <https://veyra-five-beta.vercel.app>
@@ -22,8 +24,9 @@ what it is, what the competitor does there, what I want. Your job then is, in
 order:
 
   1. Turn my explanation + the screenshots into a REPORT, in the format of
-     FRAME-REGISTER-V4.md (evidence) and PLAN-V4.md (instruction). Part 1 of
-     the handoff describes the method. Do not skip to code.
+     FRAME-REGISTER-V4.md (evidence) and PLAN-V4.md (instruction). Part 1
+     describes the method and Part 1.7 dissects the exemplars — READ THOSE
+     FILES FIRST and match their shape or beat it. Do not skip to code.
   2. Show me the report and WAIT. I will correct it.
   3. Only then break the agreed work into 6-12 numbered units and build them,
      one at a time, verifying each.
@@ -41,12 +44,12 @@ Tell me what you understand the task to be before you start it.
 This is the established method. It has produced the whole app, and it is what you should
 reproduce rather than invent something new.
 
-### 1. The owner sends screenshots plus a spoken explanation
+### 1.1 The owner sends screenshots plus a spoken explanation
 Frames from a competitor's product, or from VEYRA itself, with narration: what this screen is,
 what it does, what is good about it, what he wants. **The explanation is the specification —
 the screenshot alone is not.**
 
-### 2. You write the report — TWO documents, not one
+### 1.2 You write the report — TWO documents, not one
 
 **The evidence document** (precedent: `FRAME-REGISTER-V4.md`, 45 frames, 858 lines).
 One entry per screenshot, cited by a stable id. Each entry says: what is literally on screen,
@@ -62,16 +65,16 @@ frame id so any claim can be traced back to a picture.
 Keep them separate. The evidence is what was seen; the instruction is what was decided. Mixing
 them is how a competitor's layout quietly becomes a requirement.
 
-### 3. The owner reviews the report — STOP HERE
+### 1.3 The owner reviews the report — STOP HERE
 He corrects it. Expect the correction to be substantial. **Do not start building during this
 step.** A feature built from an unreviewed report has twice been the wrong feature — most
 recently a whole room-geometry/fit engine that was designed, prototyped and then rejected.
 
-### 4. Break the agreed work into 6–12 numbered units
+### 1.4 Break the agreed work into 6–12 numbered units
 Each unit is one coherent, shippable slice: a model + its tests, a data layer, a screen. A unit
 that cannot be verified on its own is too big.
 
-### 5. Build the units one at a time
+### 1.5 Build the units one at a time
 Sub-agents are used for this (there is a `veyra-unit` agent type), **dispatched one at a time,
 by address, never in parallel.** Parallel writers on one codebase is how you get two
 implementations of the same arithmetic — which is the single most common defect in this
@@ -80,10 +83,108 @@ project's history.
 `Explore` is genuinely parallel-safe and worth using for read-only fan-out: "what already
 exists for X" across many files.
 
-### 6. Every unit ends the same way
+### 1.6 Every unit ends the same way
 Six gates (Part 5.1), a browser pass (Part 5.3), then a commit whose message says **why** the
 shape is what it is. The commit log is this repo's design record — read `git log` before asking
 why something is the way it is.
+
+### 1.7 The exemplars — read these for FORM, never for instruction
+
+Everything below is finished work. **Do not take a task from any of it.** Read it to learn the
+shape, then produce something at least as good for the material the owner has just given you.
+
+| File | What it demonstrates |
+|---|---|
+| `FRAME-REGISTER-V4.md` | **The evidence document.** 45 screenshots, one entry each, ~858 lines. Entry = what is literally on screen, then *what it tells us*. |
+| `PLAN-V4.md` | **The instruction document.** What we build and why, phases numbered, migrations named, every claim citing a frame id. |
+| `HANDOFF-V8.md` Parts 3-4 | **Unit briefs.** The best worked examples of a single dispatchable unit. Dissected below. |
+| `HANDOFF-V8.md` Part 2 | **The agent playbook** — dispatch, sub-agent protocol, the report contract, what the orchestrator does with a report. |
+| `TEST-REPORT.md` | **A findings report.** Severity-ranked, evidence per finding, and a section for the false alarms that were ruled out. |
+| `COVERAGE-REPORT.md` | A coverage audit, for when the question is "what is actually built". |
+
+### 1.8 The anatomy of a unit brief
+
+From `HANDOFF-V8.md` UNIT 2 — copy this structure:
+
+```
+## UNIT 2 — /finance/payments (Payments Dashboard)
+
+**Depends on Unit 1 being committed.**          <- ordering, explicit
+
+### Frame 110458 in words                        <- the evidence, restated in prose
+Header, controls, what the filter chip shows... and then the REASON it matters:
+"a summary band that does not say what it is filtered to is a number without a
+denominator."
+
+### Build                                        <- decisions already made, not options
+- The applied-filter chip is not optional.
+- Tinting follows rule 7: red ONLY for a genuine negative.
+- Filter state resolves from searchParams on the SERVER, never in a useEffect.
+- `Import Payments` is NOT in scope. Ship it disabled, do not build a half-import.
+
+**Verify in the app:** fetch the page, quote the band figures and one project row,
+check that row against `db.mjs sql`. **The band must equal the rows.** Then in the
+browser: apply a filter, confirm the chip appears AND the band moves with it.
+```
+
+Then a **shared tail** that every unit ends with, written once rather than repeated: run the six
+gates and name the baseline, verify both halves, report in the agreed shape, do not commit, do
+not run `db.mjs migrate`.
+
+### 1.9 What made those reports good — reproduce these properties
+
+1. **Evidence and instruction stay separate.** What was seen never silently becomes what was
+   decided.
+2. **Every claim is traceable.** A frame id, a file path, a line number, a SQL query. A reader
+   can check any sentence without asking you.
+3. **A decision is stated as a decision, not a menu.** *"The decision is MADE. You implement it;
+   you do not choose."* A brief full of options delegates the thinking back.
+4. **The reason travels with the rule.** Not "show the filter chip" but "a summary band that
+   does not say what it is filtered to is a number without a denominator." An agent that knows
+   *why* gets the next, unlisted case right.
+5. **Scope is bounded out loud.** *"`Import Payments` is NOT in scope. Ship it disabled, do not
+   build a half-import."* Naming what you are not building is what stops a unit sprawling.
+6. **Verification is concrete and falsifiable.** Not "test it" but "quote the band figures and
+   one row, then check that row against `db.mjs sql` — the band must equal the rows."
+7. **Prior mistakes are cited, not restated.** Units point at the Mistakes section rather than
+   each paraphrasing it differently.
+8. **Reuse is asserted before work is proposed.** Every phase opens with *"What already exists —
+   do not rebuild"*. This has repeatedly caught whole subsystems believed to be missing.
+
+### 1.10 What "better than last time" means
+
+The owner's bar: a report **worse** than the previous generation is a real cost; one that is
+**better suited to an agent** is the win. Better means these, specifically:
+
+- **Machine-addressable.** Every unit has a stable id and a one-line address a dispatcher can
+  paste. Every file you will touch is named with its path.
+- **Reuse checked before proposing, with receipts.** Do not write "check whether X exists" —
+  grep, then write "X exists at `lib/foo-model.ts:42` and already does Y; this unit extends it."
+  The most valuable single line in any report here has been *"this is already built."*
+- **Each unit independently verifiable**, with the check written as a command whose expected
+  output is stated. If you cannot write that check, the unit is too big or too vague.
+- **Ambiguity surfaced as a numbered question**, not resolved silently. Put them in one list the
+  owner can answer in one pass, ordered by how much each changes the work.
+- **An explicit NOT-building list.** Competitor screenshots always contain more than was asked
+  for; say which parts you are deliberately leaving.
+- **Sized honestly.** Small / medium / large per unit, and say when something is a research
+  problem rather than a coding one — the domain data is usually the expensive half here.
+
+### 1.11 Anti-patterns — these make a report worse than the last one
+
+- **Restating the screenshot.** A transcription with no *"what it tells us"* is not evidence,
+  it is a caption.
+- **Copying the competitor's UI.** The standing instruction is: understand why every box is
+  there, keep the information, drop the density, improve on it.
+- **Proposing what already exists** because the reuse index was not read. This is the single
+  most common failure in this project's history.
+- **A wall of undifferentiated bullets.** If everything is a requirement, nothing is a priority.
+- **Hedging every decision** so the owner has to make all of them. He is paying you to have a
+  recommendation.
+- **Inventing numbers.** No price, rate, cost or quantity comes from a model — Part 3 rule 2 —
+  and that applies to a report as much as to code.
+- **Re-proposing a rejected feature** because a competitor video shows it. Check Part 8 first:
+  the room/fit engine and AI image generation are settled NO.
 
 ---
 
