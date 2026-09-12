@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Trash2 } from "lucide-react";
 import { getRfq, bidComparison, vendorNames } from "@/lib/data/rfq";
+import { listVendors } from "@/lib/data/vendors";
 import {
   RFQ_STATUS_META,
   RESPONSE_STATUS_META,
@@ -11,6 +12,8 @@ import {
 } from "@/lib/rfq-model";
 import { EnterBidForm } from "./enter-bid-form";
 import { AwardDialog } from "./award-dialog";
+import { AddVendorsDialog } from "./add-vendors-dialog";
+import { removeRfqVendorAction } from "../actions";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
 import { fmtDate, inr } from "@/lib/utils";
 
@@ -42,13 +45,24 @@ export default async function RfqDetailPage({
   const { tab } = await searchParams;
   const result = await getRfq(id);
   if (!result) notFound();
-  const { rfq, vendors, items } = result;
+  const { rfq, vendors, items, bids } = result;
   const names = await vendorNames(vendors.map((v) => v.vendor_id));
 
   const meta = RFQ_STATUS_META[rfq.status];
   const deadlinePassed = isBidDeadlinePassed(rfq.bid_deadline, rfq.status);
   const awardable = rfq.status !== "awarded" && rfq.status !== "closed";
   const comparison = tab === "comparison" ? await bidComparison(id) : null;
+
+  // Which invited vendors have a bid on record — a bidder cannot be removed
+  // (their quote is part of the record), so the remove control is hidden for
+  // them. Add/remove controls only exist while the RFQ is still awardable.
+  const bidders = new Set(bids.map((b) => b.vendor_id));
+  const invitedIds = new Set(vendors.map((v) => v.vendor_id));
+  const candidateVendors = awardable
+    ? (await listVendors({ activeOnly: true }))
+        .filter((v) => !invitedIds.has(v.id))
+        .map((v) => ({ id: v.id, name: v.name, category: v.category }))
+    : [];
 
   // The award dialog needs every bidding vendor and its total, whichever tab is
   // open — so this read is not tied to the comparison tab being visible.
@@ -168,14 +182,31 @@ export default async function RfqDetailPage({
         ) : (
           <ComparisonMatrix comparison={comparison} />
         )
-      ) : /* ── Vendors ──────────────────────────────────────────────── */
-      vendors.length === 0 ? (
-        <EmptyState
-          title="No vendors invited"
-          description="Invite vendors when creating an RFQ; enter their quotes here as they arrive."
-        />
       ) : (
+        /* ── Vendors ──────────────────────────────────────────────── */
         <div className="flex flex-col gap-6">
+          {awardable && candidateVendors.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-[var(--color-ink)]">
+                Invited vendors{" "}
+                <span className="font-normal text-[var(--color-ink-secondary)]">
+                  ({vendors.length})
+                </span>
+              </h2>
+              <AddVendorsDialog rfqId={rfq.id} candidates={candidateVendors} />
+            </div>
+          )}
+          {vendors.length === 0 ? (
+            <EmptyState
+              title="No vendors invited"
+              description={
+                awardable
+                  ? "Add vendors to collect their quotes as they arrive."
+                  : "This RFQ was created without vendors."
+              }
+            />
+          ) : (
+          <>
           <Card className="overflow-hidden">
             <table className="w-full text-[13px]">
               <thead className="sticky top-0 z-10">
@@ -183,6 +214,11 @@ export default async function RfqDetailPage({
                   <th className="px-4 py-3 font-medium">Vendor</th>
                   <th className="px-4 py-3 font-medium">Response</th>
                   <th className="px-4 py-3 font-medium text-right">Invited</th>
+                  {awardable && (
+                    <th className="px-4 py-3 font-medium text-right">
+                      <span className="sr-only">Remove</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -202,6 +238,31 @@ export default async function RfqDetailPage({
                       <td className="px-4 py-2.5 text-right tabular text-[var(--color-ink-secondary)]">
                         {fmtDate(v.invited_at)}
                       </td>
+                      {awardable && (
+                        <td className="px-4 py-2.5 text-right">
+                          {bidders.has(v.vendor_id) ? (
+                            <span className="text-xs text-[var(--color-ink-disabled)]">
+                              has bid
+                            </span>
+                          ) : (
+                            <form action={removeRfqVendorAction}>
+                              <input type="hidden" name="id" value={rfq.id} />
+                              <input
+                                type="hidden"
+                                name="vendor_id"
+                                value={v.vendor_id}
+                              />
+                              <button
+                                type="submit"
+                                className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-red)] hover:underline"
+                                aria-label={`Remove ${names[v.vendor_id] ?? "vendor"} from this RFQ`}
+                              >
+                                <Trash2 className="size-3.5" /> Remove
+                              </button>
+                            </form>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -233,6 +294,8 @@ export default async function RfqDetailPage({
               ))}
             </div>
           </div>
+          </>
+          )}
         </div>
       )}
     </div>

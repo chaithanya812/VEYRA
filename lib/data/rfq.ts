@@ -240,6 +240,119 @@ export async function createRfqFromMr(
   });
 }
 
+/**
+ * Invite more vendors to an EXISTING RFQ (PROC-04). Vendors can arrive after the
+ * RFQ is drafted — a buyer remembers a fourth supplier once quotes start coming
+ * in. Refused once the RFQ is awarded/closed: at that point the field of bids is
+ * the record of a decision and must not gain a late entrant.
+ *
+ * Dedupes against vendors already invited so a re-add is a no-op, not a second
+ * invitation. All inserted rows carry exactly `{ rfq_id, vendor_id }` — uniform
+ * keys, so PostgREST cannot send an explicit NULL that defeats the
+ * `response_status` column default (Part 6 · Writes).
+ */
+export async function addVendorsToRfq(
+  rfqId: string,
+  vendorIds: string[],
+): Promise<{ added: number } | { error: string }> {
+  const { db } = await withOrg();
+
+  const { data: rfq, error: rfqErr } = await db
+    .table("rfqs")
+    .select("id, status")
+    .eq("id", rfqId)
+    .maybeSingle();
+  if (rfqErr) return { error: rfqErr.message };
+  if (!rfq) return { error: "RFQ not found." };
+  const status = (rfq as unknown as { status: string }).status;
+  if (status === "awarded" || status === "closed") {
+    return { error: "This RFQ is awarded/closed — its vendors are locked." };
+  }
+
+  // Already-invited vendors are skipped, never re-invited.
+  const { data: existing, error: exErr } = await db
+    .table("rfq_vendors")
+    .select("vendor_id")
+    .eq("rfq_id", rfqId);
+  if (exErr) return { error: exErr.message };
+  const already = new Set(
+    ((existing ?? []) as unknown as { vendor_id: string }[]).map(
+      (r) => r.vendor_id,
+    ),
+  );
+
+  const toAdd = [...new Set((vendorIds ?? []).filter(Boolean))].filter(
+    (id) => !already.has(id),
+  );
+  if (toAdd.length === 0) return { added: 0 };
+
+  const { error: insErr } = await db
+    .table("rfq_vendors")
+    .insert(toAdd.map((vendor_id) => ({ rfq_id: rfqId, vendor_id })));
+  if (insErr) return { error: insErr.message };
+
+  return { added: toAdd.length };
+}
+
+/**
+ * Withdraw an invited vendor from an RFQ (PROC-04).
+ *
+ * Two refusals, both protecting the record:
+ *  - the RFQ is awarded/closed — the vendor set is locked with the decision;
+ *  - the vendor has ANY bid on this RFQ — their quote is part of the record, and
+ *    deleting the invitation would orphan `rfq_bids`/`rfq_bid_lines` rows. The
+ *    screen already hides the control for a vendor who has bid; this is the
+ *    server-side backstop for the same rule.
+ */
+export async function removeRfqVendor(
+  rfqId: string,
+  vendorId: string,
+): Promise<{ error?: string }> {
+  const { db } = await withOrg();
+
+  const { data: rfq, error: rfqErr } = await db
+    .table("rfqs")
+    .select("id, status")
+    .eq("id", rfqId)
+    .maybeSingle();
+  if (rfqErr) return { error: rfqErr.message };
+  if (!rfq) return { error: "RFQ not found." };
+  const status = (rfq as unknown as { status: string }).status;
+  if (status === "awarded" || status === "closed") {
+    return { error: "This RFQ is awarded/closed — its vendors are locked." };
+  }
+
+  const { data: rv, error: rvErr } = await db
+    .table("rfq_vendors")
+    .select("id")
+    .eq("rfq_id", rfqId)
+    .eq("vendor_id", vendorId)
+    .maybeSingle();
+  if (rvErr) return { error: rvErr.message };
+  if (!rv) return { error: "That vendor is not invited to this RFQ." };
+
+  const { data: bids, error: bidsErr } = await db
+    .table("rfq_bids")
+    .select("id")
+    .eq("rfq_id", rfqId)
+    .eq("vendor_id", vendorId)
+    .limit(1);
+  if (bidsErr) return { error: bidsErr.message };
+  if ((bids ?? []).length > 0) {
+    return {
+      error:
+        "Remove is blocked once a vendor has bid — their quote is part of the record.",
+    };
+  }
+
+  const { error: delErr } = await db
+    .table("rfq_vendors")
+    .deleteById((rv as unknown as { id: string }).id);
+  if (delErr) return { error: delErr.message };
+
+  return {};
+}
+
 export interface BidLineInput {
   rfq_item_id: string;
   /** CONFIG entered by the user/vendor — never produced by an LLM. */

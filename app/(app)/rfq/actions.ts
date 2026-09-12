@@ -1,14 +1,16 @@
 "use server";
-import { requireCan } from "@/lib/data/permissions";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import {
+  addVendorsToRfq,
   awardRfq,
   createRfq,
   createRfqFromMr,
   enterBid,
+  removeRfqVendor,
   type BidLineInput,
   type RfqItemInput,
 } from "@/lib/data/rfq";
@@ -105,6 +107,57 @@ export async function createRfqFromMrAction(
   if ("error" in result) return { error: result.error };
   revalidatePath("/rfq");
   redirect(`/rfq/${result.id}`);
+}
+
+/* ── Vendors: add mid-RFQ / remove an invitation (PROC-04) ─────────────────── */
+
+/**
+ * Invite more vendors to an existing RFQ. `vendor_ids` arrives as a JSON array,
+ * the same shape the create form posts. The data module refuses an
+ * awarded/closed RFQ and dedupes against vendors already invited.
+ */
+export async function addVendorsToRfqAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const denied = await requireCan("procurement.rfq.create");
+  if (denied) return denied;
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Missing RFQ." };
+
+  const vendorIds = parseJson(formData.get("vendor_ids"), vendorIdsSchema);
+  if (vendorIds === null) {
+    return { error: "The vendor selection could not be read — try again." };
+  }
+  if (vendorIds.length === 0) {
+    return { error: "Pick at least one vendor to invite." };
+  }
+
+  const result = await addVendorsToRfq(id, vendorIds);
+  if ("error" in result) return { error: result.error };
+
+  revalidatePath(`/rfq/${id}`);
+  revalidatePath("/rfq");
+  return undefined;
+}
+
+/**
+ * Withdraw an invited vendor. Consumed as `<form action={...}>`, so it returns
+ * void (4.2). There is no `rfq.delete` capability — `procurement.rfq.create`
+ * governs the vendor set. The data module refuses an awarded/closed RFQ and any
+ * vendor who has already bid; the screen only ever shows this control for a
+ * vendor with no bids, so a refusal here is a backstop, not the normal path.
+ */
+export async function removeRfqVendorAction(formData: FormData): Promise<void> {
+  if (!(await can("procurement.rfq.create"))) return;
+  const id = String(formData.get("id") ?? "");
+  const vendorId = String(formData.get("vendor_id") ?? "");
+  if (!id || !vendorId) return;
+
+  await removeRfqVendor(id, vendorId);
+
+  revalidatePath(`/rfq/${id}`);
+  revalidatePath("/rfq");
 }
 
 /* ── Proxy bid entry ───────────────────────────────────────────────────────── */
