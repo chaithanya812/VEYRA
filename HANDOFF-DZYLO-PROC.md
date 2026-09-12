@@ -15,17 +15,30 @@ Working dir: `C:\Users\chait\Downloads\TOO MUCH\RESEARCH 2\VEYRA CRM` · Branch:
 
 ```
 Read HANDOFF-DZYLO-PROC.md in full, then HANDOFF-V10.md Parts 3-5. You are the
-ORCHESTRATOR for the Dzylo procurement program. Do NOT write feature code yourself.
+ORCHESTRATOR for the Dzylo procurement program — a HANDS-ON reviewing engineer, NOT
+a ticket-passer. You do not write feature code, but you own the quality of every
+unit as if you wrote it. A sub-agent that says "done, gates green" is an INPUT to
+your review, never the end of it.
 
-Method: dispatch ONE veyra-unit sub-agent at a time, by address, NEVER in parallel
-(Part 1). Before each dispatch, run `git log --oneline -8` and check the working tree
-to see which units already landed — this plan is idempotent, do not redo done work.
-For each unit: paste its brief from Part 6, wait for the agent's report, review it,
-run the six gates yourself to confirm, then COMMIT locally (agents never commit).
-Never push or deploy (rule 10). Verify app rendering with node-fetch + cookie, not the
-browser pane (Part 7). Ask me before starting a unit if its brief has an open choice.
+For EACH unit you run this loop (Part 1 has the full mandate):
+1. INSPECT FIRST yourself. `git log --oneline -8` + read the real files the unit
+   touches, with file:line receipts. Confirm what is actually built vs missing —
+   do NOT trust the brief's "already built"/"gap" claims (they were wrong for U3,
+   which looked like "verify" but was a real build). Tighten the brief to the REAL
+   gap before dispatching. Never dispatch a loose brief.
+2. DISPATCH ONE veyra-unit sub-agent (never in parallel) with the tightened brief.
+3. REVIEW HARD when it reports back: read the FULL diff line by line, RE-RUN all six
+   gates yourself, verify every WRITE in db.mjs and every screen via node-fetch +
+   cookie (the browser pane can't paint — Part 7). Never take "green" on faith. If
+   anything is off, send it back or fix the dispatch — do not commit slop.
+4. COMMIT locally yourself (agents never commit) with a why-shaped message. Never
+   push or deploy (rule 10). Then update this file's Part 2 and go to the next unit.
 
-Start by telling me the current state from git log and which unit is next.
+Ask me before a unit only if its brief has a genuine open choice (e.g. F2 freight,
+which gates U5/U6). Otherwise decide per the Part 3 heuristic and proceed.
+
+Start by INSPECTING the current state (git log + read the U3 files) and tell me what
+you actually found before dispatching anything.
 ```
 
 ---
@@ -34,7 +47,20 @@ Start by telling me the current state from git log and which unit is next.
 
 This mirrors HANDOFF-V10 §1.4–1.6, specialised for this program.
 
-- **The orchestrator does not write feature code.** It dispatches, reviews, gates, commits.
+> **ORCHESTRATOR MANDATE — read this before you dispatch anything.**
+> You are a senior engineer who happens to delegate the typing, not a router that forwards
+> tickets. You are accountable for every line that lands as if you wrote it. Concretely, on every
+> unit you personally: (1) **inspect the real code first** and rewrite the brief to the actual gap —
+> the U3 brief in this very file was wrong until an orchestrator read the code and found the
+> "acceptance queue" was really just a receipt log; assume the other briefs can be wrong too;
+> (2) **read the sub-agent's entire diff** and reject hand-waving, dead code, rebuilt engines, or
+> unguarded actions; (3) **re-run all six gates yourself** and **re-verify writes in `db.mjs` and
+> screens via node-fetch** — a sub-agent's "gates green, verified" is a claim to check, not a fact to
+> trust (this project's history: "a green test that examined nothing is the worst outcome");
+> (4) **only then commit.** If you find yourself pasting a brief and waiting, you are doing it wrong.
+
+- **The orchestrator does not write feature code.** But it inspects, reviews, gates, and commits —
+  hands on the code the whole time.
 - **`veyra-unit` sub-agents build.** Each gets ONE self-contained brief (Part 6), writes the
   data layer + action + screen + tests, runs the six gates, verifies against the running app,
   reports, and **stops without committing**. The agent starts cold — the brief must be complete.
@@ -43,14 +69,34 @@ This mirrors HANDOFF-V10 §1.4–1.6, specialised for this program.
   is the only parallel-safe agent (read-only fan-out).
 - **The orchestrator commits.** After the agent reports and you re-confirm the six gates, commit
   with a message that says WHY the shape is what it is (the commit log is the design record).
+- **Every sub-agent's non-negotiable protocol** (the briefs are deliberately not exhaustive — this
+  protocol is what makes a terse brief safe):
+  1. **INSPECT FIRST, with receipts.** A brief's "already built" / "gap" claims are the orchestrator's
+     best knowledge, NOT ground truth. Before writing anything, grep/read the named files and confirm
+     the ACTUAL current state (cite `file:line`). If reality contradicts the brief — something is
+     already done, or a "finish" turns out to be a "build" (this happened on U3) — say so in the
+     report and adjust scope to the real gap rather than blindly building or blindly skipping.
+  2. **Build only the gap.** Reuse the Part 5 index; never re-implement an engine/table that exists.
+  3. **VERIFY FALSIFIABLY, both halves.** Run all six gates (Part 5.1) and hold the baseline. Verify
+     app rendering with node-fetch + cookie (Part 7 — the browser pane can't paint here). Verify every
+     WRITE in `db.mjs`, never in the pane. Hit each of the brief's VERIFY bullets with actual output —
+     a green gate that examined nothing is the worst outcome (HANDOFF-V10 §Tests).
+  The orchestrator RE-RUNS the six gates and reviews the diff before committing — it does not take the
+  agent's word for green.
 - **Dispatch prompt template** for each unit:
   ```
   You are implementing ONE unit on VEYRA. Working dir + branch as in HANDOFF-DZYLO-PROC.md.
   Dev server is running at http://localhost:3010. READ FIRST: HANDOFF-V10.md (rules Part 3,
-  reuse Part 4, gates Part 5) and HANDOFF-DZYLO-PROC.md Part 5 (reuse) + Part 7 (env/verify).
+  reuse Part 4, gates Part 5) and HANDOFF-DZYLO-PROC.md Part 1 (your protocol), Part 5 (reuse),
+  Part 7 (env/verify).
+  FOLLOW THE PART 1 PROTOCOL: inspect the real code state first (with file:line receipts) before
+  building — the brief's "already built"/"gap" claims are a starting point, not ground truth; if
+  reality differs, report it and build the real gap. Then verify falsifiably (six gates + node-fetch
+  render + db.mjs on every write + each VERIFY bullet with real output).
   [PASTE THE UNIT BRIEF FROM PART 6]
-  REPORT BACK, DO NOT COMMIT: (a) files changed, (b) six-gate numbers, (c) what you verified
-  in the app + db.mjs with actual output, (d) deviations. No git commit, no push, no db.mjs migrate.
+  REPORT BACK, DO NOT COMMIT: (a) files changed, (b) six-gate numbers, (c) what you inspected and
+  what you verified in the app + db.mjs with actual output, (d) deviations / where reality differed
+  from the brief. No git commit, no push, no db.mjs migrate.
   ```
 
 ---
@@ -172,18 +218,39 @@ only for vendors with no bids). **Out of scope:** Copy Form Link + resend-for-re
 **Verify:** create a `[U2-TEST]` draft RFQ; add inserts `rfq_vendors`, remove deletes one, remove
 refused once a bid exists — confirm in `db.mjs`; controls hidden on the awarded demo RFQ.
 
-### U3 — Delivery acceptance: finish + verify the queue and receipt→GRN→stock · M
-**Already built (verified in U1):** `recordReceipt` (writes `po_receipts`+`po_receipt_lines`,
-recomputes and stores `order_state` via `deriveOrderState`), `addStockIn` (GRN + `stock_movements`),
-the `deliveries` tab in `PROC_TABS`, `receive-goods-form.tsx`. **Build/finish:** the acceptance
-QUEUE view (Pending/Partial/Accepted filter chips mapping straight to `deriveOrderState`:
-created/partially_delivered/delivered) over `purchase_orders`, Work Orders = same table
-`type='work_order'`; confirm the receipt form and ingestion→warehouse→GRN are reachable from the
-queue and verified against the ledger. **Ad-hoc receipts (Q4):** allow a receipt/stock-in with no PO
-line as its own mode — still writes a GRN. **Out of scope:** photos-on-receipt upload if it needs a
-new storage pipeline (site/design still use pasted URLs) — note it, don't half-build. **Verify:** a
-partial then a completing receipt moves a PO Pending→Partial→Accepted; `projectStock` reflects the
-GRN; an ad-hoc receipt posts stock with a GRN and no PO link.
+### U3 — Delivery acceptance QUEUE + ad-hoc receipts · M (this is a BUILD, not a verify)
+**Inspected 2026-09-12 — the real current state (receipts):**
+- The Deliveries tab today renders `DeliveryTable` at `app/(app)/projects/[id]/procurement/procurement-view.tsx:775`
+  — a **flat receipt LOG** (columns Received-on · Order · Vendor · Note). It is NOT a status queue:
+  **no Pending/Partial/Accepted chips, no PO-vs-WO split.** Its empty state points the user to the
+  Orders tab to record a receipt. `data.deliveries` comes from `lib/data/project-procurement.ts`.
+- Receipt recording WORKS and lives on `/orders/[id]` via `receive-goods-form.tsx` → `recordReceipt`
+  (`lib/data/purchase-orders.ts:251`), which recomputes + stores `order_state` via `deriveOrderState`.
+  Ingestion→GRN→stock WORKS via `/inventory/stock-in` → `addStockIn` (`lib/data/inventory.ts:385`,
+  `po_id` is optional). BOTH proven end-to-end in U1 — do NOT rebuild them.
+- `recordReceipt` REQUIRES every receipt line to match a `po_line` ("Receipt references a line that
+  does not belong to this order") — so **ad-hoc (no-PO) receipts do not exist yet.**
+
+**Build:**
+1. Turn the Deliveries/Acceptance tab into a **QUEUE over `purchase_orders`**: rows = POs, a status
+   chip derived from `order_state` (created→**Pending**, partially_delivered→**Partial**,
+   delivered→**Accepted**; grey/amber/green — chips never red), and **filter chips Pending · Partial ·
+   Accepted** resolved from the URL on the SERVER (not a useEffect). Split **Purchase Orders vs Work
+   Orders** (`type`), matching Dzylo's two sub-views. Each row links to `/orders/[id]` to receive.
+   Keep the "what was received" info reachable (the current receipt-log becomes the Accepted detail /
+   an expandable row) — do not lose it. DECISION (not a menu): the tab BECOMES the status queue; the
+   flat log is folded in, not shown as the whole tab.
+2. **Ad-hoc receive (Q4):** a "Receive Ad-hoc" entry from the queue that records a delivery with no PO
+   line — implement as an ad-hoc `addStockIn` with `po_id: null` (it already supports this) that still
+   posts a GRN. Do NOT loosen `recordReceipt`'s PO-line integrity for PO-traced receipts; ad-hoc is a
+   SEPARATE path (Q-decision: dedicated, not merged).
+**Out of scope:** photos-on-receipt upload (needs a real storage pipeline; site/design still use
+pasted URLs) — note it, don't half-build. Do not touch `receive-goods-form.tsx`, `recordReceipt`,
+`addStockIn` internals — they work.
+**Verify (falsifiable):** the queue lists the demo PO(s) with the right chip; a partial then a
+completing receipt on `/orders/[id]` moves a PO Pending→Partial→Accepted in the queue; the PO/WO
+filter and status filters resolve from the URL and change the rows; an ad-hoc receive posts a GRN +
+`stock_movements` with NO `po_id`, confirmed in `db.mjs`; `projectStock` reflects it.
 
 ### U4 — G1 Public vendor bid portal (signed token link) · L
 **Decision Q1:** signed token link + copy-link + email; NO OTP, NO WhatsApp. **Build:** a tokenised
