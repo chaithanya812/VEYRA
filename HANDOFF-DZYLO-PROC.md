@@ -73,9 +73,11 @@ receipts.
 **U1 result:** the chain reconciles end-to-end. `awardRfq` correctly stamps `awarded_vendor_id`;
 `poAmount`=96,300; `deriveOrderState`→partially_delivered; GRN posted +40/+10 to the ledger.
 
-**In flight (check `git log` before assuming):** U2 was dispatched in the originating session.
-If a commit for U2 is NOT in the log and the RFQ detail page has no add/remove-vendor controls,
-dispatch U2 (Part 6). If it landed, review + commit it, then proceed to U3.
+- `40fb0b0` — **U2**: RFQ detail add-vendors dialog + remove-vendor control (`addVendorsToRfq` /
+  `removeRfqVendor` in `lib/data/rfq.ts`; guarded actions; red destructive remove). Gates re-confirmed
+  by the orchestrator before commit.
+
+**Next unit: U3.** (Always `git log --oneline -8` first — this plan is idempotent.)
 
 **Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 896 tests (895 pass + 1
 skipped live drive) · verify 208/208 · verify-storage 11/11 · build clean`. Migrations applied
