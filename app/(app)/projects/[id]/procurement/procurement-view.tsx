@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   AlertTriangle,
   Boxes,
@@ -41,6 +42,13 @@ import {
   type ProcTab,
 } from "@/lib/material-requests-model";
 import { RFQ_STATUS_META } from "@/lib/rfq-model";
+import {
+  ACCEPTANCE_META,
+  ACCEPTANCE_STATES,
+  ACCEPTANCE_FILTER_LABELS,
+  acceptanceBucketOf,
+  type AcceptanceState,
+} from "@/lib/po-model";
 import type {
   ProjectProcurement,
   RequestRow,
@@ -102,14 +110,27 @@ export function ProcurementView({
   data,
   inventory,
   initialTab,
+  initialAccept = null,
+  initialOtype = "purchase",
 }: {
   scope: ProcScope;
   data: ProjectProcurement;
   /** This project's own stock. Absent in company scope — /inventory owns that. */
   inventory?: ProjectInventory;
   initialTab: ProcTab;
+  /**
+   * The delivery-acceptance queue's two filters, resolved on the SERVER from
+   * the URL (`?accept=` / `?otype=`) and passed straight through — not held in
+   * client state, so the server-rendered HTML already reflects the query and a
+   * fetch of `?view=deliveries&accept=partial` is verifiable.
+   */
+  initialAccept?: AcceptanceState | null;
+  initialOtype?: "purchase" | "work";
 }) {
   const companyWide = scope.kind === "company";
+  // The project's own site store — where a queue-initiated ad-hoc receipt lands
+  // (company scope has no single store, so the stock-in form picks one).
+  const adhocWarehouseId = inventory?.warehouses[0]?.id ?? null;
   const [tab, setTab] = useState<ProcTab>(initialTab);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -186,7 +207,7 @@ export function ProcurementView({
                   : t === "orders"
                     ? inScope.orders.length
                     : t === "deliveries"
-                      ? inScope.deliveries.length
+                      ? inScope.orders.length
                       : undefined,
           }))}
         />
@@ -335,7 +356,13 @@ export function ProcurementView({
       {tab === "rfqs" && <RfqTable data={inScope} showProject={companyWide} />}
       {tab === "orders" && <OrderTable data={inScope} showProject={companyWide} />}
       {tab === "deliveries" && (
-        <DeliveryTable data={inScope} showProject={companyWide} />
+        <DeliveryQueue
+          data={inScope}
+          showProject={companyWide}
+          accept={initialAccept}
+          otype={initialOtype}
+          adhocWarehouseId={adhocWarehouseId}
+        />
       )}
       {tab === "inventory" && (
         <InventoryPanel
@@ -774,65 +801,283 @@ function OrderTable({
 
 /* ── Deliveries — the "Acceptance" the owner called non-negotiable ────────── */
 
-function DeliveryTable({
+/**
+ * The delivery-ACCEPTANCE QUEUE (frame `105913`'s Acceptance sub-view).
+ *
+ * Rows are purchase/work ORDERS, not receipt-log lines: a queue answers "what
+ * is still owed to us and how much has landed", so the unit is the order and
+ * the chip is its acceptance status derived from `order_state` through
+ * `ACCEPTANCE_META` (Pending / Partial / Accepted — the acceptance lens, never
+ * the Orders tab's Created/Partially-delivered/Delivered, and never red).
+ *
+ * Two filters resolve on the SERVER from the URL, mirroring `?view=`:
+ *   · `?otype=` splits Purchase Orders from Work Orders (Dzylo's two sub-views);
+ *   · `?accept=` narrows to one status bucket.
+ * They are Links that change the query, so the server re-renders the filtered
+ * rows and a fetch of the URL is verifiable — no client-only state that never
+ * reaches the URL.
+ *
+ * The flat receipt LOG this tab used to be is NOT lost: it is folded into each
+ * order as an expandable "what has landed" detail (`data.deliveries` per PO).
+ */
+function DeliveryQueue({
   data,
   showProject,
+  accept,
+  otype,
+  adhocWarehouseId,
 }: {
   data: ProjectProcurement;
   showProject: boolean;
+  accept: AcceptanceState | null;
+  otype: "purchase" | "work";
+  adhocWarehouseId: string | null;
 }) {
-  if (data.deliveries.length === 0) {
-    return (
-      <EmptyState
-        icon={<Truck className="size-8" />}
-        title="Nothing received yet"
-        description="A receipt is recorded against an order on the Orders tab. Accepting goods is what moves a line to In stock."
-      />
-    );
+  const pathname = usePathname();
+
+  // Receipts (the old flat log) grouped under the order they arrived against.
+  const receiptsByPo = useMemo(() => {
+    const m = new Map<string, typeof data.deliveries>();
+    for (const d of data.deliveries) {
+      const list = m.get(d.poId) ?? [];
+      list.push(d);
+      m.set(d.poId, list);
+    }
+    return m;
+  }, [data.deliveries]);
+
+  // The current PO/WO sub-view. Counts and chips are over THIS set.
+  const ofType = useMemo(
+    () => data.orders.filter((o) => (otype === "work" ? o.kind === "work" : o.kind === "purchase")),
+    [data.orders, otype],
+  );
+
+  const counts = useMemo(() => {
+    const c = { pending: 0, partial: 0, accepted: 0 };
+    for (const o of ofType) {
+      const b = acceptanceBucketOf(o.order_state);
+      if (b) c[b] += 1;
+    }
+    return c;
+  }, [ofType]);
+
+  const rows = accept
+    ? ofType.filter((o) => acceptanceBucketOf(o.order_state) === accept)
+    : ofType;
+
+  function hrefFor(next: { accept?: AcceptanceState | null; otype?: "purchase" | "work" }) {
+    const a = next.accept === undefined ? accept : next.accept;
+    const t = next.otype === undefined ? otype : next.otype;
+    const params = new URLSearchParams();
+    params.set("view", "deliveries");
+    params.set("otype", t);
+    if (a) params.set("accept", a);
+    return `${pathname}?${params.toString()}`;
   }
 
+  const adhocHref = adhocWarehouseId
+    ? `/inventory/stock-in?direction=in&warehouse=${adhocWarehouseId}`
+    : `/inventory/stock-in?direction=in`;
+
   return (
-    <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-[13px]">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
-              <th className="px-4 py-2 font-medium">Received on</th>
-              <th className="px-4 py-2 font-medium">Order</th>
-              {showProject && <th className="px-4 py-2 font-medium">Project</th>}
-              <th className="px-4 py-2 font-medium">Vendor</th>
-              <th className="px-4 py-2 font-medium">Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.deliveries.map((d) => (
-              <tr key={d.id} className="border-b border-[var(--color-border)] last:border-0">
-                <td className="px-4 py-2.5 tabular">{fmtDate(d.received_on)}</td>
-                <td className="px-4 py-2.5">
-                  <Link
-                    href={`/orders/${d.poId}`}
-                    className="text-[var(--color-ink)] hover:underline"
-                  >
-                    {d.orderName ?? "Order"}
-                  </Link>
-                </td>
-                {showProject && (
-                  <td className="px-4 py-2.5">
-                    <ProjectCell ref={d} />
-                  </td>
-                )}
-                <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
-                  {d.vendorName ?? "—"}
-                </td>
-                <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
-                  {d.note ?? "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="flex flex-col gap-4">
+      {/* PO/WO split (top-left) and the one primary action (top-right). */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-md border border-[var(--color-border)] p-0.5">
+          {(["purchase", "work"] as const).map((t) => (
+            <Link
+              key={t}
+              href={hrefFor({ otype: t })}
+              scroll={false}
+              className={cn(
+                "rounded px-3 py-1 text-[13px]",
+                otype === t
+                  ? "bg-[var(--color-surface-sunken)] font-medium text-[var(--color-ink)]"
+                  : "text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)]",
+              )}
+            >
+              {t === "purchase" ? "Purchase Orders" : "Work Orders"}
+            </Link>
+          ))}
+        </div>
+        {/* Ad-hoc receive (Q4): goods with NO purchase order. Routes to the
+            existing guarded stock-in form (guards inventory.movement.create,
+            posts a GRN with po_id null) — a receipt off no PO line, kept a
+            separate path so PO-traced receipts keep their line integrity. */}
+        <Button asChild variant="secondary" size="sm">
+          <Link href={adhocHref} title="Record goods that arrived without a purchase order">
+            <Plus className="size-4" /> Receive ad-hoc
+          </Link>
+        </Button>
       </div>
-    </Card>
+
+      {/* Status filter chips — Pending · Partial · Accepted, plus All. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={hrefFor({ accept: null })}
+          scroll={false}
+          className={cn(
+            "rounded-full border px-3 py-1 text-[12px]",
+            accept === null
+              ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-surface)]"
+              : "border-[var(--color-border)] text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)]",
+          )}
+        >
+          All ({ofType.length})
+        </Link>
+        {ACCEPTANCE_STATES.map((s) => (
+          <Link
+            key={s}
+            href={hrefFor({ accept: s })}
+            scroll={false}
+            className={cn(
+              "rounded-full border px-3 py-1 text-[12px]",
+              accept === s
+                ? "border-[var(--color-ink)] bg-[var(--color-ink)] text-[var(--color-surface)]"
+                : "border-[var(--color-border)] text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)]",
+            )}
+          >
+            {ACCEPTANCE_FILTER_LABELS[s]} ({counts[s]})
+          </Link>
+        ))}
+      </div>
+
+      {rows.length === 0 ? (
+        <EmptyState
+          icon={<Truck className="size-8" />}
+          title={
+            data.orders.length === 0
+              ? "Nothing to accept yet"
+              : accept
+                ? `No ${ACCEPTANCE_FILTER_LABELS[accept].toLowerCase()} ${otype === "work" ? "work orders" : "purchase orders"}`
+                : `No ${otype === "work" ? "work orders" : "purchase orders"} yet`
+          }
+          description="Awarding an RFQ drafts an order; recording a receipt on the order moves it Pending → Partial → Accepted here. Goods with no order use Receive ad-hoc."
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-[13px]">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
+                  <th className="px-4 py-2 font-medium">Order</th>
+                  {showProject && <th className="px-4 py-2 font-medium">Project</th>}
+                  <th className="px-4 py-2 font-medium">Vendor</th>
+                  <th className="px-4 py-2 font-medium">Delivery</th>
+                  <th className="px-4 py-2 font-medium">Lines received</th>
+                  <th className="px-4 py-2 font-medium">Acceptance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((o) => (
+                  <QueueRow
+                    key={o.id}
+                    order={o}
+                    showProject={showProject}
+                    receipts={receiptsByPo.get(o.id) ?? []}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/** One order in the queue, expandable to the receipts that have landed on it. */
+function QueueRow({
+  order: o,
+  showProject,
+  receipts,
+}: {
+  order: ProjectProcurement["orders"][number];
+  showProject: boolean;
+  receipts: ProjectProcurement["deliveries"];
+}) {
+  const [open, setOpen] = useState(false);
+  const meta = ACCEPTANCE_META[o.order_state as keyof typeof ACCEPTANCE_META] ?? {
+    label: o.order_state,
+    tone: "neutral" as const,
+  };
+  const colSpan = showProject ? 6 : 5;
+
+  return (
+    <>
+      <tr className="border-b border-[var(--color-border)] last:border-0">
+        <td className="px-4 py-2.5">
+          <div className="flex items-center gap-1.5">
+            {receipts.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                aria-label={open ? "Hide receipts" : "Show receipts"}
+                className="text-[var(--color-ink-secondary)] hover:text-[var(--color-ink)]"
+              >
+                {open ? (
+                  <ChevronDown className="size-4" />
+                ) : (
+                  <ChevronRight className="size-4" />
+                )}
+              </button>
+            ) : (
+              <span className="inline-block size-4" />
+            )}
+            <div className="min-w-0">
+              <Link
+                href={`/orders/${o.id}`}
+                className="font-medium text-[var(--color-ink)] hover:underline"
+              >
+                {o.name ?? "Untitled order"}
+              </Link>
+              <span className="block text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
+                {o.kind === "work" ? "Work order" : "Purchase order"}
+                {receipts.length > 0 && ` · ${receipts.length} receipt${receipts.length === 1 ? "" : "s"}`}
+              </span>
+            </div>
+          </div>
+        </td>
+        {showProject && (
+          <td className="px-4 py-2.5">
+            <ProjectCell ref={o} />
+          </td>
+        )}
+        <td className="px-4 py-2.5 text-[var(--color-ink-secondary)]">
+          {o.vendorName ?? "—"}
+        </td>
+        <td className="px-4 py-2.5 tabular text-[var(--color-ink-secondary)]">
+          {o.expected_date ? fmtDate(o.expected_date) : "—"}
+        </td>
+        <td className="px-4 py-2.5 tabular text-[var(--color-ink-secondary)]">
+          {o.lineCount === 0 ? "—" : `${o.receivedLines} / ${o.lineCount}`}
+        </td>
+        <td className="px-4 py-2.5">
+          <StatusChip tone={TONE_CHIP[meta.tone]} label={meta.label} />
+        </td>
+      </tr>
+      {open && receipts.length > 0 && (
+        <tr className="border-b border-[var(--color-border)] last:border-0">
+          <td colSpan={colSpan} className="bg-[var(--color-surface-sunken)] px-4 py-3">
+            <p className="mb-2 text-[11px] uppercase tracking-wide text-[var(--color-ink-secondary)]">
+              What has landed
+            </p>
+            <ul className="flex flex-col gap-1">
+              {receipts.map((d) => (
+                <li key={d.id} className="text-[12px] text-[var(--color-ink-secondary)]">
+                  <span className="tabular text-[var(--color-ink)]">
+                    {fmtDate(d.received_on)}
+                  </span>
+                  {d.vendorName ? ` · ${d.vendorName}` : ""}
+                  {d.note ? ` · ${d.note}` : ""}
+                </li>
+              ))}
+            </ul>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

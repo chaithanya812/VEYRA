@@ -375,14 +375,20 @@ export async function getProcurement(
         ...refOf(o),
         id: String(o.id),
         name: (o.name as string | null) ?? null,
-        kind: String(o.kind ?? "purchase"),
+        // The column is `type` ("purchase_order" / "work_order"), NOT `kind`,
+        // and the delivery date is `delivery_date`, NOT `expected_date`. Under
+        // `select("*")` a missing property does not error — it just reads
+        // `undefined` and falls through the `??`, so every order silently
+        // showed as a purchase order with no delivery date. Map the real
+        // columns. (`kind` stays the view's word: "work" | "purchase".)
+        kind: String(o.type) === "work_order" ? "work" : "purchase",
         vendorName: o.vendor_id
           ? (vendorName.get(String(o.vendor_id)) ?? "Unknown vendor")
           : null,
         amount: Number(o.amount ?? 0),
         order_state: String(o.order_state ?? "draft"),
         payment_state: (o.payment_state as string | null) ?? null,
-        expected_date: (o.expected_date as string | null) ?? null,
+        expected_date: (o.delivery_date as string | null) ?? null,
         created_at: String(o.created_at ?? ""),
         createdByName: o.created_by
           ? (memberName.get(String(o.created_by)) ?? null)

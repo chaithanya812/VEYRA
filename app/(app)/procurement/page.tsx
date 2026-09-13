@@ -1,7 +1,17 @@
 import { getProcurement } from "@/lib/data/project-procurement";
 import { procTabOf } from "@/lib/material-requests-model";
+import { ACCEPTANCE_STATES, type AcceptanceState } from "@/lib/po-model";
 import { PageHeader } from "@/components/ui/primitives";
 import { ProcurementView } from "../projects/[id]/procurement/procurement-view";
+
+function acceptOf(raw: string | undefined): AcceptanceState | null {
+  return (ACCEPTANCE_STATES as readonly string[]).includes(String(raw))
+    ? (raw as AcceptanceState)
+    : null;
+}
+function otypeOf(raw: string | undefined): "purchase" | "work" {
+  return raw === "work" ? "work" : "purchase";
+}
 
 /**
  * Procurement, company-wide (PLAN-V4 §10.1, frame `110014`).
@@ -24,9 +34,9 @@ import { ProcurementView } from "../projects/[id]/procurement/procurement-view";
 export default async function ProcurementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; tab?: string }>;
+  searchParams: Promise<{ view?: string; tab?: string; accept?: string; otype?: string }>;
 }) {
-  const { view, tab } = await searchParams;
+  const { view, tab, accept, otype } = await searchParams;
   const data = await getProcurement({ kind: "company" });
 
   // `?tab=draft` is the old company screen's URL. It still resolves, so a
@@ -47,6 +57,8 @@ export default async function ProcurementPage({
         scope={{ kind: "company" }}
         data={data}
         initialTab={initialTab}
+        initialAccept={acceptOf(accept)}
+        initialOtype={otypeOf(otype)}
       />
     </div>
   );

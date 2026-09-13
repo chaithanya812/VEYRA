@@ -52,6 +52,59 @@ export const PAYMENT_STATE_META: Record<PaymentState, { label: string; tone: PoT
   paid: { label: "Paid", tone: "positive" },
 };
 
+/**
+ * The ACCEPTANCE lens over the SAME `order_state` (RULE 14).
+ *
+ * The Orders tab reads `order_state` as Created/Partially delivered/Delivered
+ * via `ORDER_STATE_META`. The delivery-acceptance QUEUE reads the identical
+ * column, but the goods-receiving desk thinks in Pending/Partial/Accepted — so
+ * it gets its own vocabulary here, defined ONCE, never coined a third time in
+ * JSX. Two honest labels over one column beats a stored duplicate that drifts.
+ *
+ * Chips on the queue NEVER go red: a queue tracks what is still arriving, which
+ * is routine, not an alarm. `cancelled` — the one order_state that carries red
+ * on the Orders tab — is greyed here, because a cancelled order simply will not
+ * be received; it is not an alert to a storekeeper.
+ */
+export const ACCEPTANCE_STATES = ["pending", "partial", "accepted"] as const;
+export type AcceptanceState = (typeof ACCEPTANCE_STATES)[number];
+
+/** Acceptance chips are grey/amber/green — the reserved red is not theirs. */
+export type AcceptanceTone = Exclude<PoTone, "red">;
+
+export const ACCEPTANCE_META: Record<OrderState, { label: string; tone: AcceptanceTone }> = {
+  draft: { label: "Pending", tone: "neutral" },
+  created: { label: "Pending", tone: "neutral" },
+  partially_delivered: { label: "Partial", tone: "active" },
+  delivered: { label: "Accepted", tone: "positive" },
+  cancelled: { label: "Cancelled", tone: "neutral" },
+};
+
+export const ACCEPTANCE_FILTER_LABELS: Record<AcceptanceState, string> = {
+  pending: "Pending",
+  partial: "Partial",
+  accepted: "Accepted",
+};
+
+/**
+ * The filter bucket a PO's `order_state` falls into for the queue's chips.
+ * `cancelled` (and any unknown state) has NO bucket — it can never be
+ * accepted — so it matches no filter and shows only in the unfiltered queue.
+ */
+export function acceptanceBucketOf(orderState: string): AcceptanceState | null {
+  switch (orderState) {
+    case "draft":
+    case "created":
+      return "pending";
+    case "partially_delivered":
+      return "partial";
+    case "delivered":
+      return "accepted";
+    default:
+      return null;
+  }
+}
+
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
 export interface PurchaseOrder {

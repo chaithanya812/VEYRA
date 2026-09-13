@@ -5,6 +5,9 @@ import {
   PO_TYPES,
   ORDER_STATE_META,
   PAYMENT_STATE_META,
+  ACCEPTANCE_STATES,
+  ACCEPTANCE_META,
+  acceptanceBucketOf,
   lineTotal,
   poAmount,
   deriveOrderState,
@@ -116,5 +119,67 @@ describe("PO state model (design guardrails)", () => {
 
   it("'Not initiated' payment is grey, not red (it isn't an alarm)", () => {
     expect(PAYMENT_STATE_META.not_initiated.tone).toBe("neutral");
+  });
+});
+
+/**
+ * The acceptance lens (RULE 14): a SECOND vocabulary over the SAME order_state,
+ * used only by the delivery-acceptance queue. It must cover every order state,
+ * never paint a chip red, and bucket states the way the queue's filters expect.
+ */
+describe("ACCEPTANCE_META (delivery-acceptance queue lens)", () => {
+  it("covers every ORDER_STATES value", () => {
+    for (const s of ORDER_STATES) {
+      expect(ACCEPTANCE_META[s]).toBeDefined();
+      expect(ACCEPTANCE_META[s].label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("maps each state to the queue's label", () => {
+    expect(ACCEPTANCE_META.draft.label).toBe("Pending");
+    expect(ACCEPTANCE_META.created.label).toBe("Pending");
+    expect(ACCEPTANCE_META.partially_delivered.label).toBe("Partial");
+    expect(ACCEPTANCE_META.delivered.label).toBe("Accepted");
+    expect(ACCEPTANCE_META.cancelled.label).toBe("Cancelled");
+  });
+
+  it("NEVER paints an acceptance chip red — only grey/amber/green", () => {
+    for (const s of ORDER_STATES) {
+      expect(["neutral", "active", "positive"]).toContain(ACCEPTANCE_META[s].tone);
+      expect(ACCEPTANCE_META[s].tone).not.toBe("red");
+    }
+  });
+
+  it("tones the queue the way the desk reads it (created grey, partial amber, delivered green)", () => {
+    expect(ACCEPTANCE_META.created.tone).toBe("neutral");
+    expect(ACCEPTANCE_META.partially_delivered.tone).toBe("active");
+    expect(ACCEPTANCE_META.delivered.tone).toBe("positive");
+    expect(ACCEPTANCE_META.cancelled.tone).toBe("neutral");
+  });
+});
+
+describe("acceptanceBucketOf (filter chips)", () => {
+  it("buckets draft and created as pending", () => {
+    expect(acceptanceBucketOf("draft")).toBe("pending");
+    expect(acceptanceBucketOf("created")).toBe("pending");
+  });
+
+  it("buckets partial and delivered into their own chips", () => {
+    expect(acceptanceBucketOf("partially_delivered")).toBe("partial");
+    expect(acceptanceBucketOf("delivered")).toBe("accepted");
+  });
+
+  it("gives cancelled and unknown states NO bucket (they match no filter)", () => {
+    expect(acceptanceBucketOf("cancelled")).toBeNull();
+    expect(acceptanceBucketOf("nonsense")).toBeNull();
+  });
+
+  it("every non-null bucket is one of ACCEPTANCE_STATES", () => {
+    for (const s of ORDER_STATES) {
+      const bucket = acceptanceBucketOf(s);
+      if (bucket !== null) {
+        expect([...ACCEPTANCE_STATES]).toContain(bucket);
+      }
+    }
   });
 });

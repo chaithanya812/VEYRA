@@ -6,7 +6,18 @@ import { getProjectProcurement } from "@/lib/data/project-procurement";
 import { getProjectInventory } from "@/lib/data/inventory";
 import { PageHeader } from "@/components/ui/primitives";
 import { procTabOf } from "@/lib/material-requests-model";
+import { ACCEPTANCE_STATES, type AcceptanceState } from "@/lib/po-model";
 import { ProcurementView } from "./procurement-view";
+
+/** The acceptance queue's URL filters, validated on the server (`?view=` idiom). */
+function acceptOf(raw: string | undefined): AcceptanceState | null {
+  return (ACCEPTANCE_STATES as readonly string[]).includes(String(raw))
+    ? (raw as AcceptanceState)
+    : null;
+}
+function otypeOf(raw: string | undefined): "purchase" | "work" {
+  return raw === "work" ? "work" : "purchase";
+}
 
 /**
  * Project Procurement (PLAN-V4 §9.7, frames `105729` – `105927`).
@@ -20,9 +31,9 @@ export default async function ProjectProcurementPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; accept?: string; otype?: string }>;
 }) {
-  const [{ id }, { view }] = await Promise.all([params, searchParams]);
+  const [{ id }, { view, accept, otype }] = await Promise.all([params, searchParams]);
 
   const result = await getProject(id);
   if (!result) notFound();
@@ -54,6 +65,8 @@ export default async function ProjectProcurementPage({
         data={data}
         inventory={inventory}
         initialTab={initialTab}
+        initialAccept={acceptOf(accept)}
+        initialOtype={otypeOf(otype)}
       />
     </div>
   );
