@@ -16,6 +16,7 @@ import { AwardDialog } from "./award-dialog";
 import { AddVendorsDialog } from "./add-vendors-dialog";
 import { removeRfqVendorAction } from "../actions";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 import { fmtDate, inr } from "@/lib/utils";
 
 /**
@@ -47,7 +48,15 @@ export default async function RfqDetailPage({
   const result = await getRfq(id);
   if (!result) notFound();
   const { rfq, vendors, items, bids } = result;
-  const names = await vendorNames(vendors.map((v) => v.vendor_id));
+  const names = await vendorNames([
+    ...vendors.map((v) => v.vendor_id),
+    ...(rfq.awarded_vendor_id ? [rfq.awarded_vendor_id] : []),
+  ]);
+  const awardedVendorName = rfq.awarded_vendor_id
+    ? (names[rfq.awarded_vendor_id] ?? "Unknown vendor")
+    : rfq.status === "awarded"
+      ? "Unknown vendor"
+      : null;
 
   const meta = RFQ_STATUS_META[rfq.status];
   const deadlinePassed = isBidDeadlinePassed(rfq.bid_deadline, rfq.status);
@@ -103,7 +112,11 @@ export default async function RfqDetailPage({
       <Card className="mb-6 p-5">
         <dl className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
           <Detail label="Project" value={rfq.project_label ?? "—"} />
-          <Detail label="Place of supply" value={rfq.place_of_supply ?? "—"} />
+          <div>
+            <dt className="text-xs text-[var(--color-ink-secondary)]">Place of supply</dt>
+            <dd className="mt-0.5 text-[var(--color-ink)]">{rfq.place_of_supply ?? "—"}</dd>
+            <Explainer k="place_of_supply" className="mt-1" />
+          </div>
           <div>
             <dt className="text-xs text-[var(--color-ink-secondary)]">Bid deadline</dt>
             <dd className="mt-0.5">
@@ -136,6 +149,9 @@ export default async function RfqDetailPage({
             </dd>
           </div>
           <Detail label="Created" value={fmtDate(rfq.created_at)} />
+          {awardedVendorName && (
+            <Detail label="Awarded to" value={awardedVendorName} />
+          )}
         </dl>
         {rfq.remarks && (
           <p className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm text-[var(--color-ink-secondary)]">
@@ -284,12 +300,13 @@ export default async function RfqDetailPage({
           </Card>
 
           <div>
-            <h2 className="mb-2 text-sm font-semibold text-[var(--color-ink)]">
+            <h2 className="mb-1 text-sm font-semibold text-[var(--color-ink)]">
               Proxy bid entry{" "}
               <span className="font-normal text-[var(--color-ink-secondary)]">
                 — type each quote as it arrives (phone/email)
               </span>
             </h2>
+            <Explainer k="rfq_vs_proxy" className="mb-2" />
             <div className="flex flex-col gap-2">
               {vendors.map((v) => (
                 <EnterBidForm
@@ -429,10 +446,13 @@ function ComparisonMatrix({
           </tfoot>
         </table>
       </div>
-      <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-ink-secondary)]">
-        Cell values are LANDED totals (qty × unit rate + freight), computed by the engine from human-entered rates.
-        Green marks the lowest line (L1), amber the second (L2).
-      </p>
+      <div className="flex flex-col gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5">
+        <Explainer k="l1_l2_l3" />
+        <p className="text-xs text-[var(--color-ink-secondary)]">
+          Cell values are LANDED totals (qty × unit rate + freight), computed by the engine from human-entered rates.
+          Green marks the lowest line (L1), amber the second (L2).
+        </p>
+      </div>
     </Card>
   );
 }

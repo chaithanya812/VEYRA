@@ -28,6 +28,7 @@ import { ReceiveGoodsForm } from "./receive-goods-form";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/field";
 import { Card, PageHeader, StatusChip, EmptyState } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 import { fmtDate, inr } from "@/lib/utils";
 
 /**
@@ -207,12 +208,13 @@ export default async function OrderDetailPage({
 
           {/* Fulfilment machine */}
           <Card className="p-5">
-            <h2 className="mb-3 text-sm font-semibold text-[var(--color-ink)]">
+            <h2 className="mb-1 text-sm font-semibold text-[var(--color-ink)]">
               Order state{" "}
               <span className="font-normal text-[var(--color-ink-secondary)]">
                 · fulfilment
               </span>
             </h2>
+            <Explainer k="order_vs_payment_state" className="mb-3" />
             <form action={updateOrderStateAction} className="flex flex-col gap-3">
               <input type="hidden" name="id" value={po.id} />
               <Field label="Move to state" htmlFor="order_state">
@@ -358,9 +360,10 @@ export default async function OrderDetailPage({
             )}
 
             <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-              <h3 className="mb-2 text-sm font-semibold text-[var(--color-ink)]">
+              <h3 className="mb-1 text-sm font-semibold text-[var(--color-ink)]">
                 Receive goods
               </h3>
+              <Explainer k="partial_delivery" className="mb-2" />
               {receivables.length === 0 ? (
                 <p className="text-sm text-[var(--color-ink-secondary)]">
                   Add lines first — there is nothing to receive against.

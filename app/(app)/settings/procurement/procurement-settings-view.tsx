@@ -26,6 +26,8 @@ import {
   Section,
   SubmitButton,
 } from "../../dashboard/workspace-ui";
+import { DemoNotice } from "@/components/ui/demo-notice";
+import { tenantAuthoredCount } from "@/lib/demo-notice-model";
 
 /**
  * Procurement configuration: the payment-plan library and the PO terms
@@ -168,6 +170,8 @@ export function ProcurementSettingsView({
   template: PoTemplate;
 }) {
   const [termsState, addTerms] = useActionState(savePoTermsAction, initial);
+  const authoredPlans = tenantAuthoredCount(plans);
+  const authoredTerms = tenantAuthoredCount(terms);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -190,13 +194,18 @@ export function ProcurementSettingsView({
 
       <Section
         title="Payment plans"
-        description="A named schedule of percentages. The rupee figure is computed from the PO amount when the plan is attached — nothing is stored twice."
+        description={
+          authoredPlans === 0
+            ? "A named schedule of percentages. Sample plans still attach to a PO; they do not count as a plan you have authored."
+            : "A named schedule of percentages. The rupee figure is computed from the PO amount when the plan is attached — nothing is stored twice."
+        }
       >
         <Disclosure label="Add a payment plan">
           <AddPlanForm />
         </Disclosure>
 
         <div className="mt-3">
+          <DemoNotice rows={plans} />
           {plans.length === 0 ? (
             <Empty
               message="No payment plans yet"
@@ -208,6 +217,9 @@ export function ProcurementSettingsView({
                 <Row
                   key={p.id}
                   title={p.name}
+                  chips={
+                    p.is_demo ? <Chip tone="neutral" label="Sample" /> : undefined
+                  }
                   meta={
                     p.milestones.length === 0
                       ? "No milestones"
@@ -232,7 +244,11 @@ export function ProcurementSettingsView({
 
       <Section
         title="Terms & conditions"
-        description="Clauses you attach to a purchase order. Separate from quotation terms — a PO's terms are not a quote's terms."
+        description={
+          authoredTerms === 0
+            ? "Clauses you attach to a purchase order. Sample clauses still attach; they do not count as yours."
+            : "Clauses you attach to a purchase order. Separate from quotation terms — a PO's terms are not a quote's terms."
+        }
       >
         <Disclosure label="Add a clause">
           <form action={addTerms} className="flex flex-col gap-4">
@@ -258,6 +274,7 @@ export function ProcurementSettingsView({
         </Disclosure>
 
         <div className="mt-3">
+          <DemoNotice rows={terms} />
           {terms.length === 0 ? (
             <Empty
               message="No clauses yet"
@@ -269,7 +286,12 @@ export function ProcurementSettingsView({
                 <Row
                   key={t.id}
                   title={t.title}
-                  chips={t.is_default ? <Chip tone="green" label="Default" /> : undefined}
+                  chips={
+                    <>
+                      {t.is_default ? <Chip tone="green" label="Default" /> : null}
+                      {t.is_demo ? <Chip tone="neutral" label="Sample" /> : null}
+                    </>
+                  }
                   meta={t.body}
                   right={
                     <form action={deletePoTermsAction}>

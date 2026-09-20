@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { Card, EmptyState, StatusChip } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 import { SegmentedControl } from "@/components/ui/patterns";
 import { StatTile, TileGrid } from "../dashboard/workspace-ui";
 import {
@@ -266,12 +267,7 @@ function WarehousesTab({
         </Card>
       )}
 
-      <p className="mt-3 text-xs text-[var(--color-ink-secondary)]">
-        Goods Value is the ledger&apos;s own arithmetic — every inward line at
-        its recorded rate, less every outward one. It is not a FIFO or
-        weighted-average valuation; those are finance decisions nobody has made
-        yet. What it can always do is name the movements it came from.
-      </p>
+      <Explainer k="goods_value" className="mt-3" />
     </>
   );
 }
@@ -690,6 +686,7 @@ function HistoryTab({
 
   return (
     <>
+      <Explainer k="grn" className="mb-3" />
       <div className="mb-4">
         <SegmentedControl
           label="Movement direction"

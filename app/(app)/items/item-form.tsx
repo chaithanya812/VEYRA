@@ -15,6 +15,7 @@ import { typeLabel, uomLabel } from "@/lib/items-ui";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 
 type Action = (state: FormState, formData: FormData) => Promise<FormState>;
 
@@ -81,7 +82,6 @@ export function ItemForm({
           <Field
             label="Good type"
             htmlFor="good_type"
-            hint="Merchandising class — not the Type enum"
           >
             <Input
               id="good_type"
@@ -90,6 +90,7 @@ export function ItemForm({
               defaultValue={item?.good_type ?? ""}
               placeholder="e.g. Raw Material"
             />
+            <Explainer k="good_type" className="mt-1" />
             <datalist id="item-good-types">
               {SUGGESTED_GOOD_TYPES.map((g) => (
                 <option key={g} value={g} />

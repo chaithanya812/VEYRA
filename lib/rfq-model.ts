@@ -73,6 +73,9 @@ export interface Rfq {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Null on a seeded award that never ran awardRfq — the F1 backfill fills it. */
+  awarded_vendor_id?: string | null;
+  award_reason?: string | null;
 }
 
 export interface RfqVendor {

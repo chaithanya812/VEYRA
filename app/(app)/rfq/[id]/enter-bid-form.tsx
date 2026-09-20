@@ -3,6 +3,7 @@ import {
   BidForm,
   type BidFormItem,
 } from "@/components/bid-line-fields";
+import { Explainer } from "@/components/ui/explainer";
 
 /**
  * Proxy bid entry (PROC-RFQ-004): the purchase team types a vendor's quote on
@@ -42,8 +43,8 @@ export function EnterBidForm({
           items={items}
           idPrefix={vendorId}
           submitLabel="Save bid"
-          footnote="Saving marks the vendor “submitted”. Re-entering a bid adds a newer version — history is kept."
         />
+        <Explainer k="resend_for_revision" className="mt-2" />
       </div>
     </details>
   );

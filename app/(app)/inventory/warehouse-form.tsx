@@ -17,6 +17,7 @@ import {
   WAREHOUSE_KINDS,
   type WarehouseKind,
 } from "@/lib/inventory-model";
+import { Explainer } from "@/components/ui/explainer";
 
 /**
  * `Add Warehouse` — the ONE red primary on the Warehouse/Site tab (`110109`).
@@ -141,6 +142,7 @@ export function AddWarehouseDialog({
                     </option>
                   ))}
                 </Select>
+                <Explainer k="company_vs_project_warehouse" className="mt-1" />
               </Field>
 
               {kind === "project" && (

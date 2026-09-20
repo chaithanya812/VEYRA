@@ -21,6 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { inr } from "@/lib/utils";
+import { Explainer } from "@/components/ui/explainer";
 
 /**
  * Approved-quote → draft PO. The only new number is a typed margin % that
@@ -116,7 +117,6 @@ export function ImportToPoDialog({
           <Field
             label="Negative margin %"
             htmlFor="margin_pct"
-            hint="0 or blank = buy at the quoted rate. 100% would be a free PO."
             error={!parsed.ok ? parsed.error : undefined}
           >
             <Input
@@ -129,6 +129,7 @@ export function ImportToPoDialog({
               onChange={(e) => setMarginRaw(e.target.value)}
               placeholder="0"
             />
+            <Explainer k="negative_margin" className="mt-1" />
           </Field>
 
           {parsed.ok && preview.length > 0 && (

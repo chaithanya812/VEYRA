@@ -7,6 +7,7 @@ import { UOMS } from "@/lib/items-model";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 import { cn, nameKey } from "@/lib/utils";
 
 /**
@@ -130,6 +131,7 @@ export function NewRfqForm({
             </Field>
             <Field label="Place of supply" htmlFor="place_of_supply">
               <Input id="place_of_supply" name="place_of_supply" placeholder="e.g. Jaipur, RJ" />
+              <Explainer k="place_of_supply" className="mt-1" />
             </Field>
             <Field label="Bid deadline" htmlFor="bid_deadline">
               <Input id="bid_deadline" name="bid_deadline" type="date" />

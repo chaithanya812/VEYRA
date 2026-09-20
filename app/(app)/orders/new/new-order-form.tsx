@@ -9,6 +9,7 @@ import { UOMS } from "@/lib/items-model";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Card } from "@/components/ui/primitives";
+import { Explainer } from "@/components/ui/explainer";
 import { cn, inr } from "@/lib/utils";
 
 /**
@@ -128,6 +129,7 @@ export function NewPurchaseOrderForm({
                 <option value="purchase_order">Purchase order</option>
                 <option value="work_order">Work order</option>
               </Select>
+              <Explainer k="po_vs_wo" className="mt-1" />
             </Field>
           </div>
 

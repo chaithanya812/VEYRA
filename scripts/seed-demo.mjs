@@ -256,7 +256,7 @@ async function ensureProcurement(orgId, userId, items) {
   ]);
 
   // RFQ from the MR
-  const rfqId = await ins("rfqs", { org_id: orgId, mr_id: mrId, title: "Plywood & Laminate — Malviya Nagar", project_label: "Malviya Nagar 3BHK", place_of_supply: "Telangana", bid_deadline: daysFromNow(-2), status: "awarded", remarks: "Two vendors invited", created_by: userId });
+  const rfqId = await ins("rfqs", { org_id: orgId, mr_id: mrId, title: "Plywood & Laminate — Malviya Nagar", project_label: "Malviya Nagar 3BHK", place_of_supply: "Telangana", bid_deadline: daysFromNow(-2), status: "awarded", awarded_vendor_id: vCentury, remarks: "Two vendors invited", created_by: userId });
   const rfqItemPly = await ins("rfq_items", { org_id: orgId, rfq_id: rfqId, item_id: PLY.id, item_name: PLY.name, uom: "sheet", qty: 40 });
   const rfqItemLam = await ins("rfq_items", { org_id: orgId, rfq_id: rfqId, item_id: LAM.id, item_name: LAM.name, uom: "sheet", qty: 25 });
   await sb.from("rfq_vendors").insert([
