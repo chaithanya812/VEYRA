@@ -158,12 +158,43 @@ receipts.
   **Migration 0044 applied** (additive, idempotent). **Left in the demo tenant (tagged):** RFQ
   `e8a6c01c…` `[U4-TEST]` with 2 vendors and 5 bids.
 
-**Next unit: U6** (PO payment-plan + T&C library). Recommended order U6 → U5 → U7 → U8 → U9.
-(Always `git log --oneline -8` first — this plan is idempotent.)
+- `680dcce` - **U6**: PO payment-plan + T&C libraries (`/settings/procurement`, new capability
+  `settings.procurement.edit` - tiers DERIVE from CAPABILITIES so no role edits needed).
+  Milestones store pct only; rupees derive via `allocateMilestoneAmounts` in integer paise off a
+  running cumulative so rows foot EXACTLY (33.33/33.33/33.34 of 10,001 -> 3,333.33+3,333.34+
+  3,334.33). Milestone FK is COMPOSITE `(plan_id, org_id)` - a bare FK accepted a cross-tenant
+  smuggled row; verify.mjs proves 23503. Migration 0045.
+- `f396506` - **U5**: PO becomes a document. **F2 IMPLEMENTED** - freight is now its own PO line
+  ("Freight & delivery", qty 1, goods' tax slab), so the PO amount equals the landed total the
+  award was ranked on (proven live: 97,500, was 96,300, gap 1,200). `purchase_orders` had NO
+  `number` column despite a seeded PO series existing - wired `issueDocNumber` (live:
+  `PO/2026-27/0004`). `lib/po-pdf.ts` clones quotations-pdf (not imports it); `assemblePoPdf`
+  splits data from drawing so arithmetic is testable. `po_templates` toggles. Migration 0046.
+  **Known limit:** logo/signature are stored URLs but NOT drawn (CORS without an upload
+  pipeline) - documented at the line that would draw them.
+- `5f4fa1c` - **U7**: catalogue. `items.category` ALREADY EXISTED - only `good_type` added.
+  `items.type` is a CLOSED enum the reference product labelled "Goods Type"; `good_type` is the
+  free-text Q5 axis - three axes, each one job. Starter catalogue imports through the EXISTING
+  parseItemsCsv + createItem (twice -> 14 rows, not 28). Promote-at-stock-in via
+  `findOrCreateItem` -> `createItem` keeps the metered gate + dedupe; promotion is OPTIONAL
+  (an unpromoted row still posts `item_id` null). Last price derived. Migration 0047.
+- `75b02d7` - **U8**: quote->PO import (`buyRate(sell,pct)` pure+tested; NOT from `cost_rate`)
+  + approval routing. **There is no notification surface in this repo** - the plan was wrong;
+  the approvals engine IS the in-app notification (Q8). `createRequest` had exactly ONE caller
+  (the manual form); a PO over threshold now raises its own and stays DRAFT until signed off.
+  A routing failure never loses the PO. **Orchestrator fixed in review:** issuing a PO now also
+  requires `procurement.po.approve`, not just `procurement.mr.approve` - all built-in tiers hold
+  both, but an org-authored role could have held MR approval alone. Migration 0048.
+- `bda0138` - **U9**: F1 backfilled (L1 = Century Ply 97,500 vs Hettich 98,350; guarded by
+  `is null`, `scripts/seed-demo.mjs` fixed at source; `awardRfq` untouched) + RFQ detail now
+  names the winner. Self-clearing demo notice (pure tested predicate; demo rows stay usable).
+  Explainers as a keyed tested map, never in JSX. No red in either component. No migration.
 
-**Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 914 tests (913 pass + 1
-skipped live drive) · verify 212/212 · verify-storage 11/11 · build clean`. Migrations applied
-0001-0044; **next free number 0045**.
+**ALL UNITS U1-U9 ARE DONE.** Program complete.
+
+**Baseline** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 976 tests (975 pass + 1 skipped live drive)
+· verify 230/230 · verify-storage 11/11 · build clean`. Migrations applied 0001-0048;
+**next free number 0049**.
 
 ---
 
