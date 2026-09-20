@@ -138,12 +138,32 @@ receipts.
   to exercise the split/ladder) and 1 append-only ad-hoc GRN — owner may prune the orders; the GRN is
   append-only (rule 4).
 
-**Next unit: U4** (G1 public vendor bid portal). Recommended order U4 → U6 → U5 → U7 → U8 → U9.
+- `1ad3a54` — **U4**: public vendor bid portal at `/rfq-bid/<token>` (outside `(app)`, mirrors
+  `/q/[token]`). **The token lives on `rfq_vendors`, one per (RFQ, vendor) — NOT on `rfqs`** (the
+  brief left this open; it is the crux). A per-RFQ token cannot answer "who is bidding?", so it
+  would force a vendor-picker onto a public page — leaking the invited-vendor list and letting
+  vendor A submit as vendor B. The per-(rfq,vendor) token IS the bidder's identity. `entry_mode`
+  already had `'portal'` and `submitted_by` was already documented null for it (0012 designed for
+  this). **ONE bid writer**: `enterBid`'s body became `writeBid(db, …, entryMode, submittedBy, …)`;
+  proxy + portal both call it, so versioning / invited-vendor check / `landedLineTotal` cannot
+  drift (`landedLineTotal` still has exactly one caller). **ONE line grid**
+  (`components/bid-line-fields.tsx`) mounted by both hosts. The public write stays inside the one
+  isolation accessor: `makeOrgDb` was already a pure function of `orgId`, so `orgDbForVerifiedOrg`
+  lets the portal resolve its org from the token row; the only raw-`admin` call is the token
+  lookup itself. **The portal refuses a late bid; proxy entry still accepts one** (a phone quote
+  is real; a late vendor should be told plainly). `submitPortalBidAction` is the deliberate
+  `can()` exception — the token is the capability — and is named in `can-coverage.test.ts`.
+  Orchestrator verified independently of the sub-agent: 200 with no cookie, no vendor-B/org_id
+  leak, and garbage/empty/disabled/forged-item writes all refused with the bid count unmoved.
+  **Migration 0044 applied** (additive, idempotent). **Left in the demo tenant (tagged):** RFQ
+  `e8a6c01c…` `[U4-TEST]` with 2 vendors and 5 bids.
+
+**Next unit: U6** (PO payment-plan + T&C library). Recommended order U6 → U5 → U7 → U8 → U9.
 (Always `git log --oneline -8` first — this plan is idempotent.)
 
-**Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 904 tests (903 pass + 1
-skipped live drive) · verify 208/208 · verify-storage 11/11 · build clean`. Migrations applied
-0001–0043; **next free number 0044**.
+**Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 914 tests (913 pass + 1
+skipped live drive) · verify 212/212 · verify-storage 11/11 · build clean`. Migrations applied
+0001-0044; **next free number 0045**.
 
 ---
 
@@ -176,7 +196,12 @@ Heuristic the owner gave: *best for everyone · more features · dedicated not m
 - **F1 (demo-data lie).** The *seeded* RFQ `3c3a751f` is `status=awarded` with `awarded_vendor_id=null`
   → renders "Unknown vendor". The real `awardRfq` (`lib/data/rfq.ts:549`) DOES stamp it (proven in
   U1). Fix = backfill the demo row (fold into U9 demo-data work, or a one-line `db.mjs` update).
-- **F2 (open design question — needs owner before U5/U6).** Bids are ranked on landed cost
+- **F2 — DECIDED 2026-09-20 (orchestrator, owner delegated): FOLD FREIGHT INTO THE PO AS ITS OWN
+  LINE.** A bid is ranked on landed cost including freight; a PO that silently drops it makes the
+  PO total disagree with the number the award was decided on. An explicit freight line keeps the
+  PO reconcilable to the winning bid and keeps `po_lines` shape unchanged (no new column). U5's
+  PDF renders it as a line like any other. Original finding below.
+- **F2 (was open — now decided above).** Bids are ranked on landed cost
   **including freight**, but the PO amount **excludes** freight (`po_lines` has no freight column;
   `awardRfq` copies only qty/rate/tax, `rfq.ts:560-573`). Decide: fold freight into the PO, add it
   as a line, or accept it is dropped. Whatever is chosen, the PO PDF (U5) must be consistent.
