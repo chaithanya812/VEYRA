@@ -150,6 +150,8 @@ export async function createPurchaseOrder(input: {
   order_date?: string | null;
   delivery_date?: string | null;
   rfq_id?: string | null;
+  payment_plan_id?: string | null;
+  po_terms_id?: string | null;
   lines: PoLineInput[];
 }): Promise<{ id: string } | { error: string }> {
   if (!input.name.trim()) return { error: "Order name is required." };
@@ -164,6 +166,28 @@ export async function createPurchaseOrder(input: {
     .eq("id", input.vendor_id)
     .maybeSingle();
   if (!vendor) return { error: "Vendor not found." };
+
+  const paymentPlanId = input.payment_plan_id?.trim() || null;
+  if (paymentPlanId) {
+    const { data: plan, error: planErr } = await db
+      .table("po_payment_plans")
+      .select("id")
+      .eq("id", paymentPlanId)
+      .maybeSingle();
+    if (planErr) return { error: planErr.message };
+    if (!plan) return { error: "Payment plan not found." };
+  }
+
+  const poTermsId = input.po_terms_id?.trim() || null;
+  if (poTermsId) {
+    const { data: terms, error: termsErr } = await db
+      .table("po_terms")
+      .select("id")
+      .eq("id", poTermsId)
+      .maybeSingle();
+    if (termsErr) return { error: termsErr.message };
+    if (!terms) return { error: "PO terms not found." };
+  }
 
   // amount is the PURE SUM of line totals (poAmount) — arithmetic on config.
   const amount = poAmount(input.lines ?? []);
@@ -183,6 +207,8 @@ export async function createPurchaseOrder(input: {
     payment_state: "not_initiated",
     order_date: input.order_date || null,
     delivery_date: input.delivery_date || null,
+    payment_plan_id: paymentPlanId,
+    po_terms_id: poTermsId,
     created_by: ctx.userId,
   });
   if (error) return { error: error.message };

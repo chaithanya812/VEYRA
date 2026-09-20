@@ -7,12 +7,14 @@ import {
   ORDER_STATES,
   PAYMENT_STATES,
 } from "@/lib/data/purchase-orders";
+import { getPaymentPlan, getPoTerms } from "@/lib/data/po-config";
 import {
   ORDER_STATE_META,
   PAYMENT_STATE_META,
   isDeliveryOverdue,
   type PoTone,
 } from "@/lib/po-model";
+import { allocateMilestoneAmounts } from "@/lib/po-plan-model";
 import {
   updateOrderStateAction,
   updatePaymentStateAction,
@@ -46,8 +48,16 @@ export default async function OrderDetailPage({
   if (!result) notFound();
   const { po, lines, receipts } = result;
 
-  const [names] = await Promise.all([vendorNames([po.vendor_id])]);
+  const [names, plan, terms] = await Promise.all([
+    vendorNames([po.vendor_id]),
+    po.payment_plan_id ? getPaymentPlan(po.payment_plan_id) : Promise.resolve(null),
+    po.po_terms_id ? getPoTerms(po.po_terms_id) : Promise.resolve(null),
+  ]);
   const vendorLabel = names[po.vendor_id] ?? po.vendor_id.slice(0, 8);
+  const planRows =
+    plan && plan.milestones.length > 0
+      ? allocateMilestoneAmounts(plan.milestones, po.amount)
+      : [];
 
   const overdue = isDeliveryOverdue(po.delivery_date, po.order_state);
   const orderMeta = ORDER_STATE_META[po.order_state];
@@ -183,6 +193,52 @@ export default async function OrderDetailPage({
               </Button>
             </form>
           </Card>
+
+          {plan && planRows.length > 0 && (
+            <Card className="p-5">
+              <h2 className="mb-1 text-sm font-semibold text-[var(--color-ink)]">
+                Payment plan
+              </h2>
+              <p className="mb-3 text-xs text-[var(--color-ink-secondary)]">
+                {plan.name}
+              </p>
+              <ul className="flex flex-col gap-2 text-sm">
+                {planRows.map((row, i) => (
+                  <li key={`${row.label}-${i}`} className="flex justify-between gap-4">
+                    <span className="text-[var(--color-ink)]">
+                      {row.label}{" "}
+                      <span className="text-[var(--color-ink-secondary)]">
+                        ({Number(row.pct)}%)
+                      </span>
+                    </span>
+                    <span className="tabular font-medium text-[var(--color-ink)]">
+                      {inr(row.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-3 flex justify-between gap-4 border-t border-[var(--color-border)] pt-3 text-sm">
+                <span className="text-[var(--color-ink-secondary)]">Total</span>
+                <span className="tabular font-semibold text-[var(--color-ink)]">
+                  {inr(Number(po.amount))}
+                </span>
+              </div>
+            </Card>
+          )}
+
+          {terms && (
+            <Card className="p-5">
+              <h2 className="mb-1 text-sm font-semibold text-[var(--color-ink)]">
+                Terms &amp; conditions
+              </h2>
+              <p className="mb-2 text-sm font-medium text-[var(--color-ink)]">
+                {terms.title}
+              </p>
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-ink-secondary)]">
+                {terms.body}
+              </p>
+            </Card>
+          )}
         </div>
 
         {/* ── Lines + receiving ────────────────────────────────────────── */}

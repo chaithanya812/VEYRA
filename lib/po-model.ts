@@ -122,6 +122,10 @@ export interface PurchaseOrder {
   order_date: string | null; // date (YYYY-MM-DD)
   delivery_date: string | null; // date (YYYY-MM-DD)
   remarks: string | null;
+  /** Soft link → po_payment_plans.id. Null = no plan attached. */
+  payment_plan_id: string | null;
+  /** Soft link → po_terms.id. Null = no terms attached. */
+  po_terms_id: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

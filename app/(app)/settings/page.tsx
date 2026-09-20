@@ -9,6 +9,7 @@ import {
   UserCog,
   Users,
   FileText,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 import { Card, PageHeader, StatusChip } from "@/components/ui/primitives";
@@ -61,6 +62,13 @@ const LIVE_CARDS: ConfigCard[] = [
       "Default GST rate, margin and validity; the terms & conditions library; the AI prompt library and its activity log.",
     icon: FileText,
     href: "/settings/quotations",
+  },
+  {
+    title: "Procurement",
+    description:
+      "Payment-plan library and purchase-order terms & conditions — configured once, attached to any PO.",
+    icon: ClipboardList,
+    href: "/settings/procurement",
   },
 ];
 

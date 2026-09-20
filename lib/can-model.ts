@@ -128,6 +128,7 @@ export const CAPABILITIES: readonly CapabilityDef[] = [
   { key: "settings.role.view", group: "Settings", parent: "Settings", label: "View roles" },
   { key: "settings.role.edit", group: "Settings", parent: "Settings", label: "Manage roles" },
   { key: "settings.workspace.edit", group: "Settings", parent: "Settings", label: "Workspace settings" },
+  { key: "settings.procurement.edit", group: "Settings", parent: "Settings", label: "Procurement settings" },
 ];
 
 const CAPABILITY_INDEX: ReadonlyMap<string, CapabilityDef> = new Map(

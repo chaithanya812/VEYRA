@@ -28,6 +28,8 @@ const createSchema = z.object({
   type: z.enum(["purchase_order", "work_order"]).optional(),
   order_date: z.string().optional(),
   delivery_date: z.string().optional(),
+  payment_plan_id: z.string().optional(),
+  po_terms_id: z.string().optional(),
 });
 
 const lineSchema = z.object({
@@ -72,6 +74,8 @@ export async function createPurchaseOrderAction(
     type: formData.get("type") || undefined,
     order_date: formData.get("order_date") || undefined,
     delivery_date: formData.get("delivery_date") || undefined,
+    payment_plan_id: formData.get("payment_plan_id") || undefined,
+    po_terms_id: formData.get("po_terms_id") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -89,6 +93,8 @@ export async function createPurchaseOrderAction(
     type: parsed.data.type,
     order_date: parsed.data.order_date || null,
     delivery_date: parsed.data.delivery_date || null,
+    payment_plan_id: parsed.data.payment_plan_id || null,
+    po_terms_id: parsed.data.po_terms_id || null,
     lines,
   });
   if ("error" in result) return { error: result.error };

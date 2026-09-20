@@ -413,6 +413,86 @@ async function main() {
   check("PO amount is the pure sum of line totals (2000)", Number(aPo.amount) === poAmount, `got ${aPo.amount}`);
   check("PO order_state derives partially_delivered from 4/15 received", derived === "partially_delivered", `ordered=${ordered} received=${received} → ${derived}`);
 
+  // ── PO payment plans + terms (0045): org-scoped libraries; milestones cannot cross parents ─
+  const planAIns = await sb.from("po_payment_plans")
+    .insert({ org_id: A.id, name: "A Plan 25/75", is_demo: false }).select("id, is_demo").single();
+  const planBIns = await sb.from("po_payment_plans")
+    .insert({ org_id: B.id, name: "B Plan", is_demo: false }).select("id").single();
+  check(
+    "org A can insert a payment plan",
+    !planAIns.error && !!planAIns.data,
+    planAIns.error?.message ?? "",
+  );
+  const planAId = planAIns.data?.id;
+  const planBId = planBIns.data?.id;
+  if (planAId) {
+    await sb.from("po_payment_plan_milestones").insert([
+      { org_id: A.id, plan_id: planAId, label: "Advance", pct: 25, sort: 0 },
+      { org_id: A.id, plan_id: planAId, label: "Balance", pct: 75, sort: 1 },
+    ]);
+  }
+  if (planBId) {
+    await sb.from("po_payment_plan_milestones").insert({
+      org_id: B.id, plan_id: planBId, label: "All", pct: 100, sort: 0,
+    });
+  }
+  const { data: aPlans } = await sb.from("po_payment_plans").select("id, name, is_demo").eq("org_id", A.id);
+  const { data: bPlans } = await sb.from("po_payment_plans").select("id, name").eq("org_id", B.id);
+  check(
+    "org A sees exactly its 1 payment plan (no B leakage)",
+    (aPlans ?? []).length === 1 && aPlans[0].name === "A Plan 25/75" && !(bPlans ?? []).some((p) => p.name.startsWith("A ")),
+    `A=${(aPlans ?? []).length} B=${(bPlans ?? []).length}`,
+  );
+  check(
+    "org B sees exactly its 1 payment plan",
+    (bPlans ?? []).length === 1 && bPlans[0].name === "B Plan",
+    `got ${(bPlans ?? []).length}`,
+  );
+  check(
+    "is_demo defaults to false on a tenant-authored plan",
+    aPlans?.[0]?.is_demo === false,
+    `got ${aPlans?.[0]?.is_demo}`,
+  );
+  const { data: aPlanMs } = await sb.from("po_payment_plan_milestones").select("id, plan_id").eq("org_id", A.id);
+  check(
+    "milestones are org-scoped (A has 2, none of B's)",
+    (aPlanMs ?? []).length === 2 && (aPlanMs ?? []).every((m) => m.plan_id === planAId),
+    `got ${(aPlanMs ?? []).length}`,
+  );
+  const crossMs = await sb.from("po_payment_plan_milestones").insert({
+    org_id: A.id, plan_id: planBId, label: "Smuggled", pct: 10, sort: 9,
+  });
+  check(
+    "a milestone cannot be attached to another org's plan",
+    crossMs.error !== null,
+    crossMs.error?.code || "cross-org milestone accepted",
+  );
+
+  const termsAIns = await sb.from("po_terms")
+    .insert({ org_id: A.id, title: "A Terms", body: "Pay on delivery.", is_default: false, is_demo: false }).select("id").single();
+  await sb.from("po_terms").insert({ org_id: B.id, title: "B Terms", body: "B only." });
+  const { data: aPoTerms } = await sb.from("po_terms").select("title").eq("org_id", A.id);
+  const { data: bPoTerms } = await sb.from("po_terms").select("title").eq("org_id", B.id);
+  check(
+    "org A sees exactly its 1 PO terms row (no B leakage)",
+    (aPoTerms ?? []).length === 1 && aPoTerms[0].title === "A Terms",
+    `A=${(aPoTerms ?? []).length} B=${(bPoTerms ?? []).length}`,
+  );
+
+  // Soft link: deleting a plan must never cascade away the PO.
+  const { data: poWithPlan } = await sb.from("purchase_orders")
+    .insert({
+      org_id: A.id, name: "A PO-plan", vendor_id: aVendId, amount: 1000,
+      payment_plan_id: planAId, po_terms_id: termsAIns.data?.id ?? null,
+    }).select("id").single();
+  const delPlan = await sb.from("po_payment_plans").delete().eq("id", planAId);
+  const { data: poAfterDel } = await sb.from("purchase_orders").select("id").eq("id", poWithPlan?.id).maybeSingle();
+  check(
+    "deleting a payment plan does not cascade away the PO",
+    !delPlan.error && !!poAfterDel,
+    `del=${delPlan.error?.message ?? "ok"} po=${poAfterDel?.id ?? "gone"}`,
+  );
+
   // ── Inventory (0014): append-only ledger → projected stock level ────────────
   const { data: whA } = await sb.from("warehouses").insert({ org_id: A.id, name: "A Store" }).select("id").single();
   await sb.from("warehouses").insert({ org_id: B.id, name: "B Store" });

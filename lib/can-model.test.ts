@@ -253,6 +253,15 @@ describe("the tier floor", () => {
     expect(can(r, "procurement.po.approve")).toBe(true);
     expect(can(r, "settings.role.edit")).toBe(false);
     expect(can(r, "settings.user.edit")).toBe(false);
+    expect(can(r, "settings.procurement.edit")).toBe(false);
+  });
+
+  it("settings.procurement.edit is owner/admin only", () => {
+    expect(isCapability("settings.procurement.edit")).toBe(true);
+    expect(can(resolveTier("owner"), "settings.procurement.edit")).toBe(true);
+    expect(can(resolveTier("admin"), "settings.procurement.edit")).toBe(true);
+    expect(can(resolveTier("manager"), "settings.procurement.edit")).toBe(false);
+    expect(can(resolveTier("member"), "settings.procurement.edit")).toBe(false);
   });
 
   it("a member neither approves nor sees costs", () => {

@@ -42,8 +42,12 @@ const GRID =
 
 export function NewPurchaseOrderForm({
   vendors,
+  plans,
+  terms,
 }: {
   vendors: { id: string; name: string }[];
+  plans: { id: string; name: string }[];
+  terms: { id: string; title: string }[];
 }) {
   const [state, formAction, pending] = useActionState<FormState, FormData>(
     createPurchaseOrderAction,
@@ -123,6 +127,37 @@ export function NewPurchaseOrderForm({
               <Select id="type" name="type" defaultValue="purchase_order">
                 <option value="purchase_order">Purchase order</option>
                 <option value="work_order">Work order</option>
+              </Select>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field
+              label="Payment plan"
+              htmlFor="payment_plan_id"
+              hint="Optional — how this order is paid"
+            >
+              <Select id="payment_plan_id" name="payment_plan_id" defaultValue="">
+                <option value="">None</option>
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field
+              label="Terms & conditions"
+              htmlFor="po_terms_id"
+              hint="Optional — attached as written"
+            >
+              <Select id="po_terms_id" name="po_terms_id" defaultValue="">
+                <option value="">None</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
