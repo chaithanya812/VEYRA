@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ClipboardCheck, Plus, AlertTriangle } from "lucide-react";
 import { listPurchaseOrders, vendorNames } from "@/lib/data/purchase-orders";
 import { listVendors } from "@/lib/data/vendors";
+import { listRequests } from "@/lib/data/approvals";
 import {
   ORDER_STATES,
   PAYMENT_STATES,
@@ -36,7 +37,12 @@ const TYPE_LABEL: Record<string, string> = {
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ os?: string | string[]; ps?: string; vendor?: string }>;
+  searchParams: Promise<{
+    os?: string | string[];
+    ps?: string;
+    vendor?: string;
+    pending?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const selOs = (Array.isArray(sp.os) ? sp.os : sp.os ? [sp.os] : []).filter(
@@ -46,26 +52,36 @@ export default async function OrdersPage({
   const ps =
     sp.ps && (PAYMENT_STATES as readonly string[]).includes(sp.ps) ? sp.ps : undefined;
   const vendorId = sp.vendor || undefined;
+  const pendingOnly = sp.pending === "1";
 
-  const [orders, vendors] = await Promise.all([
+  const [orders, vendors, pendingReqs] = await Promise.all([
     listPurchaseOrders({
       order_state: selOs.length === 1 ? selOs[0] : undefined,
       payment_state: ps,
       vendorId,
     }),
     listVendors(),
+    listRequests({ status: "pending", module: "procurement" }),
   ]);
+  const pendingPoIds = new Set(
+    pendingReqs
+      .map((r) => r.entity_id)
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  );
   // Multi order-state selection filters locally (the data module takes one).
-  const rows =
+  const byState =
     selOs.length > 1
       ? orders.filter((o) => selOs.includes(o.order_state))
       : orders;
+  const rows = pendingOnly
+    ? byState.filter((o) => pendingPoIds.has(o.id))
+    : byState;
   const names = await vendorNames(rows.map((r) => r.vendor_id));
   const overdueCount = rows.filter((r) =>
     isDeliveryOverdue(r.delivery_date, r.order_state),
   ).length;
 
-  const filtered = selOs.length > 0 || !!ps || !!vendorId;
+  const filtered = selOs.length > 0 || !!ps || !!vendorId || pendingOnly;
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -93,7 +109,7 @@ export default async function OrdersPage({
           filter (§11). Today's Reset is a hard nav, which hid it. */}
       <form
         method="get"
-        key={`${selOs.join(",")}|${ps ?? ""}|${vendorId ?? ""}`}
+        key={`${selOs.join(",")}|${ps ?? ""}|${vendorId ?? ""}|${pendingOnly ? "1" : ""}`}
         className="mb-4 flex flex-wrap items-end gap-x-5 gap-y-3"
       >
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -134,6 +150,16 @@ export default async function OrdersPage({
               </option>
             ))}
           </Select>
+          <label className="mb-2 flex items-center gap-2 text-sm text-[var(--color-ink)]">
+            <input
+              type="checkbox"
+              name="pending"
+              value="1"
+              defaultChecked={pendingOnly}
+              className="size-4 accent-[var(--color-ink)]"
+            />
+            Pending approval
+          </label>
           <Button type="submit" variant="secondary">
             Filter
           </Button>
@@ -191,7 +217,12 @@ export default async function OrdersPage({
               </thead>
               <tbody>
                 {rows.map((po) => (
-                  <PoRow key={po.id} po={po} vendorLabel={names[po.vendor_id]} />
+                  <PoRow
+                    key={po.id}
+                    po={po}
+                    vendorLabel={names[po.vendor_id]}
+                    pendingApproval={pendingPoIds.has(po.id)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -202,7 +233,15 @@ export default async function OrdersPage({
   );
 }
 
-function PoRow({ po, vendorLabel }: { po: PurchaseOrder; vendorLabel?: string }) {
+function PoRow({
+  po,
+  vendorLabel,
+  pendingApproval,
+}: {
+  po: PurchaseOrder;
+  vendorLabel?: string;
+  pendingApproval: boolean;
+}) {
   const overdue = isDeliveryOverdue(po.delivery_date, po.order_state);
   return (
     <tr className="border-b border-[var(--color-border)] last:border-0 odd:bg-[var(--color-surface-sunken)] hover:bg-[var(--color-border)]/40">
@@ -224,10 +263,15 @@ function PoRow({ po, vendorLabel }: { po: PurchaseOrder; vendorLabel?: string })
         {TYPE_LABEL[po.type] ?? po.type}
       </td>
       <td className="px-4 py-3">
-        <StatusChip
-          tone={TONE_TO_CHIP[ORDER_STATE_META[po.order_state].tone]}
-          label={ORDER_STATE_META[po.order_state].label}
-        />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusChip
+            tone={TONE_TO_CHIP[ORDER_STATE_META[po.order_state].tone]}
+            label={ORDER_STATE_META[po.order_state].label}
+          />
+          {pendingApproval && (
+            <StatusChip tone="amber" label="Pending approval" />
+          )}
+        </div>
       </td>
       <td className="px-4 py-3">
         <StatusChip

@@ -438,6 +438,26 @@ async function main() {
   check("PO amount is the pure sum of line totals (2000)", Number(aPo.amount) === poAmount, `got ${aPo.amount}`);
   check("PO order_state derives partially_delivered from 4/15 received", derived === "partially_delivered", `ordered=${ordered} received=${received} → ${derived}`);
 
+  // Source quotation is a nullable SOFT LINK (0048) — no FK, so an unknown
+  // uuid is accepted, and deleting a quote can never cascade away a PO.
+  const { data: poQuoteCol, error: poQuoteColErr } = await sb
+    .from("purchase_orders").select("quotation_id").eq("id", poA.id).single();
+  check(
+    "purchase_orders.quotation_id exists as a nullable soft link",
+    !poQuoteColErr && poQuoteCol?.quotation_id == null,
+    poQuoteColErr?.message ?? `got ${poQuoteCol?.quotation_id}`,
+  );
+  const fakeQuoteId = crypto.randomUUID();
+  const danglingPo = await sb.from("purchase_orders").insert({
+    org_id: A.id, name: "A PO-quote-soft", vendor_id: aVendId, amount: 1,
+    quotation_id: fakeQuoteId,
+  }).select("id, quotation_id").single();
+  check(
+    "quotation_id accepts a uuid that is not a quotations row (no FK)",
+    !danglingPo.error && danglingPo.data?.quotation_id === fakeQuoteId,
+    danglingPo.error?.message ?? `got ${danglingPo.data?.quotation_id}`,
+  );
+
   // ── PO payment plans + terms (0045): org-scoped libraries; milestones cannot cross parents ─
   const planAIns = await sb.from("po_payment_plans")
     .insert({ org_id: A.id, name: "A Plan 25/75", is_demo: false }).select("id, is_demo").single();

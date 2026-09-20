@@ -100,10 +100,14 @@ export async function createPurchaseOrderAction(
   if ("error" in result) return { error: result.error };
 
   // "Create" skips the draft parking state in one step; drafts stay parked.
+  // A PO already routed to approval stays draft until the queue signs off (D5).
   const intent = String(formData.get("intent") ?? "draft");
-  if (intent === "create") await updateOrderState(result.id, "created");
+  if (intent === "create" && !result.approval_routed) {
+    await updateOrderState(result.id, "created");
+  }
 
   revalidatePath("/orders");
+  revalidatePath("/approvals");
   redirect(`/orders/${result.id}`);
 }
 

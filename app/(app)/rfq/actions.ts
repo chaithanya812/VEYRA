@@ -280,6 +280,7 @@ export async function awardRfqAction(
   revalidatePath(`/rfq/${id}`);
   revalidatePath("/rfq");
   revalidatePath("/orders");
+  revalidatePath("/approvals");
   // Jump straight to the auto-drafted PO for the winning vendor when one was made.
   if (result.poId) redirect(`/orders/${result.poId}`);
   return undefined;

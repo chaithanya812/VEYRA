@@ -5,6 +5,7 @@ import { getQuotation, listVersions } from "@/lib/data/quotations";
 import { aiBackendStatus, listPrompts } from "@/lib/data/quotation-studio";
 import { leadScopeContext } from "@/lib/data/quotation-context";
 import { getViewer } from "@/lib/data/context";
+import { listVendors } from "@/lib/data/vendors";
 import { QUOTE_STATUSES } from "@/lib/quotations-model";
 import { statusTone, statusLabel } from "@/lib/quotations-ui";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import { fmtDate } from "@/lib/utils";
 import { QuoteBuilder } from "../quote-builder";
 import { raiseMaterialRequestAction, setStatusAction, setShareAction, newVersionAction } from "../actions";
 import { SaveAsTemplateButton } from "../save-as-template";
+import { ImportToPoDialog } from "./import-to-po-dialog";
 
 export default async function QuotationDetailPage({
   params,
@@ -26,11 +28,12 @@ export default async function QuotationDetailPage({
   const data = await getQuotation(id);
   if (!data) notFound();
   const { quotation, sections, lines } = data;
-  const [versions, viewer, prompts, scopeContext] = await Promise.all([
+  const [versions, viewer, prompts, scopeContext, vendors] = await Promise.all([
     listVersions(quotation.version_group),
     getViewer(),
     listPrompts(),
     leadScopeContext(quotation.lead_id),
+    listVendors({ activeOnly: true }),
   ]);
   const ai = aiBackendStatus();
 
@@ -116,12 +119,28 @@ export default async function QuotationDetailPage({
         {/* The spine, made visible: an approved quote raises a material request
             whose lines are its scope items (PLAN-V4 7.4). */}
         {quotation.status === "approved" && (
-          <form action={raiseMaterialRequestAction}>
-            <input type="hidden" name="id" value={quotation.id} />
-            <Button type="submit" variant="secondary" size="sm">
-              <PackagePlus className="size-4" /> Raise material request
-            </Button>
-          </form>
+          <>
+            <form action={raiseMaterialRequestAction}>
+              <input type="hidden" name="id" value={quotation.id} />
+              <Button type="submit" variant="secondary" size="sm">
+                <PackagePlus className="size-4" /> Raise material request
+              </Button>
+            </form>
+            <ImportToPoDialog
+              quotationId={quotation.id}
+              quoteNumber={quotation.number}
+              quoteTitle={quotation.title}
+              lines={lines.map((l) => ({
+                title: l.title,
+                uom: l.uom,
+                qty: l.qty,
+                unit_price: l.unit_price,
+                tax_rate: l.tax_rate,
+                item_id: l.item_id,
+              }))}
+              vendors={vendors.map((v) => ({ id: v.id, name: v.name }))}
+            />
+          </>
         )}
 
         <form action={setShareAction}>

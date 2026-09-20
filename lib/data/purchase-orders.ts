@@ -3,6 +3,15 @@ import { withOrg } from "./with-org";
 import { admin } from "@/lib/supabase/admin";
 import { issueDocNumber } from "./config";
 import {
+  activeRuleFor,
+  shouldRouteToApproval,
+  createRequest,
+} from "./approvals";
+import {
+  parseMarginPct,
+  quoteLinesToPoLines,
+} from "@/lib/quote-to-po-model";
+import {
   ORDER_STATES,
   PAYMENT_STATES,
   PO_TYPES,
@@ -144,6 +153,10 @@ export interface PoLineInput {
   tax_pct?: number | null;
 }
 
+export type CreatePurchaseOrderResult =
+  | { id: string; approval_routed: boolean; approval_error?: string }
+  | { error: string };
+
 export async function createPurchaseOrder(input: {
   name: string;
   vendor_id: string;
@@ -152,10 +165,11 @@ export async function createPurchaseOrder(input: {
   order_date?: string | null;
   delivery_date?: string | null;
   rfq_id?: string | null;
+  quotation_id?: string | null;
   payment_plan_id?: string | null;
   po_terms_id?: string | null;
   lines: PoLineInput[];
-}): Promise<{ id: string } | { error: string }> {
+}): Promise<CreatePurchaseOrderResult> {
   if (!input.name.trim()) return { error: "Order name is required." };
   if (!input.vendor_id) return { error: "A vendor must be selected." };
 
@@ -209,6 +223,7 @@ export async function createPurchaseOrder(input: {
     vendor_id: input.vendor_id,
     project_label: input.project_label?.trim() || null,
     rfq_id: input.rfq_id || null,
+    quotation_id: input.quotation_id || null,
     type,
     amount,
     order_state: "draft",
@@ -240,7 +255,141 @@ export async function createPurchaseOrder(input: {
     if (lineErr) return { error: lineErr.message };
   }
 
-  return { id };
+  // A PO over the active procurement threshold asks permission on the
+  // existing approvals queue. A missing/inactive rule means no approval.
+  // A failure to raise the request must NOT roll back the PO (D4).
+  const routed = await routePoToApproval({
+    id,
+    amount,
+    label: number ?? input.name.trim(),
+  });
+  return {
+    id,
+    approval_routed: routed.routed,
+    ...(routed.error ? { approval_error: routed.error } : {}),
+  };
+}
+
+/**
+ * Raise a procurement approval request for an already-written PO when the
+ * active rule says the amount needs sign-off. Never throws: a lost PO is
+ * worse than an unrouted one, so the caller always keeps the id.
+ */
+export async function routePoToApproval(input: {
+  id: string;
+  amount: number;
+  label: string;
+}): Promise<{ routed: boolean; error?: string }> {
+  try {
+    const rule = await activeRuleFor("procurement");
+    if (!shouldRouteToApproval(input.amount, rule)) {
+      return { routed: false };
+    }
+    const result = await createRequest({
+      module: "procurement",
+      entity_id: input.id,
+      entity_label: input.label,
+      amount: input.amount,
+    });
+    if (result.error) return { routed: false, error: result.error };
+    return { routed: true };
+  } catch (e) {
+    return { routed: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Import an approved quotation's lines as a draft PO. The BUY rate is the
+ * quoted SELL rate stripped of a human-typed margin % — never cost_rate.
+ */
+export async function createPurchaseOrderFromQuotation(input: {
+  quotationId: string;
+  vendor_id: string;
+  margin_pct?: unknown;
+  name?: string | null;
+}): Promise<CreatePurchaseOrderResult> {
+  const margin = parseMarginPct(input.margin_pct);
+  if (!margin.ok) return { error: margin.error };
+
+  const { db } = await withOrg();
+  const { data: quote, error: quoteErr } = await db
+    .table("quotations")
+    .select("id, title, number, status, customer_name")
+    .eq("id", input.quotationId)
+    .maybeSingle();
+  if (quoteErr) return { error: quoteErr.message };
+  if (!quote) return { error: "That quotation is not in this workspace." };
+  const q = quote as unknown as {
+    id: string;
+    title: string | null;
+    number: string;
+    status: string;
+    customer_name: string | null;
+  };
+  if (q.status !== "approved") {
+    return {
+      error: "Only an approved quotation can be imported to a purchase order.",
+    };
+  }
+
+  const { data: lines, error: lineErr } = await db
+    .table("quotation_lines")
+    .select("item_id, title, uom, qty, unit_price, tax_rate")
+    .eq("quotation_id", q.id)
+    .order("sort_order", { ascending: true });
+  if (lineErr) return { error: lineErr.message };
+
+  const poLines = quoteLinesToPoLines(
+    (lines ?? []) as unknown as {
+      item_id: string | null;
+      title: string;
+      uom: string | null;
+      qty: number;
+      unit_price: number;
+      tax_rate: number;
+    }[],
+    margin.pct,
+  );
+  if (poLines.length === 0) {
+    return { error: "This quotation has no lines to import." };
+  }
+
+  const name =
+    input.name?.trim() ||
+    `PO — ${q.number}${q.title ? ` · ${q.title}` : ""}`;
+
+  return createPurchaseOrder({
+    name,
+    vendor_id: input.vendor_id,
+    project_label: q.customer_name,
+    quotation_id: q.id,
+    lines: poLines,
+  });
+}
+
+/**
+ * D5: approving a procurement request issues the PO (draft → created).
+ * No-op when the row is missing or already past draft. A failure here
+ * must not undo the approval decision.
+ */
+export async function markPoCreatedIfDraft(
+  id: string,
+): Promise<{ error?: string; changed?: boolean }> {
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("purchase_orders")
+    .select("id, order_state")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { changed: false };
+  const row = data as unknown as { id: string; order_state: string };
+  if (row.order_state !== "draft") return { changed: false };
+  const { error: updErr } = await db.table("purchase_orders").updateById(id, {
+    order_state: "created",
+    updated_at: new Date().toISOString(),
+  });
+  return updErr ? { error: updErr.message } : { changed: true };
 }
 
 /**

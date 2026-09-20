@@ -120,6 +120,12 @@ export interface PurchaseOrder {
   vendor_id: string;
   project_label: string | null;
   rfq_id: string | null;
+  /**
+   * Soft link → quotations.id when this PO was imported from an approved
+   * quote. Null on every other PO. No FK — deleting a quote must never
+   * cascade away a purchase order (same reasoning as rfq_id / rfqs.mr_id).
+   */
+  quotation_id: string | null;
   type: PoType;
   /** SUM of line totals (poAmount) — pure arithmetic on user-entered config. */
   amount: number;

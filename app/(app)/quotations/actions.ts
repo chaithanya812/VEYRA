@@ -31,6 +31,7 @@ import {
 import { deriveTreatment } from "@/lib/quotations-model";
 import { searchItems } from "@/lib/data/items";
 import { createMaterialRequestFromQuotation } from "@/lib/data/material-requests";
+import { createPurchaseOrderFromQuotation } from "@/lib/data/purchase-orders";
 import type { ItemRef } from "@/lib/items-model";
 
 export type FormState = { error?: string } | undefined;
@@ -164,6 +165,40 @@ export async function raiseMaterialRequestAction(formData: FormData) {
   }
   revalidatePath("/procurement");
   redirect(`/procurement/${result.id}`);
+}
+
+/**
+ * Approved quotation → draft PO. Guarded on procurement.po.create (existing
+ * key). The margin % is the raw form field — parseMarginPct names the
+ * problem; nothing here invents a number.
+ */
+export async function importQuotationToPoAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const denied = await requireCan("procurement.po.create");
+  if (denied) return denied;
+
+  const quotationId = String(formData.get("quotationId") ?? "").trim();
+  const vendor_id = String(formData.get("vendor_id") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const margin_pct = String(formData.get("margin_pct") ?? "");
+
+  if (!quotationId) return { error: "Quotation is required." };
+  if (!vendor_id) return { error: "A vendor must be selected." };
+
+  const result = await createPurchaseOrderFromQuotation({
+    quotationId,
+    vendor_id,
+    name: name || null,
+    margin_pct,
+  });
+  if ("error" in result) return { error: result.error };
+
+  revalidatePath("/orders");
+  revalidatePath("/approvals");
+  revalidatePath(`/quotations/${quotationId}`);
+  redirect(`/orders/${result.id}`);
 }
 
 export async function newVersionAction(formData: FormData) {

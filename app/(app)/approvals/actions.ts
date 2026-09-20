@@ -1,5 +1,5 @@
 "use server";
-import { requireCan } from "@/lib/data/permissions";
+import { can, requireCan } from "@/lib/data/permissions";
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -9,7 +9,9 @@ import {
   approveRequest,
   rejectRequest,
   upsertRule,
+  getRequest,
 } from "@/lib/data/approvals";
+import { markPoCreatedIfDraft } from "@/lib/data/purchase-orders";
 
 /** A decision/rule write invalidates both approvals surfaces. */
 function revalidateApprovals() {
@@ -56,7 +58,30 @@ export async function approveRequestAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const result = await approveRequest(parsed.data.id, parsed.data.comment);
-  if (!result.error) revalidateApprovals();
+  if (!result.error) {
+    // D5: a procurement approval issues the PO (draft → created). The
+    // approval already landed; a PO-state miss must not look like a
+    // failed decision.
+    const req = await getRequest(parsed.data.id);
+    if (req?.module === "procurement" && req.entity_id) {
+      // ISSUING the PO is a separate grant from deciding the request.
+      // This screen guards on procurement.mr.approve because it was built
+      // for material requests; approving now also moves a PO draft →
+      // created, which is what procurement.po.approve governs. The four
+      // built-in tiers grant both together, but an org-authored role can
+      // hold MR approval alone — and that must not become the power to
+      // issue purchase orders. Without the grant the decision still
+      // stands and the PO simply stays draft, to be issued on /orders.
+      if (await can("procurement.po.approve")) {
+        // Best-effort: the approval already committed. If the PO cannot
+        // move, it stays draft and can be issued by hand on /orders.
+        await markPoCreatedIfDraft(req.entity_id);
+        revalidatePath(`/orders/${req.entity_id}`);
+      }
+    }
+    revalidateApprovals();
+    revalidatePath("/orders");
+  }
   return result;
 }
 
@@ -79,7 +104,11 @@ export async function rejectRequestAction(
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   const result = await rejectRequest(parsed.data.id, parsed.data.comment);
-  if (!result.error) revalidateApprovals();
+  if (!result.error) {
+    // Reject leaves the PO as draft — the person can still revise it.
+    revalidateApprovals();
+    revalidatePath("/orders");
+  }
   return result;
 }
 
