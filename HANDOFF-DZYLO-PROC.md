@@ -122,10 +122,26 @@ receipts.
 - `40fb0b0` — **U2**: RFQ detail add-vendors dialog + remove-vendor control (`addVendorsToRfq` /
   `removeRfqVendor` in `lib/data/rfq.ts`; guarded actions; red destructive remove). Gates re-confirmed
   by the orchestrator before commit.
+- `6fb31ae` — **U3**: Deliveries tab becomes the ACCEPTANCE QUEUE over orders — PO/WO split +
+  Pending/Partial/Accepted status filters, BOTH resolved server-side from the URL (`?otype=`/`?accept=`,
+  the `?view=` idiom); the old flat receipt log folds into an expandable per-order "what has landed"
+  detail. Acceptance uses a SECOND labelled vocabulary over the same `order_state` (`ACCEPTANCE_META`
+  in `po-model.ts`, defined once, tested over every state, grey/amber/green — never red; rule 14);
+  `ORDER_STATE_META` untouched. Ad-hoc receive (Q4) routes to the existing guarded stock-in flow
+  (posts a GRN with `po_id` null) rather than a duplicate action — a separate path that keeps
+  PO-traced `recordReceipt` line-integrity intact. **Also fixed a silent pre-existing bug** the queue
+  exposed: the order read mapped `o.kind`/`o.expected_date` but the columns are `type`/`delivery_date`
+  — under `select("*")` these read `undefined` and every order showed as a PO with no delivery date;
+  now correct on the queue AND the Orders tab. Orchestrator re-ran all six gates + verified queue
+  render, URL filters, and the ad-hoc `po_id`-null GRN independently before commit. No migration.
+  **Left in the demo tenant (tagged):** 3 `[U3-TEST]` orders (a WO + Pending PO + Accepted PO, seeded
+  to exercise the split/ladder) and 1 append-only ad-hoc GRN — owner may prune the orders; the GRN is
+  append-only (rule 4).
 
-**Next unit: U3.** (Always `git log --oneline -8` first — this plan is idempotent.)
+**Next unit: U4** (G1 public vendor bid portal). Recommended order U4 → U6 → U5 → U7 → U8 → U9.
+(Always `git log --oneline -8` first — this plan is idempotent.)
 
-**Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 896 tests (895 pass + 1
+**Baseline nothing may lower** (HANDOFF-V10 §2): `tsc 0 · eslint 0 · 904 tests (903 pass + 1
 skipped live drive) · verify 208/208 · verify-storage 11/11 · build clean`. Migrations applied
 0001–0043; **next free number 0044**.
 
