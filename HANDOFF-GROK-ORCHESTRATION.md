@@ -254,3 +254,123 @@ Procurement (U1–U9) is **DONE** (`e750d82`, pushed).
 Never run two programs in parallel against this checkout: they share one database, one dev server
 on 3010, one migration sequence, and `scripts/verify.mjs` provisions its own test orgs — two
 concurrent runs corrupt each other's fixtures and make every count assertion meaningless.
+
+---
+
+## PART J — Known defects, audited 2026-09-20. Fix these in the area you touch.
+
+A four-way read-only audit of the whole app produced the list below. **Each program owns the
+items in its own area.** Do not fix another program's items — you will collide with it.
+
+### J1. THE ROOT CAUSE: the guard test has a blind spot
+
+`lib/can-coverage.test.ts:70` matches the filename EXACTLY:
+
+```js
+else if (entry === "actions.ts") found.push(full);
+```
+
+So any file named `*-actions.ts` is invisible to it — and **every genuinely unguarded write
+action in the app lives in one of those three files.** The convention is sound; the enforcement
+has a hole, and the hole exactly predicts the bug list.
+
+**The one-line fix** — `entry.endsWith("actions.ts")` — makes the test fail loudly and name all
+nine. Whoever touches one of these files first should make that change, guard their own file's
+actions, and add the other two files' actions to the test's explicit exemption list ONLY if the
+owning program has not run yet. Say in your report that you did it.
+
+Audited counts: **186 exported server actions**; 27 without a guard as the first statement, of
+which 5 are pre-session auth, 9 are allowlisted self-service, 1 is the documented token-gated
+portal, leaving **9 genuine gaps + 2 probable oversights**.
+
+| File | Unguarded actions | Owning program |
+|---|---|---|
+| `app/(app)/projects/[id]/plan/smartplan-actions.ts` | `smartPlanAction`, `applySmartPlanAction` — the latter **writes up to 40 milestone rows** | AI Project Planning |
+| `app/(app)/production/nesting-actions.ts` | `runNestingAction`, `generateTagsAction`, `advancePanelAction`, `addWorkCenterAction` | Project Management |
+| `app/(app)/quotations/ai-boq-actions.ts` | `generateBoqAction` (**writes BOQ lines into any quotationId taken from the form**), `savePromptAction`, `deletePromptAction` | Modular Quotation 2.0 |
+| `app/(app)/site/actions.ts` | `checkInAction`, `checkOutAction` — their siblings in the SAME file are guarded, so this reads as oversight | Project Management |
+
+### J2. Reads are largely ungated; writes are not
+
+**59 of 70** in-app pages have no `can()` in the page file. Only 11 guard before reading:
+`/billing`, `/design/prompts`, `/finance`, `/finance/payments`, `/finance/petty`,
+`/finance/receivables`, `/hr/attendance/admin`, `/projects/[id]/production`, `/reports`,
+`/reports/[report]`, `/settings/roles`. Those are the pattern to copy (`can()` then
+`<PermissionLimited capability="..." />` on refusal).
+
+This is a defensible trade inside one tenant, but these specific pages render money or
+configuration to anyone who types the URL:
+
+| Page | What it exposes | Owning program |
+|---|---|---|
+| `/finance/[id]` | contract value, milestones, full payment ledger | Business Reports |
+| `/approvals`, `/approvals/rules` | every request, amount, requester, threshold | Business Reports |
+| `/projects/[id]/finance`, `/projects/[id]/payments`, `/projects/[id]/labour` | project money and labour cost | Project Management |
+| `/vendors/[id]/projects` | vendor agreed / disbursed / dues | Inventory (vendors slice) |
+| `/orders`, `/orders/[id]` | PO amounts | Inventory |
+| `/quotations`, `/quotations/[id]` | quote values **and cost/margin** — see J3 | Modular Quotation 2.0 |
+| every `/settings/*` except `/settings/roles` | tenant configuration | whichever program adds a settings card |
+
+### J3. `billing.cost.view` is defined, tickable, and never enforced
+
+It is the capability registry's own headline example — "a supervisor sees the BOQ WITHOUT its
+cost columns" — and **nothing checks it**. `app/(app)/quotations/quote-builder.tsx:355-356`
+renders `Cost` and `Margin` unconditionally. The member tier already excludes the key, so the
+intent exists; only the enforcement is missing. **Modular Quotation 2.0 owns this** and must not
+add more money surfaces without wiring it.
+
+Two more keys are defined and never checked: `settings.user.view` (its consumer should be
+`/settings/users`) and `billing.invoice.create`.
+
+### J4. Dead code and orphan routes — delete or wire, do not extend
+
+| Item | Status | Owning program |
+|---|---|---|
+| `/procurement/new` | orphan route; nothing links to it | Inventory |
+| `createRfqFromMrAction` | exported, zero callers | Inventory |
+| `addStockIn` (`lib/data/inventory.ts`) | superseded by `postStockMovement`; only a test calls it | Inventory |
+| `renameSectionAction`, `rescheduleFollowUpAction`, `updateTaskAction` | exported, no callers | Modular (first two), Project Mgmt |
+| `renameFolderAction` | guarded, never imported | Project Management |
+| `app/(app)/settings/roles/permission-matrix.tsx` | superseded by `role-editor.tsx`, imported by nothing | Business Reports |
+| `pipeline_stages` | marked DEAD in `tables.ts`, still allowlisted | leave it |
+| `/projects/insights`, `/projects/mb-sheets`, `/projects/renders` | in `lib/nav.ts` as `soon: true`; **no page files exist** | Project Management (U10 un-parks insights) |
+
+### J5. Per-program notes
+
+- **Modular Quotation 2.0** — two lead-status vocabularies are live at once (`lib/leads-model.ts`
+  6 values vs `lib/lead-management-model.ts` 14); `/quotations/new` still reads the old one.
+  `/quotations` and `/quotations/templates` have no filter, search, sort or pagination. Every AI
+  surface is dark for want of `AI_GEMINI_API_KEY` — build so it degrades honestly.
+- **Inventory** — `/rfq` has no filters at all while its sibling lists all do. The `/orders`
+  order-state multi-select refetches unfiltered and narrows in JS. `bidComparison(id)` is called
+  twice per request on `/rfq/[id]`. `tax_pct` is captured on bid lines but excluded from
+  `landedLineTotal` (by design — landed cost is qty×rate+freight; do not "fix" it silently).
+  Vendor Documents is explicitly unbuilt (`project_files.project_id` is NOT NULL).
+- **Business Reports** — CSV export is metered on `/finance/*` via `meterExportAction` but NOT on
+  `/reports/[report]`, a second unaccounted read path. `cutlists` and `users` are declared usage
+  metrics with no gate and no recorder. `/finance/receivables` degrades with a visible warning if
+  migration 0042 is unapplied — keep that honesty. Four delete actions use bare `can()` plus a
+  silent `return`, so a refused delete looks like nothing happened.
+- **Project Management** — two parallel site-photo systems both writing `site_photos`: `/site`
+  stores pasted URLs ("v1 — no file storage yet"), `/projects/[id]/site` has a real upload
+  pipeline. The Summary panel links "Site progress" to company-wide `/site` instead of the
+  project-scoped route — likely a bug. BOM/cutlist/nesting `status` has no enum. HR visit
+  requests are read-only pending a status-vocabulary decision.
+- **AI Project Planning** — SmartPlan is already correct about the number rule and worth
+  preserving: `parseSmartPlan` drops any step with a money/measurement-shaped key, clamps offsets
+  and durations, and `datePlan()` converts to real dates deterministically from a human-chosen
+  start. The model produces `offset_days`/`duration_days` only. Generating writes nothing; only
+  applying writes, and the server re-validates. **Do not loosen this.** Its two actions are the
+  unguarded pair in J1.
+
+### J6. Authentication is OFF — state it in every report
+
+`lib/data/context.ts:33` — `const AUTH_ENABLED = false`. `getOrgContext()` does not consult auth;
+it hard-pins `DEMO_ORG_ID` and takes the oldest active member. `/login` is a person picker with
+no password: *"anyone with the URL can pick Owner."* Identity is the `veyra_acting_member` cookie.
+
+Tenant isolation is unaffected — `withOrg()` scopes every query correctly, there is simply one
+tenant reachable — but **the capability model currently shapes personas, it does not defend
+against an outsider.** Do not describe any permission work as "securing" the app until auth is
+restored (the path is documented in `with-org.ts`: restore the `getUser()` lookup above the demo
+block, flip `AUTH_ENABLED`, restore the password form from git `9fda188`).
