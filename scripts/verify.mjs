@@ -150,6 +150,31 @@ async function main() {
   //     …while the SAME SKU across orgs was already inserted above (B's PLY-1) and allowed.
   check("same SKU allowed across orgs (B reused A's PLY-1)", (bItems.length === 1), "");
 
+  // (7c) good_type is a separate nullable axis from category; last_price is
+  //      NOT a column — it is derived from stock_movements at read time.
+  const typedItem = await sb.from("items").insert({
+    org_id: A.id,
+    name: "A Hardware Hinge",
+    name_key: nameKey("A Hardware Hinge"),
+    type: "material",
+    category: "Hardware",
+    good_type: "Raw Material",
+    base_uom: "nos",
+  }).select("id, category, good_type").single();
+  check(
+    "items.good_type round-trips as a separate axis from category",
+    !typedItem.error &&
+      typedItem.data?.category === "Hardware" &&
+      typedItem.data?.good_type === "Raw Material",
+    typedItem.error?.message ?? `${typedItem.data?.category}/${typedItem.data?.good_type}`,
+  );
+  const lastPriceCol = await sb.from("items").select("last_price").eq("org_id", A.id).limit(1);
+  check(
+    "items has no stored last_price column (derived at read time)",
+    !!lastPriceCol.error,
+    lastPriceCol.error?.message ?? "last_price accepted",
+  );
+
   // ── Quotations ───────────────────────────────────────────────────────────
   // A quote in each org; a section + 2 lines in A's quote.
   const { data: qa } = await sb

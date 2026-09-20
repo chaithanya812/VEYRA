@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { getItem } from "@/lib/data/items";
+import { getItem, itemLastPrice } from "@/lib/data/items";
 import { typeLabel, uomLabel } from "@/lib/items-ui";
 import { Button } from "@/components/ui/button";
-import { PageHeader, StatusChip } from "@/components/ui/primitives";
+import { Card, PageHeader, StatusChip } from "@/components/ui/primitives";
 import { ItemForm } from "../item-form";
 import { updateItemAction, toggleActiveAction } from "../actions";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, inr } from "@/lib/utils";
 
 export default async function ItemDetailPage({
   params,
@@ -17,10 +17,13 @@ export default async function ItemDetailPage({
   const { id } = await params;
   const item = await getItem(id);
   if (!item) notFound();
+  const last = await itemLastPrice(id);
 
   const subtitleParts = [
     item.code ?? "No code",
     typeLabel[item.type],
+    item.category ?? "No category",
+    item.good_type ?? "No good type",
     `Base unit: ${uomLabel[item.base_uom]}`,
     `Updated ${fmtDate(item.updated_at)}`,
   ];
@@ -57,6 +60,32 @@ export default async function ItemDetailPage({
           </div>
         }
       />
+
+      <Card className="mb-4 p-4">
+        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-[13px] text-[var(--color-ink-secondary)]">Category</dt>
+            <dd className="font-medium text-[var(--color-ink)]">{item.category ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[13px] text-[var(--color-ink-secondary)]">Good type</dt>
+            <dd className="font-medium text-[var(--color-ink)]">{item.good_type ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-[13px] text-[var(--color-ink-secondary)]">
+              Last price
+            </dt>
+            <dd className="font-medium tabular text-[var(--color-ink)]">
+              {last == null
+                ? "—"
+                : `${inr(last)}/${uomLabel[item.base_uom]}`}
+            </dd>
+            <p className="mt-0.5 text-xs text-[var(--color-ink-secondary)]">
+              Newest stock movement rate — derived, not stored
+            </p>
+          </div>
+        </dl>
+      </Card>
 
       <ItemForm action={updateItemAction} mode="edit" item={item} />
     </div>

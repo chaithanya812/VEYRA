@@ -6,6 +6,9 @@ import {
   ITEM_TYPES,
   UOMS,
   GST_RATES,
+  SUGGESTED_CATEGORIES,
+  SUGGESTED_GOOD_TYPES,
+  lastPrice,
   type Item,
   type ItemRef,
   type ItemType,
@@ -29,6 +32,9 @@ export {
   ITEM_TYPES,
   UOMS,
   GST_RATES,
+  SUGGESTED_CATEGORIES,
+  SUGGESTED_GOOD_TYPES,
+  lastPrice,
   type Item,
   type ItemRef,
   type ItemType,
@@ -38,24 +44,55 @@ export {
 };
 
 const COLS =
-  "id, name, code, type, category, brand, base_uom, purchase_uom, purchase_to_base_factor, base_rate, hsn_sac, tax_rate, is_active, description, created_at, updated_at";
+  "id, name, code, type, category, good_type, brand, base_uom, purchase_uom, purchase_to_base_factor, base_rate, hsn_sac, tax_rate, is_active, description, created_at, updated_at";
 
 export async function listItems(filter?: {
   type?: ItemType;
   q?: string;
   activeOnly?: boolean;
+  category?: string;
+  good_type?: string;
 }): Promise<Item[]> {
   const { db } = await withOrg();
   let q = db.table("items").select(COLS);
   if (filter?.type) q = q.eq("type", filter.type);
   if (filter?.activeOnly) q = q.eq("is_active", true);
+  if (filter?.category?.trim()) q = q.eq("category", filter.category.trim());
+  if (filter?.good_type?.trim()) q = q.eq("good_type", filter.good_type.trim());
   if (filter?.q?.trim()) {
     const term = `%${filter.q.trim()}%`;
-    q = q.or(`name.ilike.${term},code.ilike.${term},category.ilike.${term},brand.ilike.${term}`);
+    q = q.or(
+      `name.ilike.${term},code.ilike.${term},category.ilike.${term},brand.ilike.${term},good_type.ilike.${term}`,
+    );
   }
   const { data, error } = await q.order("name", { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as Item[];
+}
+
+/** Distinct category / good_type values in this org, unioned with the suggested vocab. */
+export async function listItemTaxonomy(): Promise<{
+  categories: string[];
+  goodTypes: string[];
+}> {
+  const { db } = await withOrg();
+  const { data, error } = await db.table("items").select("category, good_type");
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as {
+    category: string | null;
+    good_type: string | null;
+  }[];
+  const categories = new Set<string>(SUGGESTED_CATEGORIES);
+  const goodTypes = new Set<string>(SUGGESTED_GOOD_TYPES);
+  for (const r of rows) {
+    if (r.category?.trim()) categories.add(r.category.trim());
+    if (r.good_type?.trim()) goodTypes.add(r.good_type.trim());
+  }
+  const byName = (a: string, b: string) => a.localeCompare(b);
+  return {
+    categories: [...categories].sort(byName),
+    goodTypes: [...goodTypes].sort(byName),
+  };
 }
 
 export async function itemCounts(): Promise<{
@@ -109,6 +146,7 @@ export interface ItemInput {
   code?: string | null;
   type: ItemType;
   category?: string | null;
+  good_type?: string | null;
   brand?: string | null;
   base_uom: Uom;
   purchase_uom?: Uom | null;
@@ -154,6 +192,7 @@ export async function createItem(
     code,
     type: input.type,
     category: input.category?.trim() || null,
+    good_type: input.good_type?.trim() || null,
     brand: input.brand?.trim() || null,
     base_uom: input.base_uom,
     purchase_uom: input.purchase_uom || null,
@@ -205,6 +244,7 @@ export async function updateItem(
     code,
     type: input.type,
     category: input.category?.trim() || null,
+    good_type: input.good_type?.trim() || null,
     brand: input.brand?.trim() || null,
     base_uom: input.base_uom,
     purchase_uom: input.purchase_uom || null,
@@ -227,6 +267,55 @@ export async function setItemActive(
     .table("items")
     .updateById(id, { is_active: isActive, updated_at: new Date().toISOString() });
   return error ? { error: error.message } : {};
+}
+
+/**
+ * Promote an unlisted name into the catalogue, or attach an existing row of
+ * the same name. Create still goes through createItem (org stamp, name/code
+ * dedupe, metered-create gate). A race on the unique name index is resolved
+ * by re-reading rather than returning a false error.
+ */
+export async function findOrCreateItem(
+  input: ItemInput,
+): Promise<{ id: string } | { error: string }> {
+  const { db } = await withOrg();
+  const key = nameKey(input.name);
+  const { data, error } = await db
+    .table("items")
+    .select("id")
+    .eq("name_key", key)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (data) return { id: (data as unknown as { id: string }).id };
+
+  const created = await createItem(input);
+  if ("id" in created) return created;
+
+  const { data: again, error: againErr } = await db
+    .table("items")
+    .select("id")
+    .eq("name_key", key)
+    .maybeSingle();
+  if (againErr) return { error: againErr.message };
+  if (again) return { id: (again as unknown as { id: string }).id };
+  return created;
+}
+
+/**
+ * Newest stock_movements.unit_rate for this item. Derived at read time —
+ * there is no last_price column.
+ */
+export async function itemLastPrice(itemId: string): Promise<number | null> {
+  const { db } = await withOrg();
+  const { data, error } = await db
+    .table("stock_movements")
+    .select("unit_rate, created_at")
+    .eq("item_id", itemId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const rows = (data ?? []) as unknown as { unit_rate: number; created_at: string }[];
+  return lastPrice(rows);
 }
 
 /**
@@ -293,6 +382,7 @@ export async function bulkCreateItems(csv: string): Promise<BulkCreateResult> {
       code: input.code,
       type: input.type,
       category: input.category,
+      good_type: input.good_type,
       brand: input.brand,
       base_uom: input.base_uom,
       base_rate: input.base_rate,

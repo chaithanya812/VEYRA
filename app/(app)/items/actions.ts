@@ -17,6 +17,7 @@ import {
   type ItemType,
   type Uom,
 } from "@/lib/data/items";
+import { starterCatalogueCsv } from "@/lib/starter-catalogue";
 
 export type FormState = { error?: string } | undefined;
 
@@ -34,6 +35,7 @@ const itemSchema = z.object({
   code: z.string().optional(),
   type: z.enum(ITEM_TYPES),
   category: z.string().optional(),
+  good_type: z.string().optional(),
   brand: z.string().optional(),
   base_uom: z.enum(UOMS),
   purchase_uom: z.string().optional(),
@@ -66,6 +68,7 @@ function toInput(d: z.infer<typeof itemSchema>): ItemInput | { error: string } {
     code: d.code || null,
     type: d.type as ItemType,
     category: d.category || null,
+    good_type: d.good_type || null,
     brand: d.brand || null,
     base_uom: d.base_uom as Uom,
     purchase_uom: purchaseUom,
@@ -83,6 +86,7 @@ function parseForm(formData: FormData) {
     code: formData.get("code") || undefined,
     type: formData.get("type"),
     category: formData.get("category") || undefined,
+    good_type: formData.get("good_type") || undefined,
     brand: formData.get("brand") || undefined,
     base_uom: formData.get("base_uom"),
     purchase_uom: formData.get("purchase_uom") || undefined,
@@ -171,4 +175,22 @@ export async function importItemsCsvAction(
   revalidatePath("/items");
 
   return { outcomes: result.outcomes, summary: result.summary };
+}
+
+/**
+ * One-click import of the shared starter catalogue. Same parseItemsCsv +
+ * createItem bulk path as a pasted CSV; duplicates are skipped, not doubled.
+ */
+export async function importStarterCatalogueAction() {
+  const denied = await requireCan("items.item.create");
+  if (denied) {
+    redirect(`/items?import_error=${encodeURIComponent(denied.error)}`);
+  }
+
+  const result = await bulkCreateItems(starterCatalogueCsv());
+  revalidatePath("/items");
+  revalidatePath("/items/import");
+  redirect(
+    `/items?imported=${result.summary.created}&skipped=${result.summary.skipped}`,
+  );
 }

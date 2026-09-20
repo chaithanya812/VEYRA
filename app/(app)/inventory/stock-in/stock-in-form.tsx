@@ -3,7 +3,12 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2, Search } from "lucide-react";
-import { addStockInAction, searchItemsAction, type FormState } from "../actions";
+import {
+  addStockInAction,
+  promoteUnlistedItemAction,
+  searchItemsAction,
+  type FormState,
+} from "../actions";
 import type { CatalogueItemRef } from "@/lib/inventory-model";
 import { UOMS, GST_RATES } from "@/lib/items-model";
 import { Button } from "@/components/ui/button";
@@ -95,6 +100,8 @@ export function StockInForm({
   // Autocomplete state — one open dropdown at a time (the focused row).
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<CatalogueItemRef[]>([]);
+  const [promotingKey, setPromotingKey] = useState<string | null>(null);
+  const [promoteError, setPromoteError] = useState<string | null>(null);
   const seq = useRef(0);
 
   useEffect(() => {
@@ -133,6 +140,26 @@ export function StockInForm({
     );
     setOpenKey(null);
     setSuggestions([]);
+  };
+
+  const promoteRow = async (r: Row) => {
+    const name = r.item_name.trim();
+    if (!name || r.item_id) return;
+    setPromotingKey(r.key);
+    setPromoteError(null);
+    const res = await promoteUnlistedItemAction({
+      name,
+      uom: r.uom || null,
+      rate: r.rate.trim() === "" ? null : Number(r.rate),
+      tax_rate: r.gst.trim() === "" ? null : Number(r.gst),
+      hsn_sac: r.hsn.trim() || null,
+    });
+    setPromotingKey(null);
+    if ("error" in res) {
+      setPromoteError(res.error);
+      return;
+    }
+    patchRow(r.key, { item_id: res.id });
   };
 
   const itemNameInvalid = (r: Row) => r.item_name.trim().length === 0;
@@ -293,7 +320,7 @@ export function StockInForm({
                           title={
                             r.item_id
                               ? "Catalogue item"
-                              : "Not in catalogue — flagged unlisted, promote it in Items"
+                              : "Not in catalogue — flagged unlisted. Add it from this line or leave it unlisted."
                           }
                         >
                           {!r.item_id ? (
@@ -313,9 +340,9 @@ export function StockInForm({
                       >
                         {suggestions.length === 0 ? (
                           <p className="px-3 py-2 text-xs text-[var(--color-ink-secondary)]">
-                            No catalogue match — the line is flagged{" "}
-                            <span className="font-medium text-[var(--color-red)]">unlisted</span>{" "}
-                            so it can be promoted later.
+                            No catalogue match — flagged{" "}
+                            <span className="font-medium text-[var(--color-red)]">unlisted</span>
+                            . Add it to the catalogue from this line, or leave it unlisted.
                           </p>
                         ) : (
                           suggestions.map((m) => (
@@ -335,6 +362,18 @@ export function StockInForm({
                           ))
                         )}
                       </div>
+                    )}
+                    {r.item_name.trim() && !r.item_id && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="mt-1"
+                        disabled={promotingKey === r.key}
+                        onClick={() => void promoteRow(r)}
+                      >
+                        {promotingKey === r.key ? "Adding…" : "Add to catalogue"}
+                      </Button>
                     )}
                   </div>
 
@@ -466,6 +505,9 @@ export function StockInForm({
         />
       </Card>
 
+      {promoteError && (
+        <p className="text-sm text-[var(--color-amber)]">{promoteError}</p>
+      )}
       {state?.error && (
         <p className="text-sm text-[var(--color-red)]">{state.error}</p>
       )}

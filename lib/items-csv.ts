@@ -6,7 +6,7 @@
  *
  * Column contract (header row, case-insensitive, order-independent, extras ignored):
  *   name (required), code/sku (optional), type, base_uom, base_rate, tax_rate,
- *   hsn_sac, brand, category, description
+ *   hsn_sac, brand, category, good_type, description
  */
 
 import { ITEM_TYPES, UOMS, GST_RATES, type ItemType, type Uom } from "./items-model";
@@ -27,6 +27,7 @@ export interface CsvItemValues {
   hsn_sac: string | null;
   brand: string | null;
   category: string | null;
+  good_type: string | null;
   description: string | null;
 }
 
@@ -65,6 +66,10 @@ const HEADER_MAP: Record<string, keyof CsvItemValues | "name" | "code"> = {
   hsn: "hsn_sac",
   brand: "brand",
   category: "category",
+  good_type: "good_type",
+  goodtype: "good_type",
+  goods_type: "good_type",
+  goodstype: "good_type",
   description: "description",
   notes: "description",
 };
@@ -170,6 +175,7 @@ function buildRow(
     hsn_sac: (raw.hsn_sac ?? "").trim() || null,
     brand: (raw.brand ?? "").trim() || null,
     category: (raw.category ?? "").trim() || null,
+    good_type: (raw.good_type ?? "").trim() || null,
     description: (raw.description ?? "").trim() || null,
   };
 
@@ -219,6 +225,7 @@ export function parseItemsCsv(text: string): CsvParseResult {
           hsn_sac: null,
           brand: null,
           category: null,
+          good_type: null,
           description: null,
         },
         nameKey: nameKey(raw.name ?? ""),

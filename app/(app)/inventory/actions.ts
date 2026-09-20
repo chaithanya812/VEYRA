@@ -13,7 +13,9 @@ import {
   type CatalogueItemRef,
   type StockInLineInput,
 } from "@/lib/data/inventory";
+import { findOrCreateItem } from "@/lib/data/items";
 import { NOTE_DIRECTIONS, WAREHOUSE_KINDS } from "@/lib/inventory-model";
+import { GST_RATES, UOMS, type Uom } from "@/lib/items-model";
 
 export type FormState = { error?: string; note?: string } | undefined;
 
@@ -24,6 +26,57 @@ export async function searchItemsAction(
   if (!(await can("items.item.view"))) return [];
   if (!query || query.trim().length < 1) return [];
   return searchCatalogueItems(query);
+}
+
+export type PromoteUnlistedInput = {
+  name: string;
+  uom?: string | null;
+  rate?: number | null;
+  tax_rate?: number | null;
+  hsn_sac?: string | null;
+  category?: string | null;
+  good_type?: string | null;
+};
+
+/**
+ * Inline catalogue create from a stock-in line. Reuses createItem (via
+ * findOrCreateItem) so org stamp, name dedupe and the metered-create gate
+ * stay in one place. Does not post the receipt — the line still submits
+ * through addStockInAction, promoted or not.
+ */
+export async function promoteUnlistedItemAction(
+  input: PromoteUnlistedInput,
+): Promise<{ id: string } | { error: string }> {
+  const denied = await requireCan("items.item.create");
+  if (denied) return denied;
+
+  const name = (input.name ?? "").trim();
+  if (!name) return { error: "Item is required" };
+
+  const uomRaw = (input.uom ?? "").trim().toLowerCase();
+  const base_uom: Uom = (UOMS as readonly string[]).includes(uomRaw)
+    ? (uomRaw as Uom)
+    : "nos";
+
+  const rateNum = input.rate == null ? null : Number(input.rate);
+  const base_rate =
+    rateNum != null && Number.isFinite(rateNum) && rateNum >= 0 ? rateNum : null;
+
+  const taxNum = input.tax_rate == null ? NaN : Number(input.tax_rate);
+  const tax_rate = (GST_RATES as readonly number[]).includes(taxNum) ? taxNum : 18;
+
+  const result = await findOrCreateItem({
+    name,
+    type: "material",
+    base_uom,
+    base_rate,
+    tax_rate,
+    hsn_sac: input.hsn_sac?.trim() || null,
+    category: input.category?.trim() || null,
+    good_type: input.good_type?.trim() || null,
+  });
+  if ("id" in result) revalidatePath("/items");
+  return result;
 }
 
 /* ── Warehouses ─────────────────────────────────────────────────────────────── */

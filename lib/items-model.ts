@@ -8,8 +8,19 @@
  * rather than free-typing a code (FEATURE-REGISTER: PROC-MR-003).
  */
 
-/** Item types — labour/machine/module are modelled as item *types*, not parallel
- *  modules (FEATURE-REGISTER: OPS-LAB-001 "model as Item types + Party roles"). */
+/**
+ * Three independent axes on an Item (owner Q5):
+ *
+ *   type      — closed system enum. Downstream modules branch on this
+ *               (labour vs catalogue goods vs a machine). Dzylo's item form
+ *               labelled this "Goods Type"; it is NOT the free-text axis below.
+ *               Labour/machine/module are item *types*, not parallel modules
+ *               (FEATURE-REGISTER: OPS-LAB-001).
+ *   category  — free-text product grouping (Plywood, Hardware, Laminate).
+ *   good_type — free-text merchandising class (Raw Material, Consumable, …).
+ *
+ * Category and good_type are suggested-vocabulary text, not lookup tables.
+ */
 export const ITEM_TYPES = [
   "material",
   "service",
@@ -45,12 +56,40 @@ export type Uom = (typeof UOMS)[number];
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
 export type GstRate = (typeof GST_RATES)[number];
 
+/** Suggested category vocabulary — free text; tenants may type anything else. */
+export const SUGGESTED_CATEGORIES = [
+  "Plywood",
+  "Laminate",
+  "Hardware",
+  "Adhesive",
+  "Edge Banding",
+  "Paint",
+  "Glass",
+  "Fabric",
+  "Electrical",
+  "Fixture",
+  "Consumable",
+  "Labour",
+] as const;
+
+/** Suggested merchandising class — independent of `type` and of `category`. */
+export const SUGGESTED_GOOD_TYPES = [
+  "Raw Material",
+  "Semi-finished",
+  "Finished Good",
+  "Consumable",
+  "Trading",
+  "Capital Goods",
+  "Service",
+] as const;
+
 export interface Item {
   id: string;
   name: string;
   code: string | null;
   type: ItemType;
   category: string | null;
+  good_type: string | null;
   brand: string | null;
   base_uom: Uom;
   purchase_uom: Uom | null;
@@ -87,4 +126,20 @@ export type BulkItemOutcome =
 export interface BulkCreateResult {
   outcomes: BulkItemOutcome[];
   summary: { created: number; skipped: number; errors: number };
+}
+
+/**
+ * Last price is DERIVED, never stored: the newest `stock_movements.unit_rate`
+ * for the item. Empty history → null (the screen prints a dash, not ₹0).
+ */
+export function lastPrice(
+  movements: readonly { unit_rate: number; created_at: string }[],
+): number | null {
+  if (movements.length === 0) return null;
+  let newest = movements[0];
+  for (const m of movements) {
+    if (m.created_at > newest.created_at) newest = m;
+  }
+  const r = Number(newest.unit_rate);
+  return Number.isFinite(r) ? r : null;
 }

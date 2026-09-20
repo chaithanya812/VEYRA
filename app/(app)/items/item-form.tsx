@@ -3,7 +3,14 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import type { FormState } from "./actions";
-import { ITEM_TYPES, UOMS, GST_RATES, type Item } from "@/lib/items-model";
+import {
+  ITEM_TYPES,
+  UOMS,
+  GST_RATES,
+  SUGGESTED_CATEGORIES,
+  SUGGESTED_GOOD_TYPES,
+  type Item,
+} from "@/lib/items-model";
 import { typeLabel, uomLabel } from "@/lib/items-ui";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -57,14 +64,41 @@ export function ItemForm({
               ))}
             </Select>
           </Field>
-          <Field label="Category" htmlFor="category">
+          <Field label="Category" htmlFor="category" hint="Product grouping — type or pick">
             <Input
               id="category"
               name="category"
+              list="item-categories"
               defaultValue={item?.category ?? ""}
               placeholder="e.g. Plywood"
             />
+            <datalist id="item-categories">
+              {SUGGESTED_CATEGORIES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </Field>
+          <Field
+            label="Good type"
+            htmlFor="good_type"
+            hint="Merchandising class — not the Type enum"
+          >
+            <Input
+              id="good_type"
+              name="good_type"
+              list="item-good-types"
+              defaultValue={item?.good_type ?? ""}
+              placeholder="e.g. Raw Material"
+            />
+            <datalist id="item-good-types">
+              {SUGGESTED_GOOD_TYPES.map((g) => (
+                <option key={g} value={g} />
+              ))}
+            </datalist>
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Brand" htmlFor="brand">
             <Input id="brand" name="brand" defaultValue={item?.brand ?? ""} placeholder="e.g. Century" />
           </Field>

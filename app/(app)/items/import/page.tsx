@@ -4,18 +4,19 @@ import { useActionState, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Upload, FileText } from "lucide-react";
 import { parseItemsCsv } from "@/lib/items-csv";
+import { starterCatalogueCsv } from "@/lib/starter-catalogue";
 import { typeLabel, uomLabel } from "@/lib/items-ui";
 import type { ImportState } from "../actions";
 import type { BulkItemOutcome } from "@/lib/items-model";
-import { importItemsCsvAction } from "../actions";
+import { importItemsCsvAction, importStarterCatalogueAction } from "../actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/field";
 import { Card, PageHeader, StatusChip } from "@/components/ui/primitives";
 
 const SAMPLE =
-  "name,code,type,base_uom,base_rate,tax_rate,hsn_sac,brand,category,description\n" +
-  "18mm BWP Plywood,PLY-18-BWP,material,nos,95,18,4412,Century,Plywood,Marine grade\n" +
-  "Site supervisor labour,LAB-SUP,labour,hour,450,18,,,Labour,Supervision";
+  "name,code,type,base_uom,base_rate,tax_rate,hsn_sac,brand,category,good_type,description\n" +
+  "18mm BWP Plywood,PLY-18-BWP,material,nos,95,18,4412,Century,Plywood,Raw Material,Marine grade\n" +
+  "Site supervisor labour,LAB-SUP,labour,hour,450,18,,,Labour,Service,Supervision";
 
 export default function ImportItemsPage() {
   const [csv, setCsv] = useState("");
@@ -58,7 +59,7 @@ export default function ImportItemsPage() {
           <div className="text-[13px] text-[var(--color-ink-secondary)]">
             <p className="font-medium text-[var(--color-ink)]">Expected header</p>
             <p className="mt-1 font-mono text-xs">
-              name, code, type, base_uom, base_rate, tax_rate, hsn_sac, brand, category, description
+              name, code, type, base_uom, base_rate, tax_rate, hsn_sac, brand, category, good_type, description
             </p>
             <p className="mt-1">Optional columns may be omitted or reordered. A sample row is below.</p>
           </div>
@@ -66,7 +67,7 @@ export default function ImportItemsPage() {
         <pre className="overflow-x-auto px-4 py-3 font-mono text-xs text-[var(--color-ink-secondary)]">
           {SAMPLE}
         </pre>
-        <div className="px-4 pb-4">
+        <div className="flex flex-wrap gap-2 px-4 pb-4">
           <Button
             type="button"
             variant="ghost"
@@ -75,6 +76,22 @@ export default function ImportItemsPage() {
           >
             Load sample
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setCsv(starterCatalogueCsv());
+              setShowPreview(true);
+            }}
+          >
+            Load starter catalogue
+          </Button>
+          <form action={importStarterCatalogueAction}>
+            <Button type="submit" variant="secondary" size="sm">
+              Import starter catalogue
+            </Button>
+          </form>
         </div>
       </Card>
 
@@ -159,6 +176,8 @@ function PreviewTable({ rows }: { rows: ReturnType<typeof parseItemsCsv>["rows"]
             <th className="px-3 py-2 font-medium">#</th>
             <th className="px-3 py-2 font-medium">Name</th>
             <th className="px-3 py-2 font-medium">Type</th>
+            <th className="px-3 py-2 font-medium">Category</th>
+            <th className="px-3 py-2 font-medium">Good type</th>
             <th className="px-3 py-2 font-medium">Unit</th>
             <th className="px-3 py-2 font-medium">Rate</th>
             <th className="px-3 py-2 font-medium">Status</th>
@@ -176,6 +195,12 @@ function PreviewTable({ rows }: { rows: ReturnType<typeof parseItemsCsv>["rows"]
               <td className="px-3 py-2 font-medium">{r.values.name}</td>
               <td className="px-3 py-2 text-[var(--color-ink-secondary)]">
                 {typeLabel[r.values.type]}
+              </td>
+              <td className="px-3 py-2 text-[var(--color-ink-secondary)]">
+                {r.values.category ?? "—"}
+              </td>
+              <td className="px-3 py-2 text-[var(--color-ink-secondary)]">
+                {r.values.good_type ?? "—"}
               </td>
               <td className="px-3 py-2 text-[var(--color-ink-secondary)]">
                 {uomLabel[r.values.base_uom]}

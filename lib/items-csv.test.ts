@@ -31,6 +31,7 @@ describe("parseItemsCsv", () => {
     expect(r.values.hsn_sac).toBe("C4412");
     expect(r.values.brand).toBe("Century");
     expect(r.values.category).toBe("Plywood");
+    expect(r.values.good_type).toBeNull();
     expect(r.values.description).toBe("Marine grade");
     // nameKey normalises via lib/utils nameKey
     expect(r.nameKey).toBe("18mm bwp plywood");
@@ -73,6 +74,26 @@ describe("parseItemsCsv", () => {
     expect(rows[0].status).toBe("ok");
     expect(rows[1].status).toBe("error");
     expect(rows[1].errors.some((e) => /duplicate/i.test(e))).toBe(true);
+  });
+
+  it("maps good_type (and the goods_type alias) as a separate axis from type", () => {
+    const csv = [
+      "name,type,base_uom,category,good_type",
+      "12mm BWP Plywood,material,sheet,Plywood,Raw Material",
+    ].join("\n");
+    const { rows } = parseItemsCsv(csv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("ok");
+    expect(rows[0].values.type).toBe("material");
+    expect(rows[0].values.category).toBe("Plywood");
+    expect(rows[0].values.good_type).toBe("Raw Material");
+
+    const aliased = parseItemsCsv(
+      ["name,type,base_uom,Goods Type", "Widget,material,nos,Consumable"].join("\n"),
+    );
+    expect(aliased.rows[0].status).toBe("ok");
+    expect(aliased.rows[0].values.type).toBe("material");
+    expect(aliased.rows[0].values.good_type).toBe("Consumable");
   });
 
   it("tolerates a trailing newline and missing optional columns", () => {
