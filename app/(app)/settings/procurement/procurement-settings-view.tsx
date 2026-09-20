@@ -5,7 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import type { PaymentPlanWithMilestones, PoTermsClause } from "@/lib/data/po-config";
+import type { PaymentPlanWithMilestones, PoTermsClause, PoTemplate } from "@/lib/data/po-config";
+import { PoTemplateCard } from "./po-template-card";
 import { validateMilestones } from "@/lib/po-plan-model";
 import {
   deletePaymentPlanAction,
@@ -160,9 +161,11 @@ function AddPlanForm() {
 export function ProcurementSettingsView({
   plans,
   terms,
+  template,
 }: {
   plans: PaymentPlanWithMilestones[];
   terms: PoTermsClause[];
+  template: PoTemplate;
 }) {
   const [termsState, addTerms] = useActionState(savePoTermsAction, initial);
 
@@ -179,8 +182,11 @@ export function ProcurementSettingsView({
       </h1>
       <p className="mb-6 text-sm text-[var(--color-ink-secondary)]">
         Payment plans and terms written once, then attached to a purchase order.
-        Percentages are yours; rupee amounts are derived on the order.
+        Percentages are yours; rupee amounts are derived on the order. The PDF
+        template decides what a vendor sees on the document.
       </p>
+
+      <PoTemplateCard template={template} />
 
       <Section
         title="Payment plans"

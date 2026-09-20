@@ -479,6 +479,53 @@ async function main() {
     `A=${(aPoTerms ?? []).length} B=${(bPoTerms ?? []).length}`,
   );
 
+  // ── PO templates (0046): one org-scoped PDF-config row; B cannot see A's ─
+  const tmplAIns = await sb.from("po_templates")
+    .insert({ org_id: A.id, footer_note: "A PO footer", signature_label: "For A" })
+    .select("id, show_tax_column, show_payment_plan, show_bank_details")
+    .single();
+  check(
+    "org A can insert a PO template",
+    !tmplAIns.error && !!tmplAIns.data,
+    tmplAIns.error?.message ?? "",
+  );
+  check(
+    "PO template defaults: tax + payment plan on, bank off",
+    tmplAIns.data?.show_tax_column === true
+      && tmplAIns.data?.show_payment_plan === true
+      && tmplAIns.data?.show_bank_details === false,
+    JSON.stringify(tmplAIns.data ?? {}),
+  );
+  const tmplBIns = await sb.from("po_templates")
+    .insert({ org_id: B.id, footer_note: "B PO footer" })
+    .select("id")
+    .single();
+  check(
+    "org B can insert a PO template",
+    !tmplBIns.error && !!tmplBIns.data,
+    tmplBIns.error?.message ?? "",
+  );
+  const { data: aTmpl } = await sb.from("po_templates").select("footer_note").eq("org_id", A.id);
+  const { data: bTmpl } = await sb.from("po_templates").select("footer_note").eq("org_id", B.id);
+  check(
+    "org A sees exactly its 1 PO template (no B leakage)",
+    (aTmpl ?? []).length === 1 && aTmpl[0].footer_note === "A PO footer"
+      && !(bTmpl ?? []).some((t) => (t.footer_note ?? "").startsWith("A ")),
+    `A=${(aTmpl ?? []).length} B=${(bTmpl ?? []).length}`,
+  );
+  check(
+    "org B sees exactly its 1 PO template",
+    (bTmpl ?? []).length === 1 && bTmpl[0].footer_note === "B PO footer",
+    `got ${(bTmpl ?? []).length}`,
+  );
+  const dupTmpl = await sb.from("po_templates")
+    .insert({ org_id: A.id, footer_note: "A duplicate" });
+  check(
+    "one PO template per org (unique org_id)",
+    dupTmpl.error !== null,
+    dupTmpl.error?.code || dupTmpl.error?.message || "duplicate accepted",
+  );
+
   // Soft link: deleting a plan must never cascade away the PO.
   const { data: poWithPlan } = await sb.from("purchase_orders")
     .insert({

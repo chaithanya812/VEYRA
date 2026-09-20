@@ -954,7 +954,8 @@ export async function awardRfq(
   if (awardErr) return { error: awardErr.message };
 
   // Best-effort: draft a PO for the winner from their bid lines.
-  const winnerBid = activeByVendor.get(winnerId)!;
+  const winnerBid = activeByVendor.get(winnerId);
+  if (!winnerBid) return {};
   const winnerLines = linesByBid.get(winnerBid.id);
   const poLines = items
     .map((it) => {
@@ -971,6 +972,26 @@ export async function awardRfq(
     })
     .filter((l): l is NonNullable<typeof l> => l !== null);
   if (poLines.length === 0) return {}; // awarded, but nothing to draft
+
+  // F2: freight was dropped here, so the PO total disagreed with the
+  // landed cost the award was ranked on. Copy it as ONE extra line
+  // (no new po_lines column). tax_pct is the first quoted line's slab.
+  let freightSum = 0;
+  for (const it of items) {
+    const bl = winnerLines?.get(it.id);
+    if (!bl) continue;
+    freightSum += Number(bl.freight) || 0;
+  }
+  if (freightSum > 0) {
+    poLines.push({
+      item_id: null,
+      item_name: "Freight & delivery",
+      uom: null,
+      qty: 1,
+      unit_rate: freightSum,
+      tax_pct: Number(poLines[0].tax_pct) || 0,
+    });
+  }
 
   const po = await createPurchaseOrder({
     name: `PO — ${rfq.title}`,

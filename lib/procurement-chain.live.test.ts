@@ -162,7 +162,7 @@ describe.runIf(run)("LIVE procurement chain drive (writes to demo tenant)", () =
         VENDOR_CENTURY,
       );
 
-      // PO amount = pure Σ(qty×rate), ex-freight (po_lines carry no freight).
+      // F2: freight is copied as its own PO line, so amount = landed total.
       const { data: poLineRows } = await db
         .table("po_lines")
         .select("id, item_name, qty, unit_rate, line_total")
@@ -173,13 +173,14 @@ describe.runIf(run)("LIVE procurement chain drive (writes to demo tenant)", () =
         qty: number;
         unit_rate: number;
       }[];
-      expect(poAmount(poLines)).toBe(96300); // 72,800 + 23,500
+      expect(poLines.some((l) => l.item_name === "Freight & delivery")).toBe(true);
+      expect(poAmount(poLines)).toBe(97500); // 72,800 + 23,500 + 1,200 freight
       const { data: poRow } = await db
         .table("purchase_orders")
         .select("amount, order_state")
         .eq("id", poId)
         .maybeSingle();
-      expect(Number((poRow as unknown as { amount: number }).amount)).toBe(96300);
+      expect(Number((poRow as unknown as { amount: number }).amount)).toBe(97500);
 
       // ── HOP 5 — partial receipt derives partially_delivered ───────────────
       const poLineId = (name: string) =>

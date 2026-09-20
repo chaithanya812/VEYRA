@@ -7,6 +7,7 @@ import {
   deletePoTerms,
   savePaymentPlan,
   savePoTerms,
+  savePoTemplate,
 } from "@/lib/data/po-config";
 import { validateMilestones } from "@/lib/po-plan-model";
 
@@ -92,4 +93,25 @@ export async function deletePoTermsAction(formData: FormData): Promise<void> {
   await deletePoTerms(id);
   revalidatePath("/settings/procurement");
   revalidatePath("/orders/new");
+}
+
+export async function savePoTemplateAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const denied = await requireCan("settings.procurement.edit");
+  if (denied) return denied;
+  const r = await savePoTemplate({
+    footer_note: String(formData.get("footer_note") ?? ""),
+    signature_label: String(formData.get("signature_label") ?? ""),
+    logo_url: String(formData.get("logo_url") ?? ""),
+    signature_url: String(formData.get("signature_url") ?? ""),
+    show_tax_column: formData.get("show_tax_column") === "on",
+    show_uom_column: formData.get("show_uom_column") === "on",
+    show_payment_plan: formData.get("show_payment_plan") === "on",
+    show_terms: formData.get("show_terms") === "on",
+    show_bank_details: formData.get("show_bank_details") === "on",
+    bank_details: String(formData.get("bank_details") ?? ""),
+  });
+  return r.error ? { error: r.error } : refresh();
 }

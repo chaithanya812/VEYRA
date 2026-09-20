@@ -111,6 +111,12 @@ export interface PurchaseOrder {
   id: string;
   org_id: string;
   name: string;
+  /**
+   * Indian-FY document number from issueDocNumber("purchase_order").
+   * Null on every PO that predates numbering, and when the tenant has no
+   * series configured — the PO is still valid, it just shows no number.
+   */
+  number: string | null;
   vendor_id: string;
   project_label: string | null;
   rfq_id: string | null;

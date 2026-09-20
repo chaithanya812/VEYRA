@@ -365,3 +365,136 @@ export async function deletePoTerms(id: string): Promise<{ error?: string }> {
   const { error } = await db.table("po_terms").deleteById(id);
   return error ? { error: error.message } : {};
 }
+
+/* ── PO PDF template (one row per tenant; read-or-create-default) ───────── */
+
+export interface PoTemplate {
+  id: string;
+  footer_note: string | null;
+  signature_label: string | null;
+  logo_url: string | null;
+  signature_url: string | null;
+  show_tax_column: boolean;
+  show_uom_column: boolean;
+  show_payment_plan: boolean;
+  show_terms: boolean;
+  show_bank_details: boolean;
+  bank_details: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const EMPTY_TEMPLATE: PoTemplate = {
+  id: "",
+  footer_note: null,
+  signature_label: null,
+  logo_url: null,
+  signature_url: null,
+  show_tax_column: true,
+  show_uom_column: true,
+  show_payment_plan: true,
+  show_terms: true,
+  show_bank_details: false,
+  bank_details: null,
+  created_at: "",
+  updated_at: "",
+};
+
+function asTemplate(row: {
+  id: string;
+  footer_note: string | null;
+  signature_label: string | null;
+  logo_url: string | null;
+  signature_url: string | null;
+  show_tax_column: boolean;
+  show_uom_column: boolean;
+  show_payment_plan: boolean;
+  show_terms: boolean;
+  show_bank_details: boolean;
+  bank_details: string | null;
+  created_at: string;
+  updated_at: string;
+}): PoTemplate {
+  return {
+    id: row.id,
+    footer_note: row.footer_note ?? null,
+    signature_label: row.signature_label ?? null,
+    logo_url: row.logo_url ?? null,
+    signature_url: row.signature_url ?? null,
+    show_tax_column: row.show_tax_column !== false,
+    show_uom_column: row.show_uom_column !== false,
+    show_payment_plan: row.show_payment_plan !== false,
+    show_terms: row.show_terms !== false,
+    show_bank_details: Boolean(row.show_bank_details),
+    bank_details: row.bank_details ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/**
+ * Read the tenant's PO PDF template, creating a default row on first read.
+ * Never assumes a row exists. A unique-(org_id) race re-reads rather than
+ * crashing.
+ */
+export async function getPoTemplate(): Promise<PoTemplate> {
+  const { db } = await withOrg();
+  const { data, error } = await db.table("po_templates").select("*").maybeSingle();
+  if (error) throw error;
+  if (data) return asTemplate(data as unknown as Parameters<typeof asTemplate>[0]);
+
+  const { data: created, error: insErr } = await db.table("po_templates").insert({});
+  if (insErr) {
+    const { data: again, error: againErr } = await db
+      .table("po_templates")
+      .select("*")
+      .maybeSingle();
+    if (againErr) throw againErr;
+    if (again) return asTemplate(again as unknown as Parameters<typeof asTemplate>[0]);
+    return EMPTY_TEMPLATE;
+  }
+  const row = created?.[0] as Parameters<typeof asTemplate>[0] | undefined;
+  return row ? asTemplate(row) : EMPTY_TEMPLATE;
+}
+
+export async function savePoTemplate(input: {
+  footer_note?: string | null;
+  signature_label?: string | null;
+  logo_url?: string | null;
+  signature_url?: string | null;
+  show_tax_column?: boolean;
+  show_uom_column?: boolean;
+  show_payment_plan?: boolean;
+  show_terms?: boolean;
+  show_bank_details?: boolean;
+  bank_details?: string | null;
+}): Promise<{ error?: string }> {
+  const current = await getPoTemplate();
+  const { db } = await withOrg();
+  const patch = {
+    footer_note: input.footer_note !== undefined ? input.footer_note?.trim() || null : current.footer_note,
+    signature_label:
+      input.signature_label !== undefined
+        ? input.signature_label?.trim() || null
+        : current.signature_label,
+    logo_url: input.logo_url !== undefined ? input.logo_url?.trim() || null : current.logo_url,
+    signature_url:
+      input.signature_url !== undefined ? input.signature_url?.trim() || null : current.signature_url,
+    show_tax_column: input.show_tax_column ?? current.show_tax_column,
+    show_uom_column: input.show_uom_column ?? current.show_uom_column,
+    show_payment_plan: input.show_payment_plan ?? current.show_payment_plan,
+    show_terms: input.show_terms ?? current.show_terms,
+    show_bank_details: input.show_bank_details ?? current.show_bank_details,
+    bank_details:
+      input.bank_details !== undefined ? input.bank_details?.trim() || null : current.bank_details,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (!current.id) {
+    const { error } = await db.table("po_templates").insert(patch);
+    return error ? { error: error.message } : {};
+  }
+
+  const { error } = await db.table("po_templates").updateById(current.id, patch);
+  return error ? { error: error.message } : {};
+}

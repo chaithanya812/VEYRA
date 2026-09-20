@@ -3,11 +3,16 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, AlertTriangle, ClipboardCheck } from "lucide-react";
 import {
   getPurchaseOrder,
+  getOrgBranding,
   vendorNames,
   ORDER_STATES,
   PAYMENT_STATES,
 } from "@/lib/data/purchase-orders";
-import { getPaymentPlan, getPoTerms } from "@/lib/data/po-config";
+import { getPaymentPlan, getPoTerms, getPoTemplate } from "@/lib/data/po-config";
+import { getVendor } from "@/lib/data/vendors";
+import { DownloadPoButton } from "@/components/download-po-button";
+import type { PoPdfData } from "@/lib/po-pdf";
+import { deriveTreatment } from "@/lib/quotations-model";
 import {
   ORDER_STATE_META,
   PAYMENT_STATE_META,
@@ -48,12 +53,65 @@ export default async function OrderDetailPage({
   if (!result) notFound();
   const { po, lines, receipts } = result;
 
-  const [names, plan, terms] = await Promise.all([
+  const [names, plan, terms, template, branding, vendorRow] = await Promise.all([
     vendorNames([po.vendor_id]),
     po.payment_plan_id ? getPaymentPlan(po.payment_plan_id) : Promise.resolve(null),
     po.po_terms_id ? getPoTerms(po.po_terms_id) : Promise.resolve(null),
+    getPoTemplate(),
+    getOrgBranding(),
+    getVendor(po.vendor_id),
   ]);
-  const vendorLabel = names[po.vendor_id] ?? po.vendor_id.slice(0, 8);
+  const vendor = vendorRow?.vendor ?? null;
+  const vendorLabel = vendor?.name ?? names[po.vendor_id] ?? po.vendor_id.slice(0, 8);
+  const documentNumber = (po.number && po.number.trim()) || po.name;
+  const vendorAddress = vendor
+    ? [vendor.address, vendor.city, vendor.state, vendor.pincode].filter(Boolean).join(", ") || null
+    : null;
+  const vendorContact = vendor
+    ? [vendor.contact_person, vendor.phone].filter(Boolean).join("   |   ") || null
+    : null;
+  const gstTreatment =
+    deriveTreatment(branding.gstin?.slice(0, 2), vendor?.gstin?.slice(0, 2)) ?? "intra";
+  const pdfData: PoPdfData = {
+    number: po.number,
+    name: po.name,
+    orderDate: po.order_date,
+    deliveryDate: po.delivery_date,
+    seller: { name: branding.name, gstin: branding.gstin },
+    vendor: {
+      name: vendorLabel,
+      gstin: vendor?.gstin ?? null,
+      address: vendorAddress,
+      contact: vendorContact,
+    },
+    projectLabel: po.project_label,
+    lines: lines.map((l) => ({
+      item_name: l.item_name,
+      uom: l.uom,
+      qty: Number(l.qty),
+      unit_rate: Number(l.unit_rate),
+      tax_pct: Number(l.tax_pct),
+    })),
+    amount: Number(po.amount),
+    paymentMilestones: plan
+      ? plan.milestones.map((m) => ({ label: m.label, pct: Number(m.pct) }))
+      : [],
+    termsTitle: terms?.title ?? null,
+    termsBody: terms?.body ?? null,
+    template: {
+      footer_note: template.footer_note,
+      signature_label: template.signature_label,
+      logo_url: template.logo_url,
+      signature_url: template.signature_url,
+      show_tax_column: template.show_tax_column,
+      show_uom_column: template.show_uom_column,
+      show_payment_plan: template.show_payment_plan,
+      show_terms: template.show_terms,
+      show_bank_details: template.show_bank_details,
+      bank_details: template.bank_details,
+    },
+    gstTreatment,
+  };
   const planRows =
     plan && plan.milestones.length > 0
       ? allocateMilestoneAmounts(plan.milestones, po.amount)
@@ -93,10 +151,12 @@ export default async function OrderDetailPage({
 
       <PageHeader
         title={po.name}
+        subtitle={po.number ? po.number : undefined}
         actions={
           <>
             <StatusChip tone={TONE_TO_CHIP[orderMeta.tone]} label={orderMeta.label} />
             <StatusChip tone={TONE_TO_CHIP[paymentMeta.tone]} label={paymentMeta.label} />
+            <DownloadPoButton data={pdfData} />
           </>
         }
       />
@@ -109,6 +169,7 @@ export default async function OrderDetailPage({
               Details
             </h2>
             <dl className="flex flex-col gap-2.5 text-sm">
+              <Row label="Number" value={documentNumber} />
               <Row label="Vendor" value={vendorLabel} />
               <Row label="Type" value={po.type === "work_order" ? "Work order" : "Purchase order"} />
               <Row label="Project" value={po.project_label ?? "—"} />

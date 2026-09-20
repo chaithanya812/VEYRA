@@ -112,21 +112,28 @@ describe("procurement chain — MR → RFQ → PO → GRN → stock", () => {
     expect(ranks).not.toHaveProperty("raghav-no-bid");
   });
 
-  it("HOP 3 — awarding Century drafts a PO whose amount is the pure sum of its lines (ex-freight)", () => {
-    // The PO carries the WINNER's unit rates onto po_lines. po_lines have no
-    // freight column, so the PO amount is qty×rate only — a real discontinuity
-    // from the freight-inclusive bid comparison (documented, see chain report).
-    const poLines = MR_LINES.map((l) => ({
+  it("HOP 3 — awarding Century drafts a PO whose amount equals the landed total (freight is its own line)", () => {
+    // F2: freight is not a po_lines column. It becomes ONE extra line so the
+    // PO amount agrees with the landed cost the award was ranked on.
+    const goods = MR_LINES.map((l) => ({
       item_name: l.item_name,
       qty: l.qty,
       unit_rate: BIDS[CENTURY][l.item_name].unit_rate,
     }));
+    const freightSum =
+      BIDS[CENTURY][PLYWOOD].freight + BIDS[CENTURY][LAMINATE].freight;
+    const poLines = [
+      ...goods,
+      { item_name: "Freight & delivery", qty: 1, unit_rate: freightSum },
+    ];
     expect(lineTotal(40, 1820)).toBe(72800);
     expect(lineTotal(25, 940)).toBe(23500);
-    // The amount can always name its rows: Σ line totals, nothing else.
-    expect(poAmount(poLines)).toBe(96300);
+    expect(lineTotal(1, freightSum)).toBe(1200);
+    expect(poAmount(goods)).toBe(96300);
+    // Landed total the award was ranked on (HOP 2): 97,500.
+    expect(poAmount(poLines)).toBe(97500);
     expect(poAmount(poLines)).toBe(
-      poLines.reduce((sum, l) => sum + lineTotal(l.qty, l.unit_rate), 0),
+      landedLineTotal(40, 1820, 800) + landedLineTotal(25, 940, 400),
     );
   });
 

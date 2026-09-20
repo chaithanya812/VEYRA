@@ -1,5 +1,7 @@
 import "server-only";
 import { withOrg } from "./with-org";
+import { admin } from "@/lib/supabase/admin";
+import { issueDocNumber } from "./config";
 import {
   ORDER_STATES,
   PAYMENT_STATES,
@@ -196,8 +198,14 @@ export async function createPurchaseOrder(input: {
       ? input.type
       : "purchase_order";
 
+  // A missing series is a legitimate tenant state: issueDocNumber returns
+  // null and the PO is still created, just unnumbered (D1). Never fail
+  // creation on a null number.
+  const number = await issueDocNumber("purchase_order");
+
   const { data, error } = await db.table("purchase_orders").insert({
     name: input.name.trim(),
+    number,
     vendor_id: input.vendor_id,
     project_label: input.project_label?.trim() || null,
     rfq_id: input.rfq_id || null,
@@ -233,6 +241,26 @@ export async function createPurchaseOrder(input: {
   }
 
   return { id };
+}
+
+/**
+ * Seller identity for the PO PDF header. `orgs` is a platform table, so it
+ * cannot go through withOrg — same sanctioned admin read getSharedQuotation
+ * uses to brand a quotation.
+ */
+export async function getOrgBranding(): Promise<{
+  name: string | null;
+  gstin: string | null;
+}> {
+  const { ctx } = await withOrg();
+  const { data, error } = await admin
+    .from("orgs")
+    .select("name, gstin")
+    .eq("id", ctx.orgId)
+    .maybeSingle();
+  if (error) throw error;
+  const row = data as { name: string | null; gstin: string | null } | null;
+  return { name: row?.name ?? null, gstin: row?.gstin ?? null };
 }
 
 export async function updateOrderState(

@@ -46,6 +46,7 @@ export const TENANT_TABLES = [
   "po_payment_plans",
   "po_payment_plan_milestones",
   "po_terms",
+  "po_templates",
   "contracts",
   "milestones",
   "payments",
