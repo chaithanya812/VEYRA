@@ -11,6 +11,7 @@ import {
   type RfqTone,
 } from "@/lib/rfq-model";
 import { EnterBidForm } from "./enter-bid-form";
+import { VendorPortalLink } from "./vendor-portal-link";
 import { AwardDialog } from "./award-dialog";
 import { AddVendorsDialog } from "./add-vendors-dialog";
 import { removeRfqVendorAction } from "../actions";
@@ -213,6 +214,7 @@ export default async function RfqDetailPage({
                 <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-sunken)] text-left text-[var(--color-ink-secondary)]">
                   <th className="px-4 py-3 font-medium">Vendor</th>
                   <th className="px-4 py-3 font-medium">Response</th>
+                  <th className="px-4 py-3 font-medium">Portal</th>
                   <th className="px-4 py-3 font-medium text-right">Invited</th>
                   {awardable && (
                     <th className="px-4 py-3 font-medium text-right">
@@ -234,6 +236,17 @@ export default async function RfqDetailPage({
                       </td>
                       <td className="px-4 py-2.5">
                         <StatusChip tone={TONE_TO_CHIP[rmeta.tone]} label={rmeta.label} />
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <VendorPortalLink
+                          rfqId={rfq.id}
+                          vendorId={v.vendor_id}
+                          vendorName={names[v.vendor_id] ?? v.vendor_id.slice(0, 8)}
+                          rfqTitle={rfq.title}
+                          shareToken={v.share_token}
+                          shareEnabled={Boolean(v.share_enabled)}
+                          canMint={awardable}
+                        />
                       </td>
                       <td className="px-4 py-2.5 text-right tabular text-[var(--color-ink-secondary)]">
                         {fmtDate(v.invited_at)}

@@ -138,6 +138,17 @@ function makeOrgDb(orgId: string): OrgDb {
   };
 }
 
+/**
+ * An org-scoped db for a caller with NO session that has proven its org another
+ * way — today: a public share token resolved by token lookup. The caller MUST
+ * derive `orgId` from the resolved token row and NEVER from user input. This
+ * exists so public writes stay inside the one isolation accessor instead of
+ * spreading raw `admin` through feature code.
+ */
+export function orgDbForVerifiedOrg(orgId: string): OrgDb {
+  return makeOrgDb(orgId);
+}
+
 /** Resolve org context and hand back a scoped db. The primary entry point. */
 export async function withOrg(): Promise<{ db: OrgDb; ctx: OrgContext }> {
   const ctx = await getOrgContext();

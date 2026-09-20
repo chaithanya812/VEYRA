@@ -82,6 +82,9 @@ export interface RfqVendor {
   vendor_id: string;
   response_status: ResponseStatus;
   invited_at: string;
+  /** Unguessable portal token; identity of THIS invited vendor on THIS RFQ. */
+  share_token: string | null;
+  share_enabled: boolean;
 }
 
 export interface RfqItem {
@@ -139,6 +142,26 @@ export function landedLineTotal(
   freight = 0,
 ): number {
   return round2(qty * unit_rate + freight);
+}
+
+/**
+ * Next bid version for a vendor on an RFQ. History is append-only: re-entry
+ * never overwrites. Empty history → version 1.
+ */
+export function nextBidVersion(prevVersions: number[]): number {
+  return Math.max(0, ...prevVersions) + 1;
+}
+
+/**
+ * Who is recorded as the submitter. Portal entry is the vendor themselves —
+ * `submitted_by` is always null, even if a session user id leaked in. Proxy
+ * entry records the purchase-team user who typed the quote.
+ */
+export function bidSubmittedBy(
+  entryMode: BidEntryMode,
+  sessionUserId: string | null,
+): string | null {
+  return entryMode === "portal" ? null : sessionUserId;
 }
 
 /**

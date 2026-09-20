@@ -11,6 +11,7 @@ import {
   createRfqFromMr,
   enterBid,
   removeRfqVendor,
+  setVendorPortalShare,
   type BidLineInput,
   type RfqItemInput,
 } from "@/lib/data/rfq";
@@ -216,6 +217,33 @@ export async function enterBidAction(
     lines: rawLines,
   });
   if (result.error) return { error: result.error };
+
+  revalidatePath(`/rfq/${rfqId}`);
+  revalidatePath("/rfq");
+  return undefined;
+}
+
+/* ── Per-vendor portal link (mint / revoke) ───────────────────────────────── */
+
+/**
+ * Create or disable the signed-token portal URL for one invited vendor.
+ * There is no `rfq.delete` capability — `procurement.rfq.create` governs the
+ * vendor set and this link, matching add/remove vendor. The public submit
+ * action is the session-less exception; this one is not.
+ */
+export async function setVendorPortalShareAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const denied = await requireCan("procurement.rfq.create");
+  if (denied) return denied;
+  const rfqId = String(formData.get("rfqId") ?? "");
+  const vendorId = String(formData.get("vendorId") ?? "");
+  const enabled = String(formData.get("enabled")) === "true";
+  if (!rfqId || !vendorId) return { error: "Missing RFQ or vendor." };
+
+  const result = await setVendorPortalShare(rfqId, vendorId, enabled);
+  if ("error" in result) return { error: result.error };
 
   revalidatePath(`/rfq/${rfqId}`);
   revalidatePath("/rfq");

@@ -1,16 +1,23 @@
 import "server-only";
-import { withOrg } from "./with-org";
+import { randomUUID } from "node:crypto";
+import { withOrg, orgDbForVerifiedOrg, type OrgDb } from "./with-org";
+import { admin } from "@/lib/supabase/admin";
 import { createPurchaseOrder } from "./purchase-orders";
 import {
   landedLineTotal,
   rankBids,
   RFQ_STATUSES,
+  isBidDeadlinePassed,
+  nextBidVersion,
+  bidSubmittedBy,
   type Rfq,
   type RfqVendor,
   type RfqItem,
   type RfqBid,
   type RfqBidLine,
   type ResponseStatus,
+  type BidEntryMode,
+  type RfqStatus,
 } from "@/lib/rfq-model";
 
 /**
@@ -361,23 +368,31 @@ export interface BidLineInput {
   freight?: number | null;
 }
 
+export type BidWriteInput = {
+  delivery_date?: string | null;
+  remark?: string | null;
+  lines: BidLineInput[];
+};
+
 /**
- * Proxy bid entry: records a vendor's bid on their behalf (entry_mode 'proxy',
- * submitted_by = current user), computes each line_total via landedLineTotal()
- * against the RFQ item's qty, and marks the vendor 'submitted'. Re-entry adds a
- * new version — earlier versions stay as history.
+ * ONE bid writer. Both callers (proxy entry and the public vendor portal)
+ * go through here so landedLineTotal, versioning, and the invited-vendor
+ * check cannot drift. `entry_mode` / `submitted_by` are parameters instead
+ * of hardcoded literals; every other check and insert is the body that used
+ * to live in enterBid, unchanged.
+ *
+ * There is NO deadline check here. The portal refuses a late bid in
+ * submitPortalBid (and on the public page). Proxy entry deliberately still
+ * accepts a late quote that came by phone.
  */
-export async function enterBid(
+async function writeBid(
+  db: OrgDb,
   rfqId: string,
   vendorId: string,
-  input: {
-    delivery_date?: string | null;
-    remark?: string | null;
-    lines: BidLineInput[];
-  },
+  entryMode: BidEntryMode,
+  submittedBy: string | null,
+  input: BidWriteInput,
 ): Promise<{ error?: string }> {
-  const { db, ctx } = await withOrg();
-
   const { data: rfq } = await db
     .table("rfqs")
     .select("id, status")
@@ -429,18 +444,18 @@ export async function enterBid(
   const prevVersions = ((prevBids ?? []) as unknown as { version: number }[]).map(
     (b) => Number(b.version) || 0,
   );
-  const nextVersion = Math.max(0, ...prevVersions) + 1;
+  const version = nextBidVersion(prevVersions);
 
   const { data: bidRows, error: bidErr } = await db
     .table("rfq_bids")
     .insert({
       rfq_id: rfqId,
       vendor_id: vendorId,
-      version: nextVersion,
+      version,
       delivery_date: input.delivery_date || null,
       remark: input.remark?.trim() || null,
-      entry_mode: "proxy",
-      submitted_by: ctx.userId,
+      entry_mode: entryMode,
+      submitted_by: bidSubmittedBy(entryMode, submittedBy),
     });
   if (bidErr) return { error: bidErr.message };
   const bidId = (bidRows?.[0] as { id: string }).id;
@@ -478,6 +493,277 @@ export async function enterBid(
   if (rvErr) return { error: rvErr.message };
 
   return {};
+}
+
+/**
+ * Proxy bid entry: records a vendor's bid on their behalf (entry_mode 'proxy',
+ * submitted_by = current user), computes each line_total via landedLineTotal()
+ * against the RFQ item's qty, and marks the vendor 'submitted'. Re-entry adds a
+ * new version — earlier versions stay as history.
+ */
+export async function enterBid(
+  rfqId: string,
+  vendorId: string,
+  input: BidWriteInput,
+): Promise<{ error?: string }> {
+  const { db, ctx } = await withOrg();
+  return writeBid(db, rfqId, vendorId, "proxy", ctx.userId, input);
+}
+
+/* ── Public vendor portal (/rfq-bid/<token>) ──────────────────────────────── */
+
+type PortalInvite = {
+  vendorRowId: string;
+  orgId: string;
+  rfqId: string;
+  vendorId: string;
+};
+
+/**
+ * PUBLIC token → invite lookup. The unguessable share_token is the capability;
+ * share_enabled gates it. This is the single raw-`admin` call on the portal
+ * path: resolving the org is its whole job. Everything after uses
+ * orgDbForVerifiedOrg so writes stay inside the one isolation accessor.
+ *
+ * Returns `{ invite: null, error: null }` for a missing/disabled token (the
+ * page renders "link unavailable"). A query failure is reported as itself.
+ */
+async function lookupPortalInvite(token: string): Promise<{
+  invite: PortalInvite | null;
+  error: string | null;
+}> {
+  if (!token) return { invite: null, error: null };
+  const { data, error } = await admin
+    .from("rfq_vendors")
+    .select("id, org_id, rfq_id, vendor_id")
+    .eq("share_token", token)
+    .eq("share_enabled", true)
+    .maybeSingle();
+  if (error) return { invite: null, error: error.message };
+  if (!data) return { invite: null, error: null };
+  const row = data as {
+    id: string;
+    org_id: string;
+    rfq_id: string;
+    vendor_id: string;
+  };
+  return {
+    invite: {
+      vendorRowId: row.id,
+      orgId: row.org_id,
+      rfqId: row.rfq_id,
+      vendorId: row.vendor_id,
+    },
+    error: null,
+  };
+}
+
+export type PortalRfqView = {
+  sellerName: string | null;
+  title: string;
+  project_label: string | null;
+  place_of_supply: string | null;
+  bid_deadline: string | null;
+  status: RfqStatus;
+  biddingClosed: boolean;
+  items: { id: string; item_name: string; uom: string | null; qty: number }[];
+  currentBid: {
+    version: number;
+    delivery_date: string | null;
+    remark: string | null;
+    submitted_at: string;
+    lines: {
+      rfq_item_id: string;
+      unit_rate: number;
+      tax_pct: number;
+      freight: number;
+    }[];
+  } | null;
+};
+
+/**
+ * PUBLIC read by per-vendor share token — NO auth, NO session, NO org from
+ * the caller. The unguessable token is the capability; share_enabled gates
+ * it. Returns ONLY presentational fields for THIS vendor's RFQ: header, line
+ * items, the seller org's name, and this vendor's own current bid. Never
+ * other vendors' names/rates/totals, never the comparison matrix, never
+ * L1/L2/L3, never internal remarks, never the MR, never org_id.
+ */
+export async function getPortalRfq(token: string): Promise<PortalRfqView | null> {
+  const { invite, error } = await lookupPortalInvite(token);
+  if (error) throw new Error(error);
+  if (!invite) return null;
+
+  const db = orgDbForVerifiedOrg(invite.orgId);
+
+  const { data: rfq, error: rfqErr } = await db
+    .table("rfqs")
+    .select("title, project_label, place_of_supply, bid_deadline, status")
+    .eq("id", invite.rfqId)
+    .maybeSingle();
+  if (rfqErr) throw rfqErr;
+  if (!rfq) return null;
+  const header = rfq as unknown as {
+    title: string;
+    project_label: string | null;
+    place_of_supply: string | null;
+    bid_deadline: string | null;
+    status: RfqStatus;
+  };
+
+  const { data: itemRows, error: itemsErr } = await db
+    .table("rfq_items")
+    .select("id, item_name, uom, qty")
+    .eq("rfq_id", invite.rfqId)
+    .order("created_at");
+  if (itemsErr) throw itemsErr;
+
+  // `orgs` is a platform table (not tenant-scoped), so it cannot go through
+  // orgDb. Same sanctioned read getSharedQuotation uses to brand the document;
+  // the org id never leaves this function.
+  const { data: org, error: orgErr } = await admin
+    .from("orgs")
+    .select("name")
+    .eq("id", invite.orgId)
+    .maybeSingle();
+  if (orgErr) throw orgErr;
+
+  const { data: bidRows, error: bidsErr } = await db
+    .table("rfq_bids")
+    .select("id, version, delivery_date, remark, submitted_at")
+    .eq("rfq_id", invite.rfqId)
+    .eq("vendor_id", invite.vendorId)
+    .order("version", { ascending: false });
+  if (bidsErr) throw bidsErr;
+  const latest = ((bidRows ?? []) as unknown as {
+    id: string;
+    version: number;
+    delivery_date: string | null;
+    remark: string | null;
+    submitted_at: string;
+  }[])[0] ?? null;
+
+  let currentBid: PortalRfqView["currentBid"] = null;
+  if (latest) {
+    const { data: lineRows, error: linesErr } = await db
+      .table("rfq_bid_lines")
+      .select("rfq_item_id, unit_rate, tax_pct, freight")
+      .eq("bid_id", latest.id);
+    if (linesErr) throw linesErr;
+    currentBid = {
+      version: Number(latest.version) || 1,
+      delivery_date: latest.delivery_date,
+      remark: latest.remark,
+      submitted_at: latest.submitted_at,
+      lines: ((lineRows ?? []) as unknown as {
+        rfq_item_id: string;
+        unit_rate: number;
+        tax_pct: number;
+        freight: number;
+      }[]).map((l) => ({
+        rfq_item_id: l.rfq_item_id,
+        unit_rate: Number(l.unit_rate) || 0,
+        tax_pct: Number(l.tax_pct) || 0,
+        freight: Number(l.freight) || 0,
+      })),
+    };
+  }
+
+  const biddingClosed =
+    header.status === "awarded" ||
+    header.status === "closed" ||
+    isBidDeadlinePassed(header.bid_deadline, header.status);
+
+  return {
+    sellerName: (org as { name: string | null } | null)?.name ?? null,
+    title: header.title,
+    project_label: header.project_label,
+    place_of_supply: header.place_of_supply,
+    bid_deadline: header.bid_deadline,
+    status: header.status,
+    biddingClosed,
+    items: ((itemRows ?? []) as unknown as {
+      id: string;
+      item_name: string;
+      uom: string | null;
+      qty: number;
+    }[]).map((it) => ({
+      id: it.id,
+      item_name: it.item_name,
+      uom: it.uom,
+      qty: Number(it.qty) || 0,
+    })),
+    currentBid,
+  };
+}
+
+/**
+ * PUBLIC write: the vendor holding this token submits (or re-submits) a bid.
+ * Token lookup is the auth. Deadline refusal lives HERE, not in writeBid —
+ * proxy entry is unchanged and can still record a late phone quote.
+ */
+export async function submitPortalBid(
+  token: string,
+  input: BidWriteInput,
+): Promise<{ error?: string }> {
+  const { invite, error } = await lookupPortalInvite(token);
+  if (error) return { error };
+  if (!invite) return { error: "This link is not active." };
+
+  const db = orgDbForVerifiedOrg(invite.orgId);
+
+  const { data: rfq, error: rfqErr } = await db
+    .table("rfqs")
+    .select("id, status, bid_deadline")
+    .eq("id", invite.rfqId)
+    .maybeSingle();
+  if (rfqErr) return { error: rfqErr.message };
+  if (!rfq) return { error: "RFQ not found." };
+  const header = rfq as unknown as {
+    status: string;
+    bid_deadline: string | null;
+  };
+  if (isBidDeadlinePassed(header.bid_deadline, header.status)) {
+    return { error: "Bidding has closed." };
+  }
+
+  return writeBid(db, invite.rfqId, invite.vendorId, "portal", null, input);
+}
+
+/**
+ * Mint or revoke a per-vendor portal link. Reuses an existing token if
+ * present (matching quotations.setShare); disabling clears share_enabled
+ * and keeps the token so re-enable restores the same URL.
+ */
+export async function setVendorPortalShare(
+  rfqId: string,
+  vendorId: string,
+  enabled: boolean,
+): Promise<{ token: string | null } | { error: string }> {
+  const { db } = await withOrg();
+
+  const { data: rv, error } = await db
+    .table("rfq_vendors")
+    .select("id, share_token")
+    .eq("rfq_id", rfqId)
+    .eq("vendor_id", vendorId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!rv) return { error: "This vendor is not invited to this RFQ." };
+
+  const patch: Record<string, unknown> = { share_enabled: enabled };
+  let token: string | null = null;
+  if (enabled) {
+    token =
+      (rv as unknown as { share_token: string | null }).share_token ??
+      randomUUID().replace(/-/g, "");
+    patch.share_token = token;
+  }
+  const { error: updErr } = await db
+    .table("rfq_vendors")
+    .updateById((rv as unknown as { id: string }).id, patch);
+  if (updErr) return { error: updErr.message };
+  return { token: enabled ? token : null };
 }
 
 /* ── Comparison matrix ─────────────────────────────────────────────────────── */

@@ -350,10 +350,11 @@ async function main() {
   // ── RFQ (0012): items + bid; landed-cost line total round-trips ────────────
   const { data: rfqA } = await sb.from("rfqs")
     .insert({ org_id: A.id, title: "A RFQ", mr_id: mrA.id, status: "comparing" }).select("id").single();
-  await sb.from("rfqs").insert({ org_id: B.id, title: "B RFQ" });
+  const { data: rfqB } = await sb.from("rfqs").insert({ org_id: B.id, title: "B RFQ" }).select("id").single();
   const { data: rfqItemA } = await sb.from("rfq_items")
     .insert({ org_id: A.id, rfq_id: rfqA.id, item_id: aItemId, item_name: "18mm Ply", uom: "sheet", qty: 20 }).select("id").single();
-  await sb.from("rfq_vendors").insert({ org_id: A.id, rfq_id: rfqA.id, vendor_id: aVendId, response_status: "submitted" });
+  const { data: rvA } = await sb.from("rfq_vendors")
+    .insert({ org_id: A.id, rfq_id: rfqA.id, vendor_id: aVendId, response_status: "submitted" }).select("id").single();
   const { data: bidA } = await sb.from("rfq_bids")
     .insert({ org_id: A.id, rfq_id: rfqA.id, vendor_id: aVendId, version: 1, entry_mode: "proxy" }).select("id").single();
   const landed = round2(20 * 1850 + 500); // qty × unit_rate + freight = landedLineTotal
@@ -362,6 +363,35 @@ async function main() {
   const { data: bidLineA } = await sb.from("rfq_bid_lines").select("line_total").eq("org_id", A.id).single();
   check("org A sees exactly its 1 RFQ", aRfq.length === 1, `got ${aRfq.length}`);
   check("RFQ bid line lands at qty×rate+freight (37500)", Number(bidLineA.line_total) === landed, `got ${bidLineA.line_total}`);
+
+  // ── RFQ vendor portal token (0044): per-(rfq,vendor), cannot cross tenants ─
+  const portalToken = "u4-token-a-" + Date.now();
+  const { error: mintErr } = await sb.from("rfq_vendors")
+    .update({ share_token: portalToken, share_enabled: true }).eq("id", rvA.id);
+  check("portal token mints on org A's vendor invite", !mintErr, mintErr?.message || "");
+  const { data: resolvedA } = await sb.from("rfq_vendors")
+    .select("org_id, rfq_id, vendor_id").eq("share_token", portalToken).eq("share_enabled", true);
+  check(
+    "portal token resolves only inside org A",
+    (resolvedA ?? []).length === 1 && resolvedA[0].org_id === A.id && resolvedA[0].rfq_id === rfqA.id,
+    `rows=${(resolvedA ?? []).length} org=${resolvedA?.[0]?.org_id}`,
+  );
+  const bVendId = bVend[0].id;
+  const steal = await sb.from("rfq_vendors").insert({
+    org_id: B.id, rfq_id: rfqB.id, vendor_id: bVendId,
+    share_token: portalToken, share_enabled: true,
+  });
+  check(
+    "org B cannot claim org A's portal token (unique index)",
+    steal.error !== null,
+    steal.error?.code || steal.error?.message || "steal succeeded",
+  );
+  const { data: byToken } = await sb.from("rfq_vendors").select("org_id").eq("share_token", portalToken);
+  check(
+    "a token minted in org A never resolves into org B",
+    (byToken ?? []).length === 1 && byToken.every((r) => r.org_id !== B.id),
+    `rows=${(byToken ?? []).length}`,
+  );
 
   // ── Purchase Orders (0013): amount = Σ lines; order_state derives from receipts ─
   const poLines = [{ qty: 10, unit_rate: 100 }, { qty: 5, unit_rate: 200 }]; // Σ = 2000

@@ -56,6 +56,11 @@ const SELF_SERVICE = new Set([
   "signUp",
   "signIn",
   "signOut",
+  // ── PUBLIC TOKEN ─────────────────────────────────────────────────────────
+  // The vendor bid portal has no session, so can() cannot run. The
+  // unguessable share_token is the capability; share_enabled gates it.
+  // See app/rfq-bid/[token]/actions.ts and getSharedQuotation's doc block.
+  "submitPortalBidAction",
 ]);
 
 function actionFiles(dir: string, found: string[] = []): string[] {
